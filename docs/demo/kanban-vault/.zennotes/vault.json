@@ -1,0 +1,10 @@
+{
+  "dailyNotes": {
+    "directory": "Daily",
+    "enabled": true,
+    "tasksDueOnNoteDate": true,
+    "titlePattern": "yyyy-MM-dd"
+  },
+  "favorites": ["Launch Plan.md"],
+  "primaryNotesLocation": "root"
+}

@@ -1,0 +1,18 @@
+{
+  "dailyNotes": {
+    "directory": "Daily",
+    "enabled": true,
+    "tasksDueOnNoteDate": true,
+    "titlePattern": "yyyy-MM-dd"
+  },
+  "favorites": [
+    "Terminal Notes.md",
+    "inbox:Projects"
+  ],
+  "primaryNotesLocation": "root",
+  "weeklyNotes": {
+    "directory": "Daily",
+    "enabled": true,
+    "titlePattern": "yyyy-'W'ww"
+  }
+}

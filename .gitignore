@@ -1,0 +1,10 @@
+# Build output
+/zn
+/zn.exe
+/dist/
+*.test
+*.out
+
+# OS and editor noise
+.DS_Store
+*.log

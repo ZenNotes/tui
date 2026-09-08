@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "idFieldId": "988d31f5-0171-4976-bed7-df0193a4e24d",
+  "fields": [
+    {
+      "id": "988d31f5-0171-4976-bed7-df0193a4e24d",
+      "name": "id",
+      "type": "text",
+      "hidden": true
+    },
+    {
+      "id": "01f663cd-929f-4ba8-8dde-048d74a5ad5d",
+      "name": "Name",
+      "type": "text"
+    }
+  ],
+  "views": [
+    {
+      "id": "1a38777f-b4a5-4378-bb6c-16812e67b393",
+      "name": "Table",
+      "type": "table",
+      "filters": [],
+      "sorts": [],
+      "columnOrder": [
+        "988d31f5-0171-4976-bed7-df0193a4e24d",
+        "01f663cd-929f-4ba8-8dde-048d74a5ad5d"
+      ],
+      "hiddenFieldIds": [
+        "988d31f5-0171-4976-bed7-df0193a4e24d"
+      ]
+    }
+  ],
+  "activeViewId": "1a38777f-b4a5-4378-bb6c-16812e67b393"
+}

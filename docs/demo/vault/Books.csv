@@ -1,0 +1,5 @@
+id,Title,Author,Status,Rating,Read,Started,Tags
+f8b0d86e-5fcd-4c60-8187-cf9dc42e2e89,Dune,Frank Herbert,reading,5,false,2026-09-01,"scifi, classic"
+ceae126b-c137-4e08-a3fe-6ea49fd517a5,Neuromancer,William Gibson,done,4,true,2026-08-10,cyberpunk
+c6e0d3ae-d6f9-41ae-922f-43baebb41189,The Left Hand of Darkness,Ursula K. Le Guin,todo,,false,,scifi
+59620906-e3d0-4cd9-aaab-63148679d883,Piranesi,Susanna Clarke,todo,,false,,fantasy

@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "idFieldId": "928ab70e-5a1b-4156-b128-96680a9f0500",
+  "fields": [
+    {
+      "id": "928ab70e-5a1b-4156-b128-96680a9f0500",
+      "name": "id",
+      "type": "text",
+      "hidden": true
+    },
+    {
+      "id": "e6f88a34-8366-4908-9df5-0ec6d3b18d35",
+      "name": "Title",
+      "type": "text"
+    },
+    {
+      "id": "d297f59c-88a3-4986-a2dd-a684406c3f33",
+      "name": "Author",
+      "type": "text"
+    },
+    {
+      "id": "c206b048-dbf9-4713-84ea-cfeaed431913",
+      "name": "Status",
+      "type": "text"
+    },
+    {
+      "id": "feb7d517-b58d-4fb8-9ed4-c9124681eca7",
+      "name": "Rating",
+      "type": "number"
+    },
+    {
+      "id": "afbcfdee-5a7b-48ce-843a-099460ecf3d1",
+      "name": "Read",
+      "type": "checkbox"
+    },
+    {
+      "id": "27a391f9-600a-4984-b12c-be65d6699ce1",
+      "name": "Started",
+      "type": "date"
+    },
+    {
+      "id": "0c06ee8f-df9a-4486-b67a-7042d0fb374d",
+      "name": "Tags",
+      "type": "text"
+    }
+  ],
+  "views": [
+    {
+      "id": "514f15a6-fbca-4c5c-a775-8074de40f32f",
+      "name": "Table",
+      "type": "table",
+      "filters": [],
+      "sorts": [],
+      "columnOrder": [
+        "928ab70e-5a1b-4156-b128-96680a9f0500",
+        "e6f88a34-8366-4908-9df5-0ec6d3b18d35",
+        "d297f59c-88a3-4986-a2dd-a684406c3f33",
+        "c206b048-dbf9-4713-84ea-cfeaed431913",
+        "feb7d517-b58d-4fb8-9ed4-c9124681eca7",
+        "afbcfdee-5a7b-48ce-843a-099460ecf3d1",
+        "27a391f9-600a-4984-b12c-be65d6699ce1",
+        "0c06ee8f-df9a-4486-b67a-7042d0fb374d"
+      ],
+      "hiddenFieldIds": [
+        "928ab70e-5a1b-4156-b128-96680a9f0500"
+      ]
+    }
+  ],
+  "activeViewId": "514f15a6-fbca-4c5c-a775-8074de40f32f"
+}

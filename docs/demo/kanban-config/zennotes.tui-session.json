@@ -1,0 +1,20 @@
+{
+  "vaults": {
+    "/Users/adibhanna/Developer/opensource/zennotescli/docs/demo/kanban-vault": {
+      "tabs": null,
+      "active": 0,
+      "collapsed": {
+        "folder:archive:": true,
+        "section:tags": true
+      },
+      "sidebarOpen": true,
+      "sidebarWidth": 32,
+      "recent": [
+        "Projects/Roadmap.md",
+        "Website.md"
+      ],
+      "noteModes": {},
+      "savedAt": 1788904143387
+    }
+  }
+}

@@ -1,0 +1,8 @@
+[vim]
+enabled = true
+which_key_hints = true
+which_key_hint_mode = "timed"
+which_key_hint_timeout_ms = 250
+
+[editor]
+line_number_mode = "relative"
