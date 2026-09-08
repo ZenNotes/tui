@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 // ResolveInstructions is the effective system instruction: the user's

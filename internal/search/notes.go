@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Entry is a note prepared for scoring.

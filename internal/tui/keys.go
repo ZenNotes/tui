@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // keyFromTea normalizes a Bubble Tea key into the engine's key type.

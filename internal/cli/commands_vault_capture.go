@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 func cmdVaultInfo(ctx context.Context, b backend.Backend, args Args) error {

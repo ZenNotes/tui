@@ -12,11 +12,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/keymaps"
-	"github.com/ZenNotes/zennotescli/internal/vault"
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // Options configure a terminal session.

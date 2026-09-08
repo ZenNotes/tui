@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/periodic"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/periodic"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Template is a note template, built-in or custom.

@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 func cmdTaskList(ctx context.Context, b backend.Backend, args Args) error {

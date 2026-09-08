@@ -15,7 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yashikota/mermaigo/pkg/mermaid"
 
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Embeds in the reading view, following what the desktop app renders:

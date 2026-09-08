@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Menus and multi-step flows: rows, fields, filters, views, colors.

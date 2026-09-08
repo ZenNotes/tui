@@ -9,7 +9,7 @@ import (
 
 	"github.com/charmbracelet/x/editor"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 // cmdConfig opens config.toml in $EDITOR, writing a commented starter file

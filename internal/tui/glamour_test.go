@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ZenNotes/zennotescli/internal/keymaps"
-	"github.com/ZenNotes/zennotescli/internal/search"
+	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/search"
 )
 
 func TestSplitBlocks(t *testing.T) {

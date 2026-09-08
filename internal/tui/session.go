@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 // sessionFile remembers open tabs and sidebar state per vault.

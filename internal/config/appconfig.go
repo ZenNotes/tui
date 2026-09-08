@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/remote"
+	"github.com/ZenNotes/tui/internal/remote"
 )
 
 // AppConfigFile is the runtime config the desktop app maintains.

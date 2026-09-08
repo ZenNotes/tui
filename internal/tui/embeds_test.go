@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 func TestPlaceholderRowsEncodeIdRowAndColumn(t *testing.T) {

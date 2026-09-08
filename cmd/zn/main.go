@@ -10,7 +10,7 @@ package main
 import (
 	"os"
 
-	"github.com/ZenNotes/zennotescli/internal/cli"
+	"github.com/ZenNotes/tui/internal/cli"
 )
 
 func main() {

@@ -26,7 +26,7 @@ for tool in tmux asciinema agg ffmpeg; do
 done
 if [ ! -x "$ZN" ]; then
   echo "building zn into $WORK" >&2
-  (cd "$REPO" && go build -o "$WORK/zn" .) || exit 1
+  (cd "$REPO" && go build -o "$WORK/zn" ./cmd/zn) || exit 1
   ZN="$WORK/zn"
 fi
 mkdir -p "$OUT_DIR"

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 func TestDefaultTargetPrefersZnWorkspaces(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 func captureOutput(t *testing.T, run func()) string {

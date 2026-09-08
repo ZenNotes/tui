@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/keymaps"
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 func enterKey() vim.Key { return vim.Key{Name: "enter"} }

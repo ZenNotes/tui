@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/mcp"
-	"github.com/ZenNotes/zennotescli/internal/tui"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/mcp"
+	"github.com/ZenNotes/tui/internal/tui"
 )
 
 // cmdMCP runs the MCP stdio server for as long as the client keeps the

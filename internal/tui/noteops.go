@@ -11,11 +11,11 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"github.com/ZenNotes/zennotescli/internal/periodic"
-	"github.com/ZenNotes/zennotescli/internal/search"
-	"github.com/ZenNotes/zennotescli/internal/templates"
-	"github.com/ZenNotes/zennotescli/internal/vault"
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/periodic"
+	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/templates"
+	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // createNote makes a note and opens it.

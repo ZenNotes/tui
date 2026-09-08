@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // hintPair is one entry of a help line: a catalog action id (or a literal

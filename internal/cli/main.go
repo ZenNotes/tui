@@ -7,58 +7,63 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 // Handler runs one command against a resolved backend.
 type Handler func(ctx context.Context, b backend.Backend, args Args) error
 
 var subcommands = map[string][]string{
-	"folder": {"list", "create", "rename", "delete"},
-	"tag":    {"list", "find"},
-	"task":   {"list", "toggle"},
-	"vault":  {"info", "list", "mode", "add", "remove", "rm", "use"},
-	"base":   {"list", "create", "rows", "get", "add", "set", "convert"},
+	"folder":  {"list", "create", "rename", "delete"},
+	"tag":     {"list", "find"},
+	"task":    {"list", "toggle"},
+	"comment": {"list", "add", "reply", "resolve"},
+	"vault":   {"info", "list", "mode", "add", "remove", "rm", "use"},
+	"base":    {"list", "create", "rows", "get", "add", "set", "convert"},
 }
 
 func dispatchTable() map[string]Handler {
 	return map[string]Handler{
-		"list":          cmdList,
-		"read":          cmdRead,
-		"create":        cmdCreate,
-		"write":         cmdWrite,
-		"append":        cmdAppend,
-		"prepend":       cmdPrepend,
-		"rename":        cmdRename,
-		"move":          cmdMove,
-		"archive":       cmdArchive,
-		"unarchive":     cmdUnarchive,
-		"trash":         cmdTrash,
-		"restore":       cmdRestore,
-		"delete":        cmdDelete,
-		"duplicate":     cmdDuplicate,
-		"search":        cmdSearch,
-		"search-title":  cmdSearchTitle,
-		"backlinks":     cmdBacklinks,
-		"folder list":   cmdFolderList,
-		"folder create": cmdFolderCreate,
-		"folder rename": cmdFolderRename,
-		"folder delete": cmdFolderDelete,
-		"tag list":      cmdTagList,
-		"tag find":      cmdTagFind,
-		"task list":     cmdTaskList,
-		"task toggle":   cmdTaskToggle,
-		"vault info":    cmdVaultInfo,
-		"vault mode":    cmdVaultMode,
-		"base list":     cmdBaseList,
-		"base create":   cmdBaseCreate,
-		"base rows":     cmdBaseRows,
-		"base get":      cmdBaseGet,
-		"base add":      cmdBaseAdd,
-		"base set":      cmdBaseSet,
-		"base convert":  cmdBaseConvert,
-		"capture":       cmdCapture,
+		"list":            cmdList,
+		"read":            cmdRead,
+		"create":          cmdCreate,
+		"write":           cmdWrite,
+		"append":          cmdAppend,
+		"prepend":         cmdPrepend,
+		"rename":          cmdRename,
+		"move":            cmdMove,
+		"archive":         cmdArchive,
+		"unarchive":       cmdUnarchive,
+		"trash":           cmdTrash,
+		"restore":         cmdRestore,
+		"delete":          cmdDelete,
+		"duplicate":       cmdDuplicate,
+		"search":          cmdSearch,
+		"search-title":    cmdSearchTitle,
+		"backlinks":       cmdBacklinks,
+		"folder list":     cmdFolderList,
+		"folder create":   cmdFolderCreate,
+		"folder rename":   cmdFolderRename,
+		"folder delete":   cmdFolderDelete,
+		"tag list":        cmdTagList,
+		"tag find":        cmdTagFind,
+		"task list":       cmdTaskList,
+		"task toggle":     cmdTaskToggle,
+		"comment list":    cmdCommentList,
+		"comment add":     cmdCommentAdd,
+		"comment reply":   cmdCommentReply,
+		"comment resolve": cmdCommentResolve,
+		"vault info":      cmdVaultInfo,
+		"vault mode":      cmdVaultMode,
+		"base list":       cmdBaseList,
+		"base create":     cmdBaseCreate,
+		"base rows":       cmdBaseRows,
+		"base get":        cmdBaseGet,
+		"base add":        cmdBaseAdd,
+		"base set":        cmdBaseSet,
+		"base convert":    cmdBaseConvert,
+		"capture":         cmdCapture,
 	}
 }
 

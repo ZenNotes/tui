@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/ZenNotes/zennotescli/internal/periodic"
+	"github.com/ZenNotes/tui/internal/periodic"
 )
 
 // leaderNode is one entry of the Space leader tree.

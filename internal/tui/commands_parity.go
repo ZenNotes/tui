@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/periodic"
-	"github.com/ZenNotes/zennotescli/internal/remote"
-	"github.com/ZenNotes/zennotescli/internal/templates"
-	"github.com/ZenNotes/zennotescli/internal/vault"
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/periodic"
+	"github.com/ZenNotes/tui/internal/remote"
+	"github.com/ZenNotes/tui/internal/templates"
+	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // The desktop's command palette, ported. Everything here mirrors an entry

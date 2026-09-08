@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Description is where a vault lives and how it is laid out.
@@ -66,6 +66,10 @@ type Backend interface {
 	// file IO, so `zn base` writes the identical on-disk format everywhere.
 	DatabaseOps() *database.Ops
 
+	// ListComments and WriteComments are a note's comment sidecar as stored;
+	// WriteComments replaces the list.
+	ListComments(ctx context.Context, rel string) ([]vault.NoteComment, error)
+	WriteComments(ctx context.Context, rel string, comments []vault.NoteComment) ([]vault.NoteComment, error)
 	ListTemplates(ctx context.Context) ([]vault.CustomTemplateFile, error)
 	WriteTemplate(ctx context.Context, input vault.WriteTemplateInput) (vault.CustomTemplateFile, error)
 	DeleteTemplate(ctx context.Context, sourcePath string) error

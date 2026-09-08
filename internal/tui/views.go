@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // view is a built-in tab: Tasks, Tags, Trash and friends.

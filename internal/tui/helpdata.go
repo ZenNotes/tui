@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
+	"github.com/ZenNotes/tui/internal/config"
 )
 
 func configPathInfo() (string, string, error) {

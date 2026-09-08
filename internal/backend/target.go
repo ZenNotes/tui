@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/remote"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/remote"
 )
 
 // Kind says where a vault lives.

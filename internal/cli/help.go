@@ -67,6 +67,12 @@ var helpSections = []helpSection{
 		{"task list", "Open checkbox tasks across all notes", "--unchecked  --all  --tag <t>  --include-excluded  --json"},
 		{"task toggle <id>", "Flip a task checkbox by stable id", ""},
 	}},
+	{"COMMENTS", []helpRow{
+		{"comment list <path>", "Comment threads on a note, with anchors and replies", "--all  --json"},
+		{"comment add <path> \"<body>\"", "Start a thread, optionally anchored to text from the note", "--anchor <text>  --author <name>  --json"},
+		{"comment reply <path> <id> \"<body>\"", "Answer in a thread", "--author <name>  --json"},
+		{"comment resolve <path> <id>", "Resolve a thread (or reopen it)", "--reopen  --json"},
+	}},
 	{"VAULT", []helpRow{
 		{"setup", "Guided first run: create a vault, use a folder, or connect to a server", ""},
 		{"init [folder]", "Create a vault (default ~/Notes), remember it, make it the default", "--name <n>  --no-default  --json"},
@@ -117,7 +123,6 @@ var environmentRows = []helpRow{
 	{"ZENNOTES_VAULT", "Default vault root when --vault is not given", ""},
 	{"ZENNOTES_REMOTE_TOKEN", "Server token for CI and scripts; `zn connect` stores one for you otherwise", ""},
 	{"ZENNOTES_SERVER", "Default server when neither --vault nor --server is given (otherwise zn follows the vault the app has open)", ""},
-	{"ZENNOTES_REMOTE_TOKEN", "Auth token for a server; for CI and headless use", ""},
 	{"ZENNOTES_CONFIG_DIR", "Override the ZenNotes config directory", ""},
 	{"ZENNOTES_APP_PATH", "Path to the ZenNotes desktop app, for `zn open` when it is not installed in the usual place", ""},
 	{"NO_COLOR", "Disable ANSI color (industry standard)", ""},

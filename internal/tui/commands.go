@@ -9,12 +9,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/periodic"
-	"github.com/ZenNotes/zennotescli/internal/search"
-	"github.com/ZenNotes/zennotescli/internal/vault"
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/periodic"
+	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // command is one ex command the host owns, also listed in the palette.

@@ -11,10 +11,10 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/config"
-	"github.com/ZenNotes/zennotescli/internal/remote"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/remote"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Getting a vault in front of zn: create one, point at a folder, or

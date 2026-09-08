@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/editor"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
+	"github.com/ZenNotes/tui/internal/backend"
 )
 
 // editorDoneMsg arrives when the external editor exits.

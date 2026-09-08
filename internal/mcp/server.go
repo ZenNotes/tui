@@ -17,9 +17,9 @@ import (
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/remote"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/remote"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Backend is what the tools run against.
@@ -438,6 +438,77 @@ func tools() []toolDef {
 					return nil, err
 				}
 				return map[string]any{"ok": true}, nil
+			},
+		},
+		{
+			name:        "list_comments",
+			description: "The comment threads on a note: each top-level comment with the text it is anchored to, the line that text sits on now, who wrote it (author is null for the vault owner), and its replies in order. Read this before reviewing or answering a discussion; unresolved threads only unless include_resolved is true.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"Vault-relative note path."},"include_resolved":{"type":"boolean","description":"Also list resolved threads. Default false."}},"required":["path"]}`,
+			handler: func(ctx context.Context, a args, b Backend) (any, error) {
+				rel, err := a.requireString("path")
+				if err != nil {
+					return nil, err
+				}
+				return backend.ListCommentThreads(ctx, b, rel, a.boolIs("include_resolved"))
+			},
+		},
+		{
+			name:        "add_comment",
+			description: "Start a new comment thread on a note, attributed to you. Pass anchor_text, a passage copied exactly from the note, to attach the comment to it (the app highlights it and jumps there); omit it for a note-level comment. Markdown is fine in the body. Returns the new thread.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"Vault-relative note path."},"body":{"type":"string","description":"The comment, in Markdown."},"anchor_text":{"type":"string","description":"Text from the note the comment is about, verbatim. Omit for a note-level comment."},"author":{"type":"string","description":"Display name to sign with, such as the assistant's name. Omit to write as the vault owner."}},"required":["path","body"]}`,
+			handler: func(ctx context.Context, a args, b Backend) (any, error) {
+				rel, err := a.requireString("path")
+				if err != nil {
+					return nil, err
+				}
+				body, err := a.requireString("body")
+				if err != nil {
+					return nil, err
+				}
+				anchor, _, _ := a.optionalString("anchor_text")
+				author, _, _ := a.optionalString("author")
+				return backend.AddComment(ctx, b, backend.AddCommentInput{Path: rel, Body: body, AnchorText: anchor, Author: author})
+			},
+		},
+		{
+			name:        "reply_to_comment",
+			description: "Answer a comment in its thread, attributed to you. id is a thread id (or any reply id in it) from list_comments; the reply keeps the thread's anchor. Use this to respond to the user's comments the way you would on a pull request, instead of editing the note body. Returns the updated thread.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"Vault-relative note path."},"id":{"type":"string","description":"A comment id from list_comments."},"body":{"type":"string","description":"The reply, in Markdown."},"author":{"type":"string","description":"Display name to sign with, such as the assistant's name. Omit to write as the vault owner."}},"required":["path","id","body"]}`,
+			handler: func(ctx context.Context, a args, b Backend) (any, error) {
+				rel, err := a.requireString("path")
+				if err != nil {
+					return nil, err
+				}
+				id, err := a.requireString("id")
+				if err != nil {
+					return nil, err
+				}
+				body, err := a.requireString("body")
+				if err != nil {
+					return nil, err
+				}
+				author, _, _ := a.optionalString("author")
+				return backend.ReplyToComment(ctx, b, backend.ReplyInput{Path: rel, ID: id, Body: body, Author: author})
+			},
+		},
+		{
+			name:        "resolve_comment",
+			description: "Mark a comment thread resolved (or reopen it with resolved: false). Resolve only when the discussion is settled or the user asks; the thread stays in the note's history and moves to the Resolved section of the app's Comments panel.",
+			schema:      `{"type":"object","properties":{"path":{"type":"string","description":"Vault-relative note path."},"id":{"type":"string","description":"A comment id from list_comments."},"resolved":{"type":"boolean","description":"false reopens the thread. Default true."}},"required":["path","id"]}`,
+			handler: func(ctx context.Context, a args, b Backend) (any, error) {
+				rel, err := a.requireString("path")
+				if err != nil {
+					return nil, err
+				}
+				id, err := a.requireString("id")
+				if err != nil {
+					return nil, err
+				}
+				resolved := true
+				if v, ok := a["resolved"].(bool); ok {
+					resolved = v
+				}
+				return backend.ResolveComment(ctx, b, rel, id, resolved)
 			},
 		},
 		pathTool("archive_note", "Move a note into archive/.", func(ctx context.Context, b Backend, rel string) (any, error) {

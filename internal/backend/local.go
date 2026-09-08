@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Local is a vault on this machine: every method is the vault engine bound
@@ -41,6 +41,12 @@ func (l *Local) Describe(context.Context) (Description, error) {
 
 func (l *Local) ListNotes(context.Context) ([]vault.NoteMeta, error)   { return l.vault.ListNotes() }
 func (l *Local) ListAssets(context.Context) ([]vault.AssetMeta, error) { return l.vault.ListAssets() }
+func (l *Local) ListComments(_ context.Context, rel string) ([]vault.NoteComment, error) {
+	return l.vault.ReadNoteComments(rel)
+}
+func (l *Local) WriteComments(_ context.Context, rel string, comments []vault.NoteComment) ([]vault.NoteComment, error) {
+	return l.vault.WriteNoteComments(rel, comments)
+}
 func (l *Local) ReadAsset(_ context.Context, rel string) ([]byte, error) {
 	abs, err := vault.SafeJoin(l.Root(), rel)
 	if err != nil {

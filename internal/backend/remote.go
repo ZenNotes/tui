@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/remote"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/remote"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Remote is a vault behind a self-hosted server, reached over the same HTTP
@@ -70,6 +70,14 @@ func (r *Remote) ListNotes(ctx context.Context) ([]vault.NoteMeta, error) {
 }
 func (r *Remote) ListAssets(ctx context.Context) ([]vault.AssetMeta, error) {
 	return r.client.ListAssets(ctx)
+}
+
+func (r *Remote) ListComments(ctx context.Context, rel string) ([]vault.NoteComment, error) {
+	return r.client.ReadComments(ctx, rel)
+}
+
+func (r *Remote) WriteComments(ctx context.Context, rel string, comments []vault.NoteComment) ([]vault.NoteComment, error) {
+	return r.client.WriteComments(ctx, rel, comments)
 }
 
 func (r *Remote) ReadAsset(ctx context.Context, rel string) ([]byte, error) {

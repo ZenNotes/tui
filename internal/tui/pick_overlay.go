@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/search"
-	"github.com/ZenNotes/zennotescli/internal/vim"
+	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // pickItem is one checkable entry of a pickOverlay.

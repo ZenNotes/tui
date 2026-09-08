@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/backend"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 var topFolders = []vault.NoteFolder{vault.FolderInbox, vault.FolderQuick, vault.FolderArchive}

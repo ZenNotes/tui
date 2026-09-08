@@ -1,4 +1,4 @@
-module github.com/ZenNotes/zennotescli
+module github.com/ZenNotes/tui
 
 go 1.26.0
 

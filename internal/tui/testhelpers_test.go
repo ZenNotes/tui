@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/keymaps"
 )
 
 func newTestResolver() *keymaps.Resolver { return keymaps.NewResolver(nil) }

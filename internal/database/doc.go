@@ -3,7 +3,7 @@ package database
 import (
 	"strings"
 
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 const (

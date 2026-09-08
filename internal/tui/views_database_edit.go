@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/database"
-	"github.com/ZenNotes/zennotescli/internal/search"
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Cell editing is type-aware: checkboxes flip, select fields open option

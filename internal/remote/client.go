@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZenNotes/zennotescli/internal/vault"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 var schemeRe = regexp.MustCompile(`(?i)^https?://`)
@@ -154,6 +154,30 @@ func (c *Client) GetRaw(ctx context.Context, path string) ([]byte, error) {
 		return nil, &RequestError{Status: resp.StatusCode, Message: requestErrorMessage(c.BaseURL, path, resp.StatusCode, http.StatusText(resp.StatusCode), strings.TrimSpace(string(text)))}
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+}
+
+// ReadComments loads a note's comment sidecar from the server.
+func (c *Client) ReadComments(ctx context.Context, rel string) ([]vault.NoteComment, error) {
+	var out []vault.NoteComment
+	if err := c.Get(ctx, "/api/comments/read?path="+url.QueryEscape(rel), &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []vault.NoteComment{}
+	}
+	return out, nil
+}
+
+// WriteComments replaces a note's comments on the server.
+func (c *Client) WriteComments(ctx context.Context, rel string, comments []vault.NoteComment) ([]vault.NoteComment, error) {
+	var out []vault.NoteComment
+	if err := c.Post(ctx, "/api/comments/write", map[string]any{"path": rel, "comments": comments}, &out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []vault.NoteComment{}
+	}
+	return out, nil
 }
 
 // ReadAsset fetches an attachment's bytes.
