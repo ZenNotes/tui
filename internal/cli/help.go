@@ -9,9 +9,6 @@ import (
 	"golang.org/x/term"
 )
 
-// Version is stamped at build time (`-ldflags "-X .../cli.Version=..."`).
-var Version = "0.1.0"
-
 const (
 	terminalColumnsFallback = 80
 	terminalColumnsCap      = 100

@@ -1,0 +1,60 @@
+# GoReleaser builds the release archives for every platform from a tag push;
+# see .github/workflows/release.yml. `goreleaser release --snapshot --clean`
+# builds the same set locally without publishing.
+version: 2
+
+project_name: zn
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: zn
+    main: ./cmd/zn
+    binary: zn
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/ZenNotes/tui/internal/cli.Version={{.Version}}
+
+archives:
+  - id: zn
+    formats: [tar.gz]
+    name_template: "zn_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^Chore"
+      - "^Docs"
+
+release:
+  github:
+    owner: ZenNotes
+    name: tui
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    Download the archive for your platform, unpack it, and put `zn` on your PATH.
+    With Go installed, `go install github.com/ZenNotes/tui/cmd/zn@latest` builds the same thing.

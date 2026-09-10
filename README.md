@@ -27,13 +27,36 @@ vault too.
 
 ## Install
 
+`zn` is a single static binary with no runtime dependencies. Pick one:
+
+**Download a release.** Grab the archive for your platform from the
+[releases page](https://github.com/ZenNotes/tui/releases) (Linux, macOS and
+Windows, amd64 and arm64), unpack it, and put `zn` somewhere on your PATH:
+
+```bash
+tar -xzf zn_*_linux_amd64.tar.gz
+sudo install -m 755 zn /usr/local/bin/zn
+```
+
+**Use Go.** With Go 1.26 or newer installed (an older `go` from 1.21 on
+fetches the right toolchain by itself):
+
 ```bash
 go install github.com/ZenNotes/tui/cmd/zn@latest
 ```
 
-Or build from a checkout with `go build -o zn ./cmd/zn` (Go 1.24 or newer).
-The binary has no runtime dependencies. Prebuilt binaries and a Homebrew
-formula are not published yet.
+`go install` prints nothing on success and puts the binary in
+`$(go env GOPATH)/bin`, usually `~/go/bin`. That folder is often not on
+PATH, so if `zn` is "not found" afterwards, add it:
+
+```bash
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+**Build from a checkout** with `go build -o zn ./cmd/zn`.
+
+Either way, `zn --version` confirms the install. Homebrew and AUR packages
+are not published yet.
 
 ## Quick start
 

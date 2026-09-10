@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"golang.org/x/image/draw"
-	"golang.org/x/sys/unix"
 
 	_ "image/gif"
 	_ "image/jpeg"
@@ -86,16 +85,6 @@ func newImageStore() *imageStore {
 	s := &imageStore{byKey: map[string]*termImage{}, nextID: 1000, out: os.Stdout}
 	s.cellW, s.cellH = cellPixelSize()
 	return s
-}
-
-// cellPixelSize asks the terminal for its cell size; 10x20 is the usual
-// fallback when the terminal (or tmux) does not report pixels.
-func cellPixelSize() (int, int) {
-	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err == nil && ws.Col > 0 && ws.Row > 0 && ws.Xpixel > 0 && ws.Ypixel > 0 {
-		return max(4, int(ws.Xpixel)/int(ws.Col)), max(8, int(ws.Ypixel)/int(ws.Row))
-	}
-	return 10, 20
 }
 
 func (a *App) images() *imageStore {
