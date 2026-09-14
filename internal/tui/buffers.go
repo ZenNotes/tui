@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -25,6 +26,8 @@ type noteBuffer struct {
 	diskChanged bool
 	saveAt      time.Time
 	saving      bool
+	loading     bool
+	afterLoad   []func(*noteBuffer)
 	loadErr     error
 	rows        []rowInfo
 
@@ -36,6 +39,7 @@ const autosaveDelay = 800 * time.Millisecond
 
 type saveResultMsg struct {
 	path string
+	buf  *noteBuffer
 	meta vault.NoteMeta
 	text string
 	err  error
@@ -44,11 +48,12 @@ type saveResultMsg struct {
 // editorOptions derives the engine options from the preferences.
 func (a *App) editorOptions() vim.Options {
 	opts := vim.DefaultOptions()
+	opts.WrappedLineMotions = a.prefs.VimWrappedLineMotions == "display"
 	opts.TabSize = a.prefs.EditorTabSize
 	opts.ScrollOff = a.prefs.EditorScrollOff
 	opts.InsertEscape = a.prefs.VimInsertEscape
 	opts.AutoPairs = a.prefs.AutoPairs
-	opts.AutoPairQuotes = false
+	opts.AutoPairQuotes = a.prefs.AutoPairQuotesInProse
 	opts.TextReplacements = a.prefs.TextReplacements
 	opts.TextReplacementsEnabled = a.prefs.TextReplacementsEnabled
 	opts.YankToClipboard = a.prefs.VimYankToClipboard
@@ -62,7 +67,16 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	if buf, ok := a.buffers[path]; ok {
 		return buf, nil
 	}
-	content, err := a.backend.ReadNote(context.Background(), path)
+	if a.deferReads {
+		meta, _ := a.noteMeta(path)
+		buf := &noteBuffer{path: path, meta: meta, loading: true}
+		buf.ed = vim.New("", a.editorOptions(), a.editorHooks(buf))
+		buf.ed.MarkSaved()
+		a.buffers[path] = buf
+		a.queue(a.readBufferCmd(buf))
+		return buf, nil
+	}
+	content, err := readSnapshot(context.Background(), a.backend, path)
 	if err != nil {
 		return nil, err
 	}
@@ -75,6 +89,18 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 
 func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
 	return vim.Hooks{
+		DisplayRowBounds: func(p vim.Pos) (int, int) {
+			line := buf.ed.LineRunes(p.Line)
+			if !a.prefs.WordWrap {
+				return 0, len(line)
+			}
+			for _, s := range wrapLine(line, a.editorTextWidth(buf)) {
+				if p.Col < s.end || s.end == len(line) {
+					return s.start, s.end
+				}
+			}
+			return 0, len(line)
+		},
 		ExCommand: func(cmd vim.ExCommand) (bool, error) {
 			return a.runEx(buf, cmd)
 		},
@@ -116,16 +142,25 @@ func (a *App) editorLineRows(buf *noteBuffer, line int) int {
 
 // dirty reports unsaved edits.
 func (b *noteBuffer) dirty() bool {
-	return b.ed.Text() != b.savedText
+	return !b.loading && b.ed.Text() != b.savedText
 }
 
 // saveBuffer writes a dirty buffer through the backend.
 func (a *App) saveBuffer(buf *noteBuffer) error {
+	if buf != nil && buf.loading {
+		return fmt.Errorf("note is still loading")
+	}
 	if buf == nil || !buf.dirty() {
 		return nil
 	}
+	if buf.saving {
+		return fmt.Errorf("save is still in progress; retry when it finishes")
+	}
+	if buf.diskChanged {
+		return errNoteConflict
+	}
 	text := buf.ed.Text()
-	meta, err := a.backend.WriteNote(context.Background(), buf.path, text)
+	meta, err := writeSnapshot(context.Background(), a.backend, buf.path, buf.savedText, text)
 	if err != nil {
 		return err
 	}
@@ -152,7 +187,7 @@ func (a *App) saveAllBuffers() error {
 func (a *App) autosaveDue(now time.Time) []*noteBuffer {
 	out := []*noteBuffer{}
 	for _, buf := range a.buffers {
-		if buf.dirty() && !buf.saveAt.IsZero() && now.After(buf.saveAt) {
+		if !buf.saving && !buf.diskChanged && buf.dirty() && !buf.saveAt.IsZero() && now.After(buf.saveAt) {
 			out = append(out, buf)
 		}
 	}
@@ -162,24 +197,8 @@ func (a *App) autosaveDue(now time.Time) []*noteBuffer {
 // reloadBuffer re-reads a note the watcher saw change. A clean buffer takes
 // the new text; a dirty one is flagged and keeps the edits.
 func (a *App) reloadBuffer(buf *noteBuffer) {
-	content, err := a.backend.ReadNote(context.Background(), buf.path)
-	if err != nil {
-		return
-	}
-	if content.Body == buf.ed.Text() {
-		buf.savedText = content.Body
-		buf.meta = content.NoteMeta
-		buf.ed.MarkSaved()
-		return
-	}
-	if buf.dirty() {
-		buf.diskChanged = true
-		return
-	}
-	buf.ed.ReplaceText(content.Body)
-	buf.savedText = content.Body
-	buf.meta = content.NoteMeta
-	buf.ed.MarkSaved()
+	content, err := readSnapshot(context.Background(), a.backend, buf.path)
+	a.reconcileBuffer(buf, content, err)
 }
 
 // closeBufferIfUnused drops a buffer no tab shows.
@@ -192,7 +211,10 @@ func (a *App) closeBufferIfUnused(path string) {
 		}
 	}
 	if buf, ok := a.buffers[path]; ok {
-		_ = a.saveBuffer(buf)
+		if err := a.saveBuffer(buf); err != nil {
+			a.notifyError(err.Error())
+			return
+		}
 		delete(a.buffers, path)
 	}
 }

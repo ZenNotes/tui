@@ -30,11 +30,23 @@ func (l *leaderState) pendingLabel() string {
 // handleKey routes one key: overlay first, then a leader or pane prefix in
 // progress, then the focused surface.
 func (a *App) handleKey(k vim.Key) tea.Cmd {
+	for _, ignored := range a.prefs.IgnoredKeys {
+		keys := bindingKeys(ignored)
+		if len(keys) == 1 && sameKey(k, keys[0]) {
+			return nil
+		}
+	}
+	a.deferReads = true
+	defer func() { a.deferReads = false }()
 	if a.message != "" && !(k.Is("esc") && a.overlay == nil) {
 		a.message, a.messageErr = "", false
 	}
 	if a.overlay != nil {
 		a.overlay.handleKey(a, k)
+		return a.afterKey()
+	}
+	if k.Is("f2") {
+		a.contextActions()
 		return a.afterKey()
 	}
 	if a.leader != nil {
@@ -64,6 +76,18 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		if a.chordKey(k, true) {
 			return a.afterKey()
 		}
+		if buf.loading {
+			return a.afterKey()
+		}
+		if buf.ed.Mode() == vim.ModeInsert {
+			if isMarkKey(k) {
+				a.markdownCompletion()
+				return a.afterKey()
+			}
+			if a.markdownSnippet(buf, k) {
+				return a.afterKey()
+			}
+		}
 		buf.ed.HandleKey(k)
 		if k.IsRune('[') {
 			a.maybeWikilinkCompletion(buf)
@@ -84,6 +108,8 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		a.sidebar.handleKey(a, k)
 	case focusOutline:
 		a.outline.handleKey(a, k)
+	case focusComments:
+		a.comments.handleKey(a, k)
 	case focusConnections:
 		a.connections.handleKey(a, k)
 	case focusCalendar:
@@ -96,16 +122,14 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 
 // afterKey flushes queued commands and the quit signal.
 func (a *App) afterKey() tea.Cmd {
+	a.persistPreferences()
 	if a.quitting {
 		return tea.Quit
 	}
-	if a.leader != nil && !a.leader.showHints && a.prefs.WhichKeyHints && a.leader.seq != a.leaderHintScheduled {
+	if a.leader != nil && !(a.prefs.WhichKeyHints && a.prefs.WhichKeyHintMode == "sticky") && a.leader.seq != a.leaderHintScheduled {
 		a.leaderHintScheduled = a.leader.seq
 		seq := a.leader.seq
-		delay := time.Duration(a.prefs.WhichKeyHintTimeoutMs) * time.Millisecond
-		if a.prefs.WhichKeyHintMode != "timed" {
-			delay = 0
-		}
+		delay := time.Duration(max(400, min(3000, a.prefs.WhichKeyHintTimeoutMs))) * time.Millisecond
 		a.queue(tea.Tick(delay, func(time.Time) tea.Msg { return leaderHintMsg{seq: seq} }))
 	}
 	if len(a.pendingCmds) == 0 {
@@ -124,7 +148,7 @@ func (a *App) queue(cmd tea.Cmd) {
 
 // refreshIndex reloads notes, folders and tasks in the background.
 func (a *App) refreshIndex() {
-	a.queue(func() tea.Msg { return a.loadIndexCmd()() })
+	a.queue(a.loadIndexCmd())
 }
 
 func (a *App) quit() {
@@ -199,6 +223,9 @@ func (a *App) chordKey(k vim.Key, editing bool) bool {
 	case k.IsCtrl('g'):
 		a.openCommandPalette()
 	case k.IsCtrl('z'):
+		if editing && !a.prefs.VimMode {
+			return false
+		}
 		a.queue(tea.Suspend)
 	case a.tabSelectChord(k):
 	case editing && a.prefs.VimMode:
@@ -245,6 +272,12 @@ func (a *App) tabSelectChord(k vim.Key) bool {
 
 // paneKey is a key for the active pane's content.
 func (a *App) paneKey(k vim.Key) {
+	if buf := a.activeBuffer(); buf != nil && buf.loading {
+		if k.IsRune(':') {
+			a.openLocalEx()
+		}
+		return
+	}
 	t := a.activeTab()
 	if t == nil {
 		if a.prefs.VimMode && k.IsRune('?') {
@@ -267,6 +300,15 @@ func (a *App) paneKey(k vim.Key) {
 	buf := a.buffers[t.path]
 	if buf == nil {
 		return
+	}
+	if t.mode != modePreview && buf.ed.Mode() == vim.ModeInsert {
+		if isMarkKey(k) {
+			a.markdownCompletion()
+			return
+		}
+		if a.markdownSnippet(buf, k) {
+			return
+		}
 	}
 	if t.mode == modePreview {
 		a.previewKey(t, buf, k)
@@ -390,7 +432,7 @@ func (a *App) focusDirection(dir rune) {
 			a.activePane = a.leftmostPane()
 		}
 		return
-	case focusOutline, focusConnections, focusCalendar:
+	case focusOutline, focusConnections, focusCalendar, focusComments:
 		if dir == 'h' {
 			a.focus = focusPane
 			a.activePane = a.rightmostPane()
@@ -437,6 +479,8 @@ func (a *App) rightmostPane() *pane {
 
 func (a *App) sidePanelFocus() focusTarget {
 	switch {
+	case a.commentsOpen:
+		return focusComments
 	case a.outlineOpen:
 		return focusOutline
 	case a.connectionsOpen:
@@ -469,7 +513,7 @@ func (a *App) toggleSidePanel(flag *bool, focus focusTarget) {
 		a.layout()
 		return
 	}
-	a.outlineOpen, a.connectionsOpen, a.calendarOpen = false, false, false
+	a.outlineOpen, a.connectionsOpen, a.calendarOpen, a.commentsOpen = false, false, false, false
 	*flag = true
 	a.zen = false
 	a.focus = focus
@@ -478,7 +522,7 @@ func (a *App) toggleSidePanel(flag *bool, focus focusTarget) {
 }
 
 func (a *App) closeSidePanels() {
-	a.outlineOpen, a.connectionsOpen, a.calendarOpen = false, false, false
+	a.outlineOpen, a.connectionsOpen, a.calendarOpen, a.commentsOpen = false, false, false, false
 	if a.focus != focusPane && a.focus != focusSidebar {
 		a.focus = focusPane
 	}
@@ -515,6 +559,9 @@ func (a *App) setPaneMode(mode paneMode) {
 		return
 	}
 	t.mode = mode
+	if a.prefs.RetainViewMode {
+		a.prefs.DefaultPaneMode = string(mode)
+	}
 	a.noteModes[t.path] = mode
 	if mode != modeEdit && t.preview == nil {
 		t.preview = &previewState{}
@@ -528,11 +575,11 @@ func (a *App) setPaneMode(mode paneMode) {
 
 func (a *App) saveNow() {
 	if buf := a.activeBuffer(); buf != nil {
-		if err := a.saveBuffer(buf); err != nil {
-			a.notifyError("Save failed: " + err.Error())
+		if buf.diskChanged {
+			a.conflictMenu()
 			return
 		}
-		a.notify("Saved " + a.tabTitle(a.activeTab()))
+		a.queueSave(buf)
 	}
 }
 
@@ -721,10 +768,7 @@ func (a *App) gotoJump(j jumpEntry) {
 		return
 	}
 	a.openNoteQuiet(j.path)
-	if buf := a.buffers[j.path]; buf != nil {
-		buf.ed.SetCursor(j.pos)
-		buf.ed.EnsureCursorVisible()
-	}
+	a.withLoadedBuffer(j.path, func(buf *noteBuffer) { buf.ed.SetCursor(j.pos); buf.ed.EnsureCursorVisible() })
 	a.focus = focusPane
 }
 
@@ -733,14 +777,14 @@ func (a *App) gotoJump(j jumpEntry) {
 func (a *App) startLeader() {
 	a.leaderSeq++
 	a.leader = &leaderState{seq: a.leaderSeq, node: a.leaderTree()}
-	if a.prefs.WhichKeyHints && a.prefs.WhichKeyHintMode != "timed" {
+	if a.prefs.WhichKeyHints {
 		a.leader.showHints = true
 	}
 }
 
 func (a *App) leaderKey(k vim.Key) {
 	l := a.leader
-	if k.Is("esc") || k.IsCtrl('c') {
+	if k.Is("esc") || k.IsCtrl('c') || (a.isLeaderKey(k) && a.prefs.WhichKeyHintMode == "sticky") {
 		a.leader = nil
 		return
 	}
@@ -755,7 +799,7 @@ func (a *App) leaderKey(k vim.Key) {
 				l.node = child
 				a.leaderSeq++
 				l.seq = a.leaderSeq
-				if a.prefs.WhichKeyHints && a.prefs.WhichKeyHintMode != "timed" {
+				if a.prefs.WhichKeyHints {
 					l.showHints = true
 				}
 				return

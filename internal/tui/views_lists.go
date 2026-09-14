@@ -79,6 +79,9 @@ func (v *noteListView) render(a *App, w, h int, focused bool) string {
 	if v.filter != "" {
 		header += th.Muted.Render("  · filter: ") + th.Tag.Render(v.filter)
 	}
+	if len(a.markedNotes) > 0 {
+		header += fmt.Sprintf(" · %d marked", len(a.markedNotes))
+	}
 	lines := []string{padRight(header, w)}
 	rowsPer := 2
 	v.rows = max(1, (h-1)/rowsPer)
@@ -97,6 +100,9 @@ func (v *noteListView) render(a *App, w, h int, focused bool) string {
 	}
 	for i := v.list.scroll; i < len(v.notes) && len(lines)+rowsPer <= h+1; i++ {
 		n := v.notes[i]
+		if a.markedNotes[n.Path] {
+			n.Title = "✓ " + n.Title
+		}
 		age := formatAge(n.UpdatedAt)
 		titleLine := " " + truncateCells(n.Title, w-4-len(age)) + strings.Repeat(" ", max(1, w-3-cellWidth(n.Title)-len(age))) + age
 		excerpt := "   " + truncateCells(strings.ReplaceAll(n.Excerpt, "\n", " "), w-4)
@@ -129,6 +135,34 @@ func formatAge(unixMs int64) string {
 }
 
 func (v *noteListView) handleKey(a *App, k vim.Key) bool {
+	if isMarkKey(k) {
+		if n := v.selected(); n != nil {
+			a.markPath(n.Path)
+		}
+		return true
+	}
+	if k.IsRune('B') {
+		a.bulkMenu()
+		return true
+	}
+	if k.Shift && (k.Is("up") || k.Is("down")) {
+		if a.markedNotes == nil {
+			a.markedNotes = map[string]bool{}
+		}
+		if n := v.selected(); n != nil {
+			a.markedNotes[n.Path] = true
+		}
+		delta := 1
+		if k.Is("up") {
+			delta = -1
+		}
+		v.list.move(delta, len(v.notes))
+		if n := v.selected(); n != nil {
+			a.markedNotes[n.Path] = true
+		}
+		return true
+	}
+
 	n := len(v.notes)
 	if a.listNav(&v.list, k, n, v.rows) {
 		return true

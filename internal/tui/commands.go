@@ -37,11 +37,39 @@ func (a *App) commandTable() []command {
 		return func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openVirtualByPath(path); return nil }
 	}
 	a.commands = []command{
+		{names: []string{"complete"}, title: "Complete Markdown token", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.markdownCompletion(); return nil }},
+		{names: []string{"table"}, title: "Markdown table actions", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.tableMenu(); return nil }},
+		{names: []string{"formatting"}, title: "Formatting menu", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.formatMenu(); return nil }},
+		{names: []string{"templates"}, title: "Manage templates", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openTemplates(); return nil }},
+		{names: []string{"bulk"}, title: "Actions on marked notes", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.bulkMenu(); return nil }},
+		{names: []string{"mark"}, title: "Mark active note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+			if buf == nil {
+				buf = a.activeBuffer()
+			}
+			if buf != nil {
+				a.markPath(buf.path)
+			}
+			return nil
+		}},
+		{names: []string{"comments"}, title: "Note comments", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openComments(); return nil }},
+		{names: []string{"filters"}, title: "Saved task filters", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.savedTaskFilters(); return nil }},
+		{names: []string{"savefilter"}, title: "Save current task filter", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.saveTaskFilter(); return nil }},
+		{names: []string{"boardoptions"}, title: "Task board options", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+			if v := a.activeTasksView(); v != nil {
+				v.boardMenu(a)
+			}
+			return nil
+		}},
+		{names: []string{"conflict"}, title: "Resolve external note changes", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.conflictMenu(); return nil }},
 		{names: []string{"w", "write", "save"}, title: "Save note", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
 			if strings.TrimSpace(cmd.Args) != "" {
 				return a.saveAs(buf, cmd.Args)
 			}
-			return a.saveBufferReport(buf)
+			if buf != nil && buf.diskChanged {
+				return errNoteConflict
+			}
+			a.queueSave(buf)
+			return nil
 		}},
 		{names: []string{"q", "quit", "close"}, title: "Close tab", hint: ":q", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
 			return a.closeActiveTabCommand(cmd.Bang)
@@ -86,7 +114,7 @@ func (a *App) commandTable() []command {
 			a.cycleTab(-1)
 			return nil
 		}},
-		{names: []string{"buffers", "ls", "files"}, title: "List open buffers", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"buffers", "ls"}, title: "List open buffers", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
 			a.openBufferPicker()
 			return nil
 		}},
@@ -321,7 +349,7 @@ func (a *App) commandTable() []command {
 			} else if word == "builtins" {
 				a.prefs.HideBuiltinTemplates = !a.prefs.HideBuiltinTemplates
 				if a.prefs.HideBuiltinTemplates {
-					a.notify("Built-in templates hidden (editor.hide_builtin_templates in config.toml keeps it)")
+					a.notify("Built-in templates hidden")
 				} else {
 					a.notify("Built-in templates restored")
 				}
@@ -464,7 +492,7 @@ func (a *App) commandTable() []command {
 			a.openTextSearch(strings.TrimSpace(cmd.Args))
 			return nil
 		}},
-		{names: []string{"notes", "files"}, title: "Search notes", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"notes"}, title: "Search notes", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
 			a.openNoteSearch(strings.TrimSpace(cmd.Args))
 			return nil
 		}},
@@ -506,26 +534,15 @@ func (a *App) commandTable() []command {
 			dv.convertToFolder(a, nil)
 			return nil
 		}},
-		{names: []string{"unbind"}, title: "Unbind a keymap action (this session)", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
-			id := strings.TrimSpace(cmd.Args)
-			if !a.keymap.Set(id, "") {
-				return fmt.Errorf("unknown action id: %s (see :keymaps)", id)
-			}
-			a.notify("Unbound " + id + " for this session; add `\"" + id + "\" = \"\"` under [keymaps] in config.toml to keep it")
-			return nil
-		}},
-		{names: []string{"bind", "map"}, title: "Bind a keymap action (this session)", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
-			parts := strings.Fields(cmd.Args)
-			if len(parts) < 2 {
+		{names: []string{"config"}, title: "Edit config.toml", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return a.editConfig() }},
+		{names: []string{"reloadconfig"}, title: "Reload preferences", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return a.reloadPreferences() }},
+		{names: []string{"unbind"}, title: "Unbind a keymap action", run: func(a *App, _ *noteBuffer, c vim.ExCommand) error { return a.saveKeymap(strings.TrimSpace(c.Args), "") }},
+		{names: []string{"bind", "map"}, title: "Bind a keymap action", run: func(a *App, _ *noteBuffer, c vim.ExCommand) error {
+			p := strings.Fields(c.Args)
+			if len(p) < 2 {
 				return fmt.Errorf("usage: :bind <action id> <keys>")
 			}
-			id := parts[0]
-			keys := strings.Join(parts[1:], " ")
-			if !a.keymap.Set(id, keys) {
-				return fmt.Errorf("unknown action id: %s (see :keymaps)", id)
-			}
-			a.notify("Bound " + id + " to " + keys + " for this session")
-			return nil
+			return a.saveKeymap(p[0], strings.Join(p[1:], " "))
 		}},
 		{names: []string{"keymaps", "keys"}, title: "Show keymap actions", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
 			a.openKeymapList()
@@ -635,7 +652,7 @@ func (a *App) commandTable() []command {
 			for _, buf := range a.buffers {
 				buf.ed.SetOptions(a.editorOptions())
 			}
-			a.notify(map[bool]string{true: "Vim mode on", false: "Vim mode off: arrows, Enter and Escape only in lists"}[a.prefs.VimMode])
+			a.notify(map[bool]string{true: "Vim mode on", false: "Vim mode off: arrows to navigate, Enter to open, F2 for actions"}[a.prefs.VimMode])
 			return nil
 		}},
 		{names: []string{"emptytrash"}, title: "Empty trash", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
@@ -872,8 +889,12 @@ func (a *App) openKeymapList() {
 		}
 		items = append(items, paletteItem{label: e.Title, detail: e.ID, hint: binding, id: e.ID})
 	}
-	a.overlay = &palette{title: "Keymap actions (override under [keymaps] in config.toml)", placeholder: "Action", items: items, filtered: items, onSelect: func(a *App, it paletteItem) {
-		a.notify(it.id + " = " + it.hint)
+	a.overlay = &palette{title: "Keymap actions · Enter changes a binding", placeholder: "Action", items: items, filtered: items, onSelect: func(a *App, it paletteItem) {
+		a.promptFor("Binding · "+it.id, a.keymap.Binding(it.id), "Empty disables this action; use terminal keys, e.g. ctrl+n", func(a *App, s string) {
+			if err := a.saveKeymap(it.id, s); err != nil {
+				a.notifyError(err.Error())
+			}
+		})
 	}}
 }
 
@@ -1046,7 +1067,7 @@ func (a *App) addTaskToDaily(text string, date time.Time) {
 		}
 		a.notify("Added task to " + date.Format("2006-01-02"))
 		a.refreshIndex()
-		a.queue(func() tea.Msg { return a.loadTasksCmd()() })
+		a.queue(a.loadTasksCmd())
 		return
 	}
 	rel := ""
@@ -1074,7 +1095,7 @@ func (a *App) addTaskToDaily(text string, date time.Time) {
 	}
 	a.notify("Added task to Tasks")
 	a.refreshIndex()
-	a.queue(func() tea.Msg { return a.loadTasksCmd()() })
+	a.queue(a.loadTasksCmd())
 }
 
 func (a *App) createFolderNamed(folder vault.NoteFolder, parent, name string) error {

@@ -113,7 +113,7 @@ func (a *App) hintLine() string {
 			line = a.keysHint(arrowHints)
 		default:
 			if tab := a.activeTab(); tab != nil && tab.view != nil {
-				line = a.keysHint(append(arrowHints, hintPair{"global.searchNotes", "search"})) + " · Vim mode off: single-key shortcuts disabled"
+				line = a.keysHint(append(arrowHints, hintPair{"global.searchNotes", "search"})) + " · F2 actions · Vim mode off"
 			} else {
 				line = a.keysHint(plainEditorHints)
 			}

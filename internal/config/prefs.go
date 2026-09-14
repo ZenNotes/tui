@@ -11,6 +11,8 @@ import (
 // honor. Defaults match the desktop's PORTABLE_DEFAULTS; a missing file or
 // key keeps the default.
 type Prefs struct {
+	VimWrappedLineMotions string
+	IgnoredKeys           []string
 	VimMode               bool
 	VimInsertEscape       string
 	VimYankToClipboard    bool
@@ -27,6 +29,10 @@ type Prefs struct {
 	CompletedTaskStyle       string
 	TimeFormat               string
 	AutoPairs                bool
+	AutoPairQuotesInProse    bool
+	TabsEnabled              bool
+	WrapTabs                 bool
+	RetainViewMode           bool
 	MarkdownSnippets         bool
 	HideBuiltinTemplates     bool
 	TextReplacementsEnabled  bool
@@ -45,6 +51,8 @@ type Prefs struct {
 	TasksViewMode           string
 	ShowArchivedTasks       bool
 	KanbanGroupBy           string
+	KanbanFolderRoot        string
+	SavedTaskFilters        map[string]string
 	KanbanStatuses          []string
 	KanbanColumnTitles      map[string]string
 	SystemFolderLabels      map[string]string
@@ -66,6 +74,9 @@ type Prefs struct {
 func DefaultPrefs() Prefs {
 	return Prefs{
 		VimMode:                  true,
+		VimWrappedLineMotions:    "display",
+		TabsEnabled:              true,
+		SavedTaskFilters:         map[string]string{},
 		WhichKeyHints:            true,
 		WhichKeyHintMode:         "timed",
 		WhichKeyHintTimeoutMs:    900,
@@ -117,6 +128,9 @@ func LoadPrefs() (Prefs, string, error) {
 	if _, err := toml.Decode(string(raw), &doc); err != nil {
 		return prefs, path, err
 	}
+	if err := validateKnownValues(doc); err != nil {
+		return prefs, path, err
+	}
 	applyPrefs(&prefs, doc)
 	return prefs, path, nil
 }
@@ -128,6 +142,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	}
 	vim := section("vim")
 	setBool(vim, "enabled", &p.VimMode)
+	setString(vim, "wrapped_line_motions", &p.VimWrappedLineMotions)
 	setString(vim, "insert_escape", &p.VimInsertEscape)
 	setBool(vim, "yank_to_clipboard", &p.VimYankToClipboard)
 	setBool(vim, "which_key_hints", &p.WhichKeyHints)
@@ -144,6 +159,17 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setString(editor, "completed_task_style", &p.CompletedTaskStyle)
 	setString(editor, "time_format", &p.TimeFormat)
 	setBool(editor, "auto_pairs", &p.AutoPairs)
+	setBool(editor, "auto_pair_quotes_in_prose", &p.AutoPairQuotesInProse)
+	setBool(editor, "tabs_enabled", &p.TabsEnabled)
+	setBool(editor, "wrap_tabs", &p.WrapTabs)
+	setBool(editor, "keep_view_mode_across_notes", &p.RetainViewMode)
+	if list, ok := editor["ignored_keys"].([]any); ok {
+		for _, v := range list {
+			if key, ok := v.(string); ok {
+				p.IgnoredKeys = append(p.IgnoredKeys, key)
+			}
+		}
+	}
 	setBool(editor, "markdown_snippets", &p.MarkdownSnippets)
 	setBool(editor, "hide_builtin_templates", &p.HideBuiltinTemplates)
 	setBool(editor, "text_replacements_enabled", &p.TextReplacementsEnabled)
@@ -163,6 +189,8 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setString(view, "tasks_view_mode", &p.TasksViewMode)
 	setBool(view, "show_archived_tasks", &p.ShowArchivedTasks)
 	setString(view, "kanban_group_by", &p.KanbanGroupBy)
+	setString(view, "kanban_folder_root", &p.KanbanFolderRoot)
+	p.SavedTaskFilters = mergeStringTable(map[string]string{}, section("saved_filters"))
 	setBool(view, "workflows_enabled", &p.WorkflowsEnabled)
 	setBool(view, "atlas_enabled", &p.AtlasEnabled)
 	if list, ok := view["kanban_statuses"].([]any); ok {
@@ -187,6 +215,13 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	if table := section("text_replacements"); table != nil {
 		p.TextReplacements = mergeStringTable(map[string]string{}, table)
 	}
+	if p.WhichKeyHintMode == "instant" {
+		p.WhichKeyHintMode = "sticky"
+	}
+	if p.WhichKeyHintMode != "sticky" {
+		p.WhichKeyHintMode = "timed"
+	}
+	p.WhichKeyHintTimeoutMs = max(400, min(3000, p.WhichKeyHintTimeoutMs))
 	if p.EditorTabSize < 1 || p.EditorTabSize > 8 {
 		p.EditorTabSize = 4
 	}

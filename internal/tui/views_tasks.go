@@ -2,11 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/periodic"
@@ -87,7 +87,7 @@ func (v *tasksView) setMode(mode string) {
 // refresh recomputes rows, columns and calendar buckets.
 func (v *tasksView) refresh(a *App) {
 	all := a.displayTasks()
-	v.tasks = filterTasks(all, v.filter)
+	v.tasks = filterTaskQuery(all, v.filter)
 	groups := vault.GroupTasks(v.tasks, time.Now())
 	v.rows = nil
 	add := func(name string, tasks []vault.Task, extra string) {
@@ -220,17 +220,17 @@ func taskMatchesTerm(t vault.Task, term string) bool {
 // --- board ---
 
 func (v *tasksView) groupOptions() []string {
-	opts := []string{"status", "priority", "due"}
-	seen := map[string]bool{"status": true, "priority": true, "due": true}
+	opts := []string{"status", "priority", "due", "folder", "field:status"}
+	seen := map[string]bool{"field:status": true}
 	for _, t := range v.tasks {
 		for k := range t.Fields {
-			if !seen[k] {
-				seen[k] = true
-				opts = append(opts, k)
+			if !seen["field:"+k] {
+				seen["field:"+k] = true
+				opts = append(opts, "field:"+k)
 			}
 		}
 	}
-	sort.Strings(opts[3:])
+	sort.Strings(opts[5:])
 	return opts
 }
 
@@ -290,68 +290,166 @@ func (v *tasksView) buildColumns(a *App) {
 			}
 		}
 	case "status", "":
-		cols = []kanbanColumn{{id: "todo", title: v.columnTitle(a, "todo", "To Do")}, {id: "in-progress", title: v.columnTitle(a, "in-progress", "In Progress")}, {id: "done", title: v.columnTitle(a, "done", "Done")}}
-		custom := []string{}
-		seen := map[string]bool{"todo": true, "in-progress": true, "done": true}
-		for _, s := range a.prefs.KanbanStatuses {
-			s = strings.ToLower(strings.TrimSpace(s))
-			if s != "" && !seen[s] {
-				seen[s] = true
-				custom = append(custom, s)
-			}
+		for _, c := range []struct{ id, title string }{{"today", "Today"}, {"upcoming", "Upcoming"}, {"in-progress", "In progress"}, {"waiting", "Waiting"}, {"done", "Done"}} {
+			cols = append(cols, kanbanColumn{id: c.id, title: v.columnTitle(a, c.id, c.title)})
 		}
-		for _, t := range v.tasks {
-			s := strings.ToLower(strings.TrimSpace(t.Fields["status"]))
-			if s != "" && !seen[s] {
-				seen[s] = true
-				custom = append(custom, s)
-			}
-		}
-		for _, s := range custom {
-			cols = append(cols[:len(cols)-1], kanbanColumn{id: s, title: v.columnTitle(a, s, strings.Title(strings.ReplaceAll(s, "-", " ")))}, cols[len(cols)-1])
-		}
+		today := vault.TodayISO(time.Now())
 		for _, t := range v.tasks {
 			if t.Cancelled || t.Forwarded {
 				continue
 			}
-			s := strings.ToLower(strings.TrimSpace(t.Fields["status"]))
+			id := "today"
 			switch {
 			case t.Checked:
-				place("done", t)
-			case s != "" && s != "todo" && s != "in-progress" && s != "done":
-				place(s, t)
-			case t.InProgress || s == "in-progress":
-				place("in-progress", t)
-			default:
-				place("todo", t)
+				id = "done"
+			case t.Waiting:
+				id = "waiting"
+			case t.InProgress:
+				id = "in-progress"
+			case t.Due > today:
+				id = "upcoming"
+			}
+			place(id, t)
+		}
+	case "folder":
+		groups := map[string][]vault.Task{}
+		titles := map[string]string{}
+		root := strings.Trim(strings.ReplaceAll(strings.TrimSpace(a.prefs.KanbanFolderRoot), "\\", "/"), "/")
+		for _, t := range v.tasks {
+			if t.Checked || t.Cancelled || t.Forwarded {
+				continue
+			}
+			dir := path.Dir(strings.ReplaceAll(t.SourcePath, "\\", "/"))
+			if dir == "." {
+				dir = ""
+			}
+			prefix := vault.ResolveFolderPath(t.NoteFolder, a.folderPaths())
+			if t.NoteFolder == vault.FolderInbox && a.primaryAtRoot() {
+				prefix = ""
+			}
+			rel := dir
+			if prefix != "" {
+				if strings.EqualFold(dir, prefix) {
+					rel = ""
+				} else if strings.HasPrefix(strings.ToLower(dir), strings.ToLower(prefix)+"/") {
+					rel = dir[len(prefix)+1:]
+				}
+			}
+			id, title := dir, rel
+			if title == "" {
+				title = a.folderLabel(t.NoteFolder)
+			}
+			if id == "" {
+				id = prefix
+				if id == "" {
+					id = "inbox"
+				}
+			}
+			if root != "" {
+				if t.NoteFolder != vault.FolderInbox || !(strings.EqualFold(rel, root) || strings.HasPrefix(strings.ToLower(rel), strings.ToLower(root)+"/")) {
+					id = "__none__"
+					title = "Other folders"
+				} else {
+					selected := rel
+					if len(rel) > len(root) {
+						selected = rel[:len(root)] + "/" + strings.Split(rel[len(root)+1:], "/")[0]
+					}
+					id = selected
+					if prefix != "" {
+						id = prefix + "/" + selected
+					}
+					title = path.Base(selected)
+				}
+			}
+			groups[id] = append(groups[id], t)
+			titles[id] = title
+		}
+		ids := []string{}
+		for id := range groups {
+			if id != "__none__" {
+				ids = append(ids, id)
 			}
 		}
+		sort.Strings(ids)
+		if len(groups["__none__"]) > 0 {
+			ids = append(ids, "__none__")
+		}
+		for _, id := range ids {
+			cols = append(cols, kanbanColumn{id: id, title: titles[id], cards: groups[id]})
+		}
+
 	default:
-		key := v.groupBy
+		key := strings.TrimPrefix(v.groupBy, "field:")
 		values := []string{}
 		seen := map[string]bool{}
-		for _, t := range v.tasks {
-			val := strings.ToLower(strings.TrimSpace(t.Fields[key]))
+		add := func(val string) {
+			val = strings.ToLower(strings.TrimSpace(val))
 			if val != "" && !seen[val] {
 				seen[val] = true
 				values = append(values, val)
 			}
 		}
-		sort.Strings(values)
+		if key == "status" {
+			for _, s := range a.prefs.KanbanStatuses {
+				add(s)
+			}
+		}
+		configured := len(values)
+		for _, t := range v.tasks {
+			if !t.Checked && !t.Cancelled && !t.Forwarded {
+				add(t.Fields[key])
+			}
+		}
+		sort.Strings(values[configured:])
 		for _, val := range values {
 			cols = append(cols, kanbanColumn{id: val, title: v.columnTitle(a, val, val)})
 		}
-		cols = append(cols, kanbanColumn{id: "none", title: "No " + key})
+		cols = append(cols, kanbanColumn{id: "__none__", title: "No " + key})
 		for _, t := range v.tasks {
 			if t.Checked || t.Cancelled || t.Forwarded {
 				continue
 			}
 			val := strings.ToLower(strings.TrimSpace(t.Fields[key]))
 			if val == "" {
-				val = "none"
+				val = "__none__"
 			}
 			place(val, t)
 		}
+	}
+	for i := range cols {
+		sort.SliceStable(cols[i].cards, func(x, y int) bool {
+			l, r := cols[i].cards[x], cols[i].cards[y]
+			ld, rd := l.Due, r.Due
+			if ld == "" {
+				ld = "9999-12-31"
+			}
+			if rd == "" {
+				rd = "9999-12-31"
+			}
+			if ld != rd {
+				return ld < rd
+			}
+			if l.SourcePath != r.SourcePath {
+				return l.SourcePath < r.SourcePath
+			}
+			return l.TaskIndex < r.TaskIndex
+		})
+	}
+
+	for i := range cols {
+		order := a.boardOrder[v.groupBy+"|"+cols[i].id]
+		rank := map[string]int{}
+		for n, id := range order {
+			rank[id] = n
+		}
+		sort.SliceStable(cols[i].cards, func(x, y int) bool {
+			rx, okx := rank[cols[i].cards[x].ID]
+			ry, oky := rank[cols[i].cards[y].ID]
+			if okx != oky {
+				return okx
+			}
+			return okx && rx < ry
+		})
 	}
 	v.columns = cols
 	if v.col >= len(cols) {
@@ -552,7 +650,7 @@ func (v *tasksView) renderCalendar(a *App, w, h int, focused bool) string {
 		tasks := v.byDay[day.Format("2006-01-02")]
 		open := 0
 		for _, t := range tasks {
-			if vault.IsTaskOpen(t) {
+			if !t.Checked && !t.Cancelled && !t.Forwarded {
 				open++
 			}
 		}
@@ -650,6 +748,14 @@ func sameDay(a, b time.Time) bool {
 // --- keys ---
 
 func (v *tasksView) handleKey(a *App, k vim.Key) bool {
+	if k.IsRune('S') {
+		a.savedTaskFilters()
+		return true
+	}
+	if k.IsRune('B') {
+		v.boardMenu(a)
+		return true
+	}
 	if k.IsRune('v') && a.listKeyAllowed(k) {
 		switch v.mode {
 		case "list":
@@ -659,11 +765,12 @@ func (v *tasksView) handleKey(a *App, k vim.Key) bool {
 		default:
 			v.mode = "list"
 		}
+		a.prefs.TasksViewMode = v.mode
 		v.refresh(a)
 		return true
 	}
 	if k.IsRune('f') && a.listKeyAllowed(k) {
-		a.promptFor("Filter tasks", v.filter, "words, #tag, tag:x, note:x, due:today|overdue|none, priority:high, status:x, is:open|done|waiting, -term", func(a *App, text string) {
+		a.promptFor("Filter tasks", v.filter, "Text, #tag, !high or @field:value · advanced: where: due:today is:open", func(a *App, text string) {
 			v.filter = strings.TrimSpace(text)
 			v.refresh(a)
 		})
@@ -864,6 +971,7 @@ func (v *tasksView) boardKey(a *App, k vim.Key) bool {
 		for i, o := range opts {
 			if o == v.groupBy {
 				v.groupBy = opts[(i+1)%len(opts)]
+				a.prefs.KanbanGroupBy = v.groupBy
 				v.refresh(a)
 				a.notify("Board grouped by " + v.groupBy)
 				return true
@@ -877,11 +985,11 @@ func (v *tasksView) boardKey(a *App, k vim.Key) bool {
 		if t != nil {
 			a.openTaskSource(*t)
 		}
-	case k.IsRune('x'):
+	case a.bound(k, "nav.toggleTask"):
 		if t != nil {
 			a.toggleTask(*t)
 		}
-	case k.IsRune('m'):
+	case a.bound(k, "nav.contextMenu"):
 		if t != nil {
 			a.taskMenu(*t)
 		}
@@ -919,23 +1027,18 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 			return
 		}
 	case "status", "":
-		switch col.id {
-		case "todo":
-			a.setTaskStatusColumn(t, "todo")
-		case "in-progress":
-			a.setTaskStatusColumn(t, "in-progress")
-		case "done":
-			a.setTaskStatusColumn(t, "done")
-		default:
-			a.setTaskStatusColumn(t, col.id)
-		}
+		a.setTaskStatusColumn(t, col.id)
+	case "folder":
+		a.notify("Folder boards are read-only. Move the source note to change its folder.")
+		return
 	default:
 		val := col.id
-		if val == "none" {
+		if val == "__none__" {
 			val = ""
 		}
-		a.setTaskField(t, v.groupBy, val)
+		a.setTaskField(t, strings.TrimPrefix(v.groupBy, "field:"), val)
 	}
+
 	v.col = target
 }
 
@@ -957,11 +1060,11 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 			if t != nil {
 				a.openTaskSource(*t)
 			}
-		case k.IsRune('x'):
+		case a.bound(k, "nav.toggleTask"):
 			if t != nil {
 				a.toggleTask(*t)
 			}
-		case k.IsRune('m'):
+		case a.bound(k, "nav.contextMenu"):
 			if t != nil {
 				a.taskMenu(*t)
 			}
@@ -1040,7 +1143,7 @@ func (v *tasksView) hintTargets(a *App, p *pane) []hintTarget {
 // --- task mutations ---
 
 func (a *App) afterTaskChange() {
-	a.queue(func() tea.Msg { return a.loadTasksCmd()() })
+	a.queue(a.loadTasksCmd())
 	a.refreshIndex()
 }
 
@@ -1140,40 +1243,67 @@ func (a *App) setTaskField(t vault.Task, key, value string) {
 	})
 }
 
-// setTaskStatusColumn applies a board column: the three built-in states map
-// to checkbox marks, anything else becomes an `@status:` field.
+// setTaskStatusColumn changes scheduling/checkbox state independently of custom fields.
 func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 	a.editTaskLine(t, func(body string) string {
-		if t.Kind == "file" {
-			switch status {
-			case "done":
-				return vault.SetTaskFileStatus(body, true, time.Now())
-			case "in-progress":
-				return vault.SetTaskFileInProgress(vault.SetTaskFileStatus(body, false, time.Now()), true)
-			case "todo":
-				return vault.SetTaskFileInProgress(vault.SetTaskFileStatus(body, false, time.Now()), false)
+		checked := func(v bool) {
+			if t.Kind == "file" {
+				body = vault.SetTaskFileStatus(body, v, time.Now())
+			} else {
+				body = vault.SetTaskChecked(body, t.TaskIndex, v)
 			}
-			return vault.SetTaskFileField(vault.SetTaskFileStatus(body, false, time.Now()), "status", status)
 		}
-		next := body
+		waiting := func(v bool) {
+			if t.Kind == "file" {
+				value := ""
+				if v {
+					value = "true"
+				}
+				body = vault.SetTaskFileField(body, "waiting", value)
+			} else {
+				body = vault.SetTaskWaiting(body, t.TaskIndex, v)
+			}
+		}
+		progress := func(v bool) {
+			if t.Kind == "file" {
+				body = vault.SetTaskFileInProgress(body, v)
+			} else {
+				body = vault.SetTaskInProgress(body, t.TaskIndex, v)
+			}
+		}
+		due := func(v string) {
+			if t.Kind == "file" {
+				body = vault.SetTaskFileField(body, "due", v)
+			} else {
+				body = vault.SetTaskDue(body, t.TaskIndex, v)
+			}
+		}
+		now := time.Now()
 		switch status {
 		case "done":
-			next = vault.SetTaskChecked(next, t.TaskIndex, true)
-			next = vault.SetTaskField(next, t.TaskIndex, "status", "")
+			checked(true)
+		case "waiting":
+			checked(false)
+			waiting(true)
 		case "in-progress":
-			next = vault.SetTaskChecked(next, t.TaskIndex, false)
-			next = vault.SetTaskInProgress(next, t.TaskIndex, true)
-			next = vault.SetTaskField(next, t.TaskIndex, "status", "")
-		case "todo":
-			next = vault.SetTaskChecked(next, t.TaskIndex, false)
-			next = vault.SetTaskInProgress(next, t.TaskIndex, false)
-			next = vault.SetTaskField(next, t.TaskIndex, "status", "")
-		default:
-			next = vault.SetTaskChecked(next, t.TaskIndex, false)
-			next = vault.SetTaskInProgress(next, t.TaskIndex, false)
-			next = vault.SetTaskField(next, t.TaskIndex, "status", status)
+			checked(false)
+			waiting(false)
+			progress(true)
+		case "today", "upcoming":
+			checked(false)
+			waiting(false)
+			progress(false)
+			date := vault.TodayISO(now)
+			if status == "upcoming" {
+				if t.Due > date {
+					date = t.Due
+				} else {
+					date = vault.TodayISO(now.AddDate(0, 0, 1))
+				}
+			}
+			due(date)
 		}
-		return next
+		return body
 	})
 }
 

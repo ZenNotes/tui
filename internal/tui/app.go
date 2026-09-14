@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,24 +36,36 @@ const (
 	focusSidebar
 	focusOutline
 	focusConnections
+	focusComments
 	focusCalendar
 )
 
 type toastExpireMsg struct{ id int }
-type vaultChangedMsg struct{ paths []string }
+type vaultChangedMsg struct {
+	paths []string
+	epoch *int
+}
 type autosaveMsg struct{}
 type sessionSaveMsg struct{}
 type remotePollMsg struct{}
 
 // App is the whole terminal UI.
 type App struct {
-	ctx     context.Context
-	opts    Options
-	backend backend.Backend
-	prefs   prefsView
-	rawPref config.Prefs
-	keymap  *keymaps.Resolver
-	theme   Theme
+	remoteWatchCancel  context.CancelFunc
+	remoteState        string
+	remoteRefreshArmed bool
+	tempFiles          []string
+	ctx                context.Context
+	opts               Options
+	backend            backend.Backend
+	prefs              prefsView
+	rawPref            config.Prefs
+	prefsLoaded        bool
+	configHash         [32]byte
+	epoch              *int
+	deferReads         bool
+	keymap             *keymaps.Resolver
+	theme              Theme
 
 	width, height int
 	ready         bool
@@ -60,15 +73,20 @@ type App struct {
 	idx     *index
 	loadErr error
 
-	buffers    map[string]*noteBuffer
-	noteModes  map[string]paneMode
-	panes      *paneNode
-	activePane *pane
-	focus      focusTarget
+	markedNotes    map[string]bool
+	markedMoveDirs map[string]string
+	boardOrder     map[string][]string
+	buffers        map[string]*noteBuffer
+	noteModes      map[string]paneMode
+	panes          *paneNode
+	activePane     *pane
+	focus          focusTarget
 
 	sidebar         *sidebarState
 	sidebarOpen     bool
 	sidebarWidth    int
+	comments        *commentsPanel
+	commentsOpen    bool
 	outline         *outlinePanel
 	connections     *connectionsPanel
 	calendar        *calendarPanel
@@ -155,7 +173,10 @@ func Run(ctx context.Context, opts Options) error {
 	p := tea.NewProgram(app, teaOpts...)
 	app.program = p
 	_, err = p.Run()
-	app.shutdown()
+	saveErr := app.shutdown()
+	if err == nil {
+		err = saveErr
+	}
 	return err
 }
 
@@ -165,7 +186,9 @@ func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bo
 		opts:         opts,
 		backend:      opts.Backend,
 		rawPref:      prefs,
-		prefs:        prefsView{Prefs: prefs},
+		prefsLoaded:  true,
+		epoch:        new(int),
+		prefs:        prefsView{Prefs: prefs, TabsOff: !prefs.TabsEnabled},
 		keymap:       keymaps.NewResolver(prefs.KeymapOverrides),
 		theme:        NewTheme(prefs.ThemeMode, systemDark),
 		systemDark:   systemDark,
@@ -195,12 +218,14 @@ type prefsView struct {
 }
 
 func (p prefsView) TabsEnabled() bool             { return !p.TabsOff }
-func (p prefsView) KeepViewModeAcrossNotes() bool { return false }
+func (p prefsView) KeepViewModeAcrossNotes() bool { return p.RetainViewMode }
 
 // Init kicks off the index load and the ticker.
 func (a *App) Init() tea.Cmd {
+	a.startRemoteWatch()
 	cmds := []tea.Cmd{
-		func() tea.Msg { return a.loadIndexCmd()() },
+		configPollCmd(),
+		a.loadIndexCmd(),
 	}
 	if a.opts.Target.Kind == backend.KindLocal {
 		w, err := startWatcher(a.opts.Target.Root)
@@ -209,45 +234,150 @@ func (a *App) Init() tea.Cmd {
 			cmds = append(cmds, a.watchCmd())
 		}
 	}
+	cmds = append(cmds, a.flush())
 	return tea.Batch(cmds...)
 }
 
 func (a *App) watchCmd() tea.Cmd {
-	if a.watcher == nil {
+	watcher, epoch := a.watcher, a.epoch
+	if watcher == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		paths, ok := a.watcher.next()
+		paths, ok := watcher.next()
 		if !ok {
 			return nil
 		}
-		return vaultChangedMsg{paths: paths}
+		return vaultChangedMsg{paths: paths, epoch: epoch}
 	}
 }
 
-func (a *App) shutdown() {
-	_ = a.saveAllBuffers()
+func (a *App) shutdown() error {
+	if a.remoteWatchCancel != nil {
+		a.remoteWatchCancel()
+	}
+	for _, p := range a.tempFiles {
+		_ = os.Remove(p)
+	}
+	err := a.saveAllBuffers()
+	if err != nil {
+		err = a.writeRecovery(err)
+	}
 	a.saveSession()
 	if a.watcher != nil {
 		a.watcher.close()
 	}
+	return err
 }
 
 // Update is the Bubble Tea message loop.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case configPollMsg:
+		data, _ := os.ReadFile(config.ConfigTomlPath())
+		hash := sha256.Sum256(data)
+		if hash != a.configHash {
+			a.configHash = hash
+			if err := a.reloadPreferences(); err != nil {
+				a.notifyError(err.Error())
+			}
+		}
+		return a, tea.Batch(configPollCmd(), a.flush())
+	case configEditedMsg:
+		if m.err != nil {
+			a.notifyError(m.err.Error())
+		} else if err := a.reloadPreferences(); err != nil {
+			a.notifyError(err.Error())
+		}
+		return a, a.flush()
 	case tea.WindowSizeMsg:
 		a.width, a.height = m.Width, m.Height
 		a.ready = true
 		a.layout()
 		return a, nil
-	case indexLoadedMsg:
-		if m.err != nil {
-			a.loadErr = m.err
-			a.notifyError("Could not load the vault: " + m.err.Error())
+	case remoteWatchConnectedMsg:
+		if m.epoch != a.epoch {
 			return a, nil
 		}
+		if m.err != nil {
+			return a, a.retryRemoteWatch()
+		}
+		a.remoteState = "live"
+		return a, remoteWatchCmd(m.epoch, m.events)
+	case remoteWatchEventMsg:
+		if m.epoch != a.epoch {
+			return a, nil
+		}
+		if !m.ok || m.event.Err != nil {
+			return a, a.retryRemoteWatch()
+		}
+		if !a.remoteRefreshArmed {
+			a.remoteRefreshArmed = true
+			epoch := a.epoch
+			a.queue(tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg { return remoteDebounceMsg{epoch} }))
+		}
+		return a, tea.Batch(remoteWatchCmd(m.epoch, m.events), a.flush())
+	case remoteWatchRetryMsg:
+		if m.epoch == a.epoch {
+			a.startRemoteWatch()
+		}
+		return a, a.flush()
+	case remoteDebounceMsg:
+		if m.epoch == a.epoch {
+			a.remoteRefreshArmed = false
+			a.refreshIndex()
+		}
+		return a, a.flush()
+	case filesLoadedMsg:
+		if m.epoch == a.epoch && m.generation == m.view.generation {
+			m.view.loading = false
+			m.view.assets = m.assets
+			m.view.uses = m.uses
+			m.view.err = m.err
+		}
+		return a, a.flush()
+	case commentsLoadedMsg:
+		if a.comments == m.panel && m.panel.generation == m.generation {
+			m.panel.loading = false
+			m.panel.threads = m.threads
+			m.panel.err = m.err
+			m.panel.list.clamp(len(m.threads))
+		}
+		return a, a.flush()
+	case saveResultMsg:
+		a.finishSave(m)
+		return a, a.flush()
+	case bufferReadMsg:
+		a.applyBufferRead(m)
+		return a, a.flush()
+	case searchResultMsg:
+		if a.overlay == m.palette && m.generation == m.palette.generation {
+			m.palette.filtered = m.items
+			m.palette.emptyHint = "No matching lines"
+			if m.err != nil {
+				m.palette.emptyHint = "Search failed: " + m.err.Error()
+			}
+		}
+		return a, a.flush()
+	case indexLoadedMsg:
+		if m.epoch != nil && m.epoch != a.epoch {
+			return a, nil
+		}
+		if m.err != nil {
+			a.loadErr = m.err
+			a.armRemotePoll()
+			a.notifyError("Could not load the vault: " + m.err.Error())
+			return a, a.flush()
+		}
+		a.loadErr = nil
 		first := a.idx == nil
+		if !first && a.opts.Target.Kind == backend.KindRemote {
+			for _, buf := range a.buffers {
+				if !buf.saving {
+					a.queue(a.readBufferCmd(buf))
+				}
+			}
+		}
 		a.idx = m.idx
 		a.sidebar.rebuild(a)
 		a.refreshViews()
@@ -257,7 +387,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.pendingOpen = ""
 			}
 		}
-		cmds := []tea.Cmd{func() tea.Msg { return a.loadTasksCmd()() }}
+		cmds := []tea.Cmd{a.loadTasksCmd()}
 		a.armRemotePoll()
 		if first {
 			a.restoreSession()
@@ -272,6 +402,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.flush())
 		return a, tea.Batch(cmds...)
 	case tasksLoadedMsg:
+		if m.epoch != nil && m.epoch != a.epoch {
+			return a, nil
+		}
 		if m.err == nil && a.idx != nil {
 			a.idx.tasks = m.tasks
 			a.idx.tasksAt = time.Now()
@@ -280,14 +413,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.flush()
 	case vaultChangedMsg:
+		if m.epoch != nil && m.epoch != a.epoch {
+			return a, nil
+		}
 		return a, tea.Batch(a.handleVaultChange(m.paths), a.watchCmd(), a.flush())
 	case autosaveMsg:
 		a.autosaveArmed = false
 		now := time.Now()
 		for _, buf := range a.autosaveDue(now) {
-			if err := a.saveBuffer(buf); err != nil {
-				a.notifyError("Save failed: " + err.Error())
-			}
+			a.queueSave(buf)
 		}
 		a.armAutosave()
 		return a, a.flush()
@@ -299,8 +433,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.flush()
 	case remotePollMsg:
 		a.pollArmed = false
-		if a.opts.Target.Kind == backend.KindRemote && a.idx != nil {
-			return a, tea.Batch(func() tea.Msg { return a.loadIndexCmd()() }, a.flush())
+		if a.opts.Target.Kind == backend.KindRemote {
+			return a, tea.Batch(a.loadIndexCmd(), a.flush())
 		}
 		return a, a.flush()
 	case embedRenderedMsg:
@@ -310,8 +444,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.finishExternalEdit(m)
 		return a, a.flush()
 	case leaderHintMsg:
-		if a.leader != nil && a.leader.seq == m.seq {
-			a.leader.showHints = true
+		if a.leader != nil && a.leader.seq == m.seq && !(a.prefs.WhichKeyHints && a.prefs.WhichKeyHintMode == "sticky") {
+			a.leader = nil
 		}
 		return a, nil
 	case toastExpireMsg:
@@ -334,7 +468,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, a.handleKey(keyFromTea(m))
 	case tea.MouseMsg:
+		a.deferReads = true
 		a.handleMouse(m)
+		a.deferReads = false
 		return a, a.flush()
 	}
 	return a, a.flush()
@@ -357,7 +493,7 @@ func (a *App) armAutosave() {
 	}
 	var earliest time.Time
 	for _, buf := range a.buffers {
-		if buf.dirty() && !buf.saveAt.IsZero() && (earliest.IsZero() || buf.saveAt.Before(earliest)) {
+		if !buf.saving && !buf.diskChanged && buf.dirty() && !buf.saveAt.IsZero() && (earliest.IsZero() || buf.saveAt.Before(earliest)) {
 			earliest = buf.saveAt
 		}
 	}
@@ -397,7 +533,7 @@ func (a *App) handleVaultChange(paths []string) tea.Cmd {
 	if !external {
 		return nil
 	}
-	return func() tea.Msg { return a.loadIndexCmd()() }
+	return a.loadIndexCmd()
 }
 
 // ignoreChange tells the watcher that the next event for a path is ours.
@@ -460,7 +596,7 @@ func (a *App) mainRect() rect {
 }
 
 func (a *App) sidePanelOpen() bool {
-	return !a.zen && (a.outlineOpen || a.connectionsOpen || a.calendarOpen)
+	return !a.zen && (a.outlineOpen || a.connectionsOpen || a.calendarOpen || a.commentsOpen)
 }
 
 func (a *App) sidePanelWidth() int {
@@ -723,6 +859,8 @@ func (a *App) renderStatusBar() string {
 			mode = "LINKS"
 		case focusCalendar:
 			mode = "CALENDAR"
+		case focusComments:
+			mode = "COMMENTS"
 		default:
 			if tab := a.activeTab(); tab != nil && tab.view != nil {
 				mode = strings.ToUpper(tab.view.title())
@@ -738,6 +876,9 @@ func (a *App) renderStatusBar() string {
 		suffix = "^W"
 	}
 	segments := []string{modeStyle.Render(mode)}
+	if a.remoteState != "" {
+		segments = append(segments, t.Status.Render(" "+a.remoteState))
+	}
 	if suffix != "" {
 		segments = append(segments, t.Status.Render(" "+t.Hint.Render(suffix)))
 	}
@@ -749,8 +890,17 @@ func (a *App) renderStatusBar() string {
 			if buf.dirty() {
 				name += " ●"
 			}
+			if buf.loading {
+				info += "  loading…"
+			}
+			if buf.saving {
+				info += "  saving…"
+			}
+			if buf.loadErr != nil {
+				info += "  " + buf.loadErr.Error()
+			}
 			if buf.diskChanged {
-				info += "  changed on disk"
+				info += "  conflict · :conflict"
 			}
 			folder, sub := a.folderOfPath(buf.path)
 			where := a.folderLabel(folder)

@@ -3,10 +3,6 @@
 ZenNotes in the terminal: the `zn` command line and a full terminal app,
 in one static Go binary.
 
-<p align="center">
-  <a href="docs/media/zn-tui-demo.mp4"><img src="docs/media/zn-tui-demo-poster.png" alt="zn tui" width="880"></a>
-</p>
-
 Notes stay plain Markdown files in a folder you own. `zn` reads the same
 vault, `config.toml` and `vault.json` as the ZenNotes desktop app, so both
 can work on one vault, and a self-hosted ZenNotes server works as a remote
@@ -118,7 +114,9 @@ chrome.
 
 ### Moving around
 
-`Space` is the leader. Press it and wait a moment for the which-key panel.
+`Space` is the leader. The which-key panel appears immediately. Timed hints
+expire after `vim.which_key_hint_timeout_ms`; `vim.which_key_hint_mode = "sticky"`
+keeps them open until you choose an action, press Space again, or cancel.
 
 | Keys | What |
 | --- | --- |
@@ -131,6 +129,7 @@ chrome.
 | `gt` `gT` `]b` `[b` | Next and previous tab |
 | `:` | Ex commands; `Space ;` or `Ctrl+G` opens the command palette |
 | `?` | The keys of the current view; `:help` is the full manual |
+| `F2` | Context actions, including when Vim mode is off |
 
 The `Alt` chords (`Alt+1`…`Alt+9` for tabs, `Alt+E/S/P` for editor, split
 and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
@@ -162,10 +161,20 @@ Enter continues lists, Tab indents list items, `[[` opens the note picker
 in insert mode, and fenced code is syntax-highlighted.
 
 Vim mode follows `[vim] enabled` in `config.toml`. With it off, the editor
-is a plain editor and lists answer only to arrows, Enter and Escape.
+is a plain editor. Use arrows and Enter in lists, F2 for context actions,
+and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
+
+`Ctrl+Space` in insert mode (or `:complete`) completes tags, frontmatter
+tag values, callouts and code-fence languages. With `markdown_snippets`
+enabled, Space after an opening Markdown delimiter adds its closer;
+Enter after a code fence creates its closing fence. `:table` adds/removes
+rows or columns and sets alignment; `:formatting` opens formatting actions.
+These edits participate in undo. `:format` still formats the whole note.
+`vim.wrapped_line_motions = "display"` makes `$`, `I` and `A` use the
+visible wrapped row; `"logical"` uses the source line.
 
 `Space l e` opens the note in `$VISUAL` or `$EDITOR` at the cursor line and
-reloads it afterwards. `Ctrl+Z` suspends to the shell.
+reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
 
 ### Views
 
@@ -173,11 +182,16 @@ reloads it afterwards. `Ctrl+Z` suspends to the shell.
   with `:tasks list|kanban|calendar`, `Space x`, `Space k`, or the rows
   under Tasks in the sidebar; `v` cycles them. `x` toggles, Enter opens the
   note at the line, `p d w c /` set priority, due date, waiting, cancelled
-  and in progress, `f` filters (`#tag`, `due:today`, `priority:high`,
-  `status:x`, `is:open`, `-term`), `m` opens the menu. On the board `H`/`L`
-  move a card and `g` regroups by status, priority, due date or any
-  `@field`. On the calendar Enter lists a day's tasks and `o` opens its
-  daily note.
+  and in progress, `f` filters, `m` opens the menu. The default board uses
+  Today / Upcoming / In progress / Waiting / Done. `H`/`L` move a card;
+  `g` regroups by status, priority, due date, folder or `field:<key>`.
+  `:boardoptions` (also F2 → Board options) sets the folder root, column labels,
+  custom statuses and card order. Folder boards keep cross-folder moves
+  disabled. On the calendar Enter lists a day's tasks and `o` opens its
+  daily note. Filters match the desktop's substring search over task text,
+  note titles, `!priority`, `#tags` and `@fields`. `:filters` / `:savefilter`
+  manage shared named queries. Prefix terminal operators with `where:`,
+  for example `where: is:open due:today -meeting`.
 - **Tags**: `Tab` multi-selects, `a` toggles any/all, `r`/`x` rename or
   remove a tag everywhere.
 - **Databases**: every `.base` folder and every loose `.csv` file, with
@@ -188,8 +202,23 @@ reloads it afterwards. `Ctrl+Z` suspends to the shell.
 - **Home** is a dashboard of today's note and tasks, recent notes, the week,
   favorites and tags. **Quick Notes**, **Archive** and **Trash** are lists
   with their own actions (`u` unarchive, `r` restore, `E` empty the trash).
+- **Files** (`:files` / `:assets`): filter/sort attachments, inspect usage,
+  attach a local file, copy/insert a link, open externally, rename with
+  reference updates, trash and restore. Import limit: 64 MiB.
+- **Templates** (`:templates`): preview, create, edit Markdown/metadata,
+  duplicate, delete and override built-ins. The editor accepts the same
+  frontmatter and template tokens as desktop.
 - Side panels: Outline (`Space p`), Connections with backlinks
-  (`:connections`), Calendar (`Space c`).
+  (`:connections`), Calendar (`Space c`), Comments (`:comments`). Comments
+  support anchors, replies, edit/delete, resolve/reopen and a scrollable
+  full-thread reader through Enter → Read full thread.
+
+In note lists and the sidebar, `Ctrl+Space` marks notes; `Shift+Up/Down`
+extends the selection. Folder marks select their contained notes and
+preserve subfolders when moved. `B` or `:bulk` opens the selection actions:
+open, move, archive, trash, restore/unarchive. Marks survive filtering;
+failed operations retain their marks and show an error report. Empty
+folders continue to use the existing individual folder actions.
 
 ### Reading view, embeds and diagrams
 
@@ -213,7 +242,22 @@ sheet of your own, or `zen` for the built-in renderer).
 `:vault` (or `Space v`) lists every saved vault and server, with entries to
 add a folder or connect to a server. `:server <url>` connects, asking for
 the token once. Buffers are saved before a switch, each vault keeps its own
-tabs, and the vault you switch to becomes the default for the next launch.
+split layout, tabs, cursor/scroll positions and view state, and the vault
+you switch to becomes the default for the next launch. The old flat session
+format still restores. TUI layouts and card order have their own session file.
+
+Search, interactive note opening and autosaves run in the background.
+The status line reports loading, saving and conflicts. Remote servers use
+the change feed, with 30-second polling and reconnect fallback. External
+changes refresh clean buffers and preserve dirty ones. Use `:conflict` to
+reload, keep local edits or save a copy. A close/switch reports a pending or
+failed save; if shutdown cannot save edits, it reports a recovery JSON file
+under the user-data directory's `tui-recovery/` folder.
+
+Conflict checks compare the current content before saving. The existing
+server API does not support atomic conditional writes, so simultaneous
+writes between that check and the save still require coordination. Startup
+restoration and explicit lifecycle operations can wait for I/O.
 
 ### Mouse and themes
 
@@ -233,6 +277,20 @@ resizing. `Space l o` hands the current note to the app.
 `~/.config/zennotes/config.toml` is shared with the desktop app; `zn config`
 creates it with comments when it is missing. The sections `zn` reads:
 
+`:settings` is searchable and editable. Supported user preferences persist
+to `config.toml`; periodic-note and task-exclusion controls update the vault.
+`:config` opens the file in an external editor, and `:reloadconfig` reloads
+it immediately. External edits are otherwise picked up within a second.
+`:bind` / `:unbind` persist, and `:keymaps` can edit bindings interactively.
+Updates preserve unknown keys/tables and existing symlinks; TOML comments
+and formatting are normalized when the file is written. Invalid supported
+values produce an error while the running preferences remain active.
+
+Periodic note paths and named date tokens follow each kind's configured
+locale, including legacy patterns. The TUI keeps a horizontal tab strip
+and a terminal folder tree; desktop `wrap_tabs` and `unified_sidebar`
+layout choices do not change these terminal layouts.
+
 | Section | Examples |
 | --- | --- |
 | `[vim]` | `enabled`, `which_key_hints`, `insert_escape` |
@@ -242,6 +300,7 @@ creates it with comments when it is missing. The sections `zn` reads:
 | `[terminal]` | `mouse`, `preview_style`, `images` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
+| `[saved_filters]` | `Important = "!high"` |
 
 Per-vault settings (daily notes, favorites, folder layout) live in the
 vault's `.zennotes/vault.json`, also shared with the app.
@@ -274,20 +333,6 @@ For other clients, register the command `zn` with the argument `mcp`:
 
 The tools match the desktop's MCP server one for one: notes, folders,
 search, tasks, assets, comments, archive and trash.
-
-## Demo recordings
-
-`docs/demo/` holds the seeded vaults and the keystroke choreography;
-`record-demo.sh` (the tour) and `record-kanban.sh` (the board) run the app
-in tmux, capture the terminal stream with asciinema, render it with agg and
-encode mp4 files with ffmpeg, all without screen capture. Output goes to
-`docs/media/`.
-
-```bash
-brew install tmux asciinema agg ffmpeg
-docs/demo/record-demo.sh
-docs/demo/record-kanban.sh
-```
 
 ## Layout of the code
 

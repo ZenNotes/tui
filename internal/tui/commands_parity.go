@@ -174,7 +174,7 @@ func (a *App) parityCommands() []command {
 		}},
 		{names: []string{"quickdate"}, title: "Toggle quick note date titles", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
 			a.prefs.QuickNoteDateTitle = !a.prefs.QuickNoteDateTitle
-			a.notify(onOff("Quick note date titles", a.prefs.QuickNoteDateTitle) + " (view.quick_note_date_title in config.toml keeps it)")
+			a.notify(onOff("Quick note date titles", a.prefs.QuickNoteDateTitle) + "")
 			return nil
 		}},
 		{names: []string{"website"}, title: "Open ZenNotes website", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
@@ -252,9 +252,22 @@ func (a *App) switchTarget(target backend.Target) {
 		a.watcher.close()
 		a.watcher = nil
 	}
+	if a.remoteWatchCancel != nil {
+		a.remoteWatchCancel()
+		a.remoteWatchCancel = nil
+	}
+	a.remoteState = ""
+	a.remoteRefreshArmed = false
 	a.opts.Target = target
 	a.opts.Backend = b
 	a.backend = b
+	a.epoch = new(int)
+	a.pollArmed = false
+	a.autosaveArmed = false
+	a.sessionArmed = false
+	a.markedNotes = nil
+	a.markedMoveDirs = nil
+	a.boardOrder = nil
 	a.buffers = map[string]*noteBuffer{}
 	a.noteModes = map[string]paneMode{}
 	a.panes = newPaneTree()
@@ -269,7 +282,8 @@ func (a *App) switchTarget(target backend.Target) {
 	a.outline = &outlinePanel{}
 	a.connections = &connectionsPanel{}
 	a.calendar = newCalendarPanel(time.Now())
-	a.outlineOpen, a.connectionsOpen, a.calendarOpen = false, false, false
+	a.comments = nil
+	a.outlineOpen, a.connectionsOpen, a.calendarOpen, a.commentsOpen = false, false, false, false
 	a.focus = focusPane
 	a.overlay = nil
 	a.leader = nil
@@ -281,6 +295,7 @@ func (a *App) switchTarget(target backend.Target) {
 			a.queue(a.watchCmd())
 		}
 	}
+	a.startRemoteWatch()
 	a.refreshIndex()
 	if err := backend.RememberTarget(target); err != nil {
 		a.notifyError("Could not save the workspace list: " + err.Error())
@@ -702,30 +717,7 @@ func (a *App) openReference(path string) {
 
 // openAssetsPicker lists the vault's attachments; Enter opens one with the
 // system handler on a local vault and copies its path on a server.
-func (a *App) openAssetsPicker() {
-	list, err := a.backend.ListAssets(a.ctx)
-	if err != nil {
-		a.notifyError(err.Error())
-		return
-	}
-	if len(list) == 0 {
-		a.notify("No files in the attachment folders yet")
-		return
-	}
-	items := make([]paletteItem, 0, len(list))
-	for _, as := range list {
-		items = append(items, paletteItem{label: as.Name, detail: as.Path, hint: humanSize(as.Size), id: as.Path})
-	}
-	p := &palette{title: "Files", placeholder: "Attachment", items: items, filtered: items}
-	p.onSelect = func(a *App, it paletteItem) {
-		if a.opts.Target.Kind == backend.KindLocal {
-			a.openExternal(filepath.Join(a.backend.Root(), filepath.FromSlash(it.id)))
-			return
-		}
-		a.copyText(it.id)
-	}
-	a.overlay = p
-}
+func (a *App) openAssetsPicker() { a.openFiles() }
 
 func humanSize(n int64) string {
 	switch {
@@ -809,7 +801,7 @@ func (a *App) setNoteSort(order string) error {
 	}
 	a.prefs.NoteSortOrder = order
 	a.sidebar.rebuild(a)
-	a.notify("Notes sorted by " + noteSortLabel(order) + " (view.note_sort_order in config.toml keeps it)")
+	a.notify("Notes sorted by " + noteSortLabel(order) + "")
 	return nil
 }
 
@@ -848,7 +840,7 @@ func (a *App) setDoneStyle(style string) error {
 		return fmt.Errorf("unknown style %q; one of %s", style, strings.Join(doneStyles, ", "))
 	}
 	a.prefs.CompletedTaskStyle = style
-	a.notify("Completed tasks: " + style + " (editor.completed_task_style in config.toml keeps it)")
+	a.notify("Completed tasks: " + style + "")
 	return nil
 }
 

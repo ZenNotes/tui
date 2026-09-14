@@ -390,6 +390,8 @@ func (a *App) renderSidePanel(w, h int) string {
 	var body string
 	innerW, innerH := w-4, h-2
 	switch {
+	case a.commentsOpen:
+		title, body = "comments", a.comments.render(a, innerW, innerH+1)
 	case a.outlineOpen:
 		title, body = "outline", a.outline.render(a, innerW, innerH+1)
 	case a.connectionsOpen:
@@ -403,6 +405,6 @@ func (a *App) renderSidePanel(w, h int) string {
 	if len(lines) > 0 {
 		lines = lines[1:]
 	}
-	focused := a.focus == focusOutline || a.focus == focusConnections || a.focus == focusCalendar
+	focused := a.focus == focusComments || a.focus == focusOutline || a.focus == focusConnections || a.focus == focusCalendar
 	return frameBox(a.theme, title, fitBlock(strings.Join(lines, "\n"), innerW, innerH), w, h, focused)
 }

@@ -90,6 +90,12 @@ func MondayOfISOWeek(weekYear, week int) time.Time {
 // week override the date's own for weekly notes, which anchor to the ISO
 // week-year.
 func FormatPattern(date time.Time, pattern string, year, week int) string {
+	return FormatPatternLocale(date, pattern, year, week, "en")
+}
+
+// FormatPatternLocale renders named tokens using the portable locale.
+func FormatPatternLocale(date time.Time, pattern string, year, week int, locale string) string {
+	names := namesForLocale(locale)
 	if year == 0 {
 		year = date.Year()
 	}
@@ -108,9 +114,9 @@ func FormatPattern(date time.Time, pattern string, year, week int) string {
 		case "yy":
 			b.WriteString(pad2(year % 100))
 		case "MMMM":
-			b.WriteString(date.Month().String())
+			b.WriteString(names["MMMM"][int(date.Month())-1])
 		case "MMM":
-			b.WriteString(date.Month().String()[:3])
+			b.WriteString(names["MMM"][int(date.Month())-1])
 		case "MM":
 			b.WriteString(pad2(int(date.Month())))
 		case "M":
@@ -120,9 +126,9 @@ func FormatPattern(date time.Time, pattern string, year, week int) string {
 		case "d":
 			b.WriteString(strconv.Itoa(date.Day()))
 		case "EEEE":
-			b.WriteString(date.Weekday().String())
+			b.WriteString(names["EEEE"][int(date.Weekday())])
 		case "EEE":
-			b.WriteString(date.Weekday().String()[:3])
+			b.WriteString(names["EEE"][int(date.Weekday())])
 		case "ww":
 			b.WriteString(pad2(week))
 		case "w":
@@ -275,10 +281,13 @@ func shouldFormatDirectory(pattern string) bool {
 }
 
 func formatDirectory(date time.Time, pattern string, year, week int) string {
+	return formatDirectoryLocale(date, pattern, year, week, "en")
+}
+func formatDirectoryLocale(date time.Time, pattern string, year, week int, locale string) string {
 	if !shouldFormatDirectory(pattern) {
 		return pattern
 	}
-	return FormatPattern(date, pattern, year, week)
+	return FormatPatternLocale(date, pattern, year, week, locale)
 }
 
 func matchDirectory(pattern, text string) (patternMatch, bool) {
@@ -357,7 +366,7 @@ func locationForPattern(kind Kind, date time.Time, pattern vault.DateNotePattern
 	case Monthly:
 		anchor = time.Date(date.Year(), date.Month(), 1, 0, 0, 0, 0, date.Location())
 	}
-	dir := strings.Trim(strings.TrimSpace(formatDirectory(anchor, pattern.Directory, year, week)), "/")
+	dir := strings.Trim(strings.TrimSpace(formatDirectoryLocale(anchor, pattern.Directory, year, week, pattern.Locale)), "/")
 	if dir == "" {
 		dir = defaultDirectory(kind)
 	}
@@ -365,7 +374,7 @@ func locationForPattern(kind Kind, date time.Time, pattern vault.DateNotePattern
 	if titlePattern == "" {
 		titlePattern = defaultTitle(kind)
 	}
-	title := strings.TrimSpace(strings.NewReplacer("/", "-", "\\", "-").Replace(FormatPattern(anchor, titlePattern, year, week)))
+	title := strings.TrimSpace(strings.NewReplacer("/", "-", "\\", "-").Replace(FormatPatternLocale(anchor, titlePattern, year, week, pattern.Locale)))
 	if title == "" {
 		title = defaultTitle(kind)
 	}
@@ -518,6 +527,10 @@ var templateDateRe = regexp.MustCompile(`\[([^\]]*)\]|YYYY|YY|yyyy|yy|MMMM|MMM|M
 // Both the moment-style (YYYY/DD/dddd) and the date-fns-style (yyyy/dd/EEEE)
 // vocabularies work; `[brackets]` protect literal letters.
 func FormatTemplateDate(date time.Time, format string) string {
+	return FormatTemplateDateLocale(date, format, "en")
+}
+func FormatTemplateDateLocale(date time.Time, format, locale string) string {
+	names := namesForLocale(locale)
 	_, week := date.ISOWeek()
 	return templateDateRe.ReplaceAllStringFunc(format, func(match string) string {
 		if strings.HasPrefix(match, "[") {
@@ -529,9 +542,9 @@ func FormatTemplateDate(date time.Time, format string) string {
 		case "YY", "yy":
 			return pad2(date.Year() % 100)
 		case "MMMM":
-			return date.Month().String()
+			return names["MMMM"][int(date.Month())-1]
 		case "MMM":
-			return date.Month().String()[:3]
+			return names["MMM"][int(date.Month())-1]
 		case "MM":
 			return pad2(int(date.Month()))
 		case "M":
@@ -541,9 +554,9 @@ func FormatTemplateDate(date time.Time, format string) string {
 		case "D", "d":
 			return strconv.Itoa(date.Day())
 		case "dddd", "EEEE":
-			return date.Weekday().String()
+			return names["EEEE"][int(date.Weekday())]
 		case "ddd", "EEE":
-			return date.Weekday().String()[:3]
+			return names["EEE"][int(date.Weekday())]
 		case "ww":
 			return pad2(week)
 		case "w":

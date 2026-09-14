@@ -116,6 +116,9 @@ type paletteItem struct {
 }
 
 type palette struct {
+	asyncSearch bool
+	generation  int
+	cancel      context.CancelFunc
 	title       string
 	placeholder string
 	input       textInput
@@ -139,6 +142,10 @@ type palette struct {
 
 func (p *palette) refilter(a *App) {
 	query := strings.TrimSpace(p.input.String())
+	if p.asyncSearch {
+		p.searchAsync(a, query)
+		return
+	}
 	if p.source != nil {
 		if len([]rune(query)) < p.minQuery {
 			p.filtered = nil
@@ -176,6 +183,9 @@ func (p *palette) refilter(a *App) {
 func (p *palette) handleKey(a *App, k vim.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsCtrl('['):
+		if p.cancel != nil {
+			p.cancel()
+		}
 		a.overlay = nil
 		if p.onCancel != nil {
 			p.onCancel(a)

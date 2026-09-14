@@ -691,6 +691,11 @@ func (e *Editor) builtinEx(cmd ExCommand) bool {
 		e.setMsg(strconv.Itoa(end + 1))
 		return true
 	case "k", "mark", "ma":
+		// A bare :mark may be owned by the host (for note selection). Vim's
+		// :mark {letter} keeps its standard line-mark behavior.
+		if cmd.Name == "mark" && strings.TrimSpace(cmd.Args) == "" {
+			return false
+		}
 		if a := strings.TrimSpace(cmd.Args); a != "" {
 			e.marks[[]rune(a)[0]] = Pos{end, 0}
 		}

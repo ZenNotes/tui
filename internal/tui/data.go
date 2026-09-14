@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	tea "github.com/charmbracelet/bubbletea"
 	"sort"
 	"strings"
 	"time"
@@ -33,27 +34,29 @@ type tagCount struct {
 }
 
 type indexLoadedMsg struct {
-	idx *index
-	err error
+	epoch *int
+	idx   *index
+	err   error
 }
 
 type tasksLoadedMsg struct {
+	epoch *int
 	tasks []vault.Task
 	err   error
 }
 
-func (a *App) loadIndexCmd() func() interface{} {
-	b := a.backend
-	return func() interface{} {
+func (a *App) loadIndexCmd() tea.Cmd {
+	b, epoch := a.backend, a.epoch
+	return func() tea.Msg {
 		ctx := context.Background()
 		idx := &index{byPath: map[string]vault.NoteMeta{}}
 		notes, err := b.ListNotes(ctx)
 		if err != nil {
-			return indexLoadedMsg{err: err}
+			return indexLoadedMsg{epoch: epoch, err: err}
 		}
 		folders, err := b.ListFolders(ctx)
 		if err != nil {
-			return indexLoadedMsg{err: err}
+			return indexLoadedMsg{epoch: epoch, err: err}
 		}
 		settings, err := b.VaultSettings(ctx)
 		if err != nil {
@@ -61,7 +64,7 @@ func (a *App) loadIndexCmd() func() interface{} {
 		}
 		desc, err := b.Describe(ctx)
 		if err != nil {
-			return indexLoadedMsg{err: err}
+			return indexLoadedMsg{epoch: epoch, err: err}
 		}
 		idx.notes = notes
 		for _, n := range notes {
@@ -73,15 +76,15 @@ func (a *App) loadIndexCmd() func() interface{} {
 		idx.tags = countTags(notes)
 		idx.search = search.Index(notes)
 		idx.loadedAt = time.Now()
-		return indexLoadedMsg{idx: idx}
+		return indexLoadedMsg{epoch: epoch, idx: idx}
 	}
 }
 
-func (a *App) loadTasksCmd() func() interface{} {
-	b := a.backend
-	return func() interface{} {
+func (a *App) loadTasksCmd() tea.Cmd {
+	b, epoch := a.backend, a.epoch
+	return func() tea.Msg {
 		tasks, err := b.ScanTasks(context.Background(), vault.ParseTasksOptions{Dialect: vault.DialectApp})
-		return tasksLoadedMsg{tasks: tasks, err: err}
+		return tasksLoadedMsg{epoch: epoch, tasks: tasks, err: err}
 	}
 }
 

@@ -19,6 +19,8 @@ func keyFromTea(msg tea.KeyMsg) vim.Key {
 		return vim.Key{Rune: msg.Runes[0], Alt: msg.Alt}
 	case tea.KeySpace:
 		return vim.Key{Rune: ' ', Alt: msg.Alt}
+	case tea.KeyF2:
+		return vim.Special("f2")
 	case tea.KeyEnter:
 		return vim.Key{Name: "enter", Alt: msg.Alt}
 	case tea.KeyEsc:

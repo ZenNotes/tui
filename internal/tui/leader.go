@@ -72,8 +72,6 @@ func (a *App) leaderTree() *leaderNode {
 	add(root, "vim.leaderCalendar", "Calendar", func(a *App) { a.toggleSidePanel(&a.calendarOpen, focusCalendar) })
 	add(root, "vim.hintMode", "Hint mode", func(a *App) { a.startHintMode() })
 	add(root, "vim.leaderKanban", "Kanban board", func(a *App) { _ = a.openTasksMode("kanban") })
-	add(root, "vim.leaderWorkflows", "Workflows", func(a *App) { a.notify("Workflows run in the desktop app; the terminal cannot run them yet") })
-	add(root, "vim.leaderAtlas", "Atlas", func(a *App) { a.notify("Atlas is a desktop view; use Connections (Space p, or :connections) here") })
 	root.children = append(root.children,
 		&leaderNode{key: ";", title: "Command palette", run: func(a *App) { a.openCommandPalette() }},
 		&leaderNode{key: "x", title: "Tasks", run: func(a *App) { _ = a.openTasksMode("") }},
