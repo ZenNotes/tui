@@ -39,9 +39,24 @@ brew install zennotes/tap/zn
 zn tui
 ```
 
-Update with `brew update && brew upgrade zn`. If you previously installed
-`zn` with Go or by downloading a binary, use `type -a zn` to check which
-copy your shell runs; the Homebrew copy is at `$(brew --prefix)/bin/zn`.
+Update with `brew update && brew upgrade zn`.
+
+If `zn tui` reports **Unknown command**, your shell may be running the
+desktop app's bundled CLI or another older installation. Check which copy
+runs, then launch the Homebrew TUI directly:
+
+```bash
+type -a zn
+"$(brew --prefix)/bin/zn" tui
+```
+
+If `~/.local/bin/zn` is a symlink installed by the desktop app, point that
+shortcut to Homebrew so the usual `zn tui` command works:
+
+```bash
+ls -l ~/.local/bin/zn
+ln -sfn "$(brew --prefix)/bin/zn" ~/.local/bin/zn
+```
 
 **Download a release.** Grab the archive for your platform from the
 [releases page](https://github.com/ZenNotes/tui/releases) (Linux, macOS and
