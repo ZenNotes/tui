@@ -8,3 +8,9 @@
 # OS and editor noise
 .DS_Store
 *.log
+
+# Local demo production and implementation notes; keep docs/ for app documentation.
+/docs/demo/
+/docs/media/
+/docs/tui-desktop-parity-review.md
+/docs/tui-improvements-progress.md
