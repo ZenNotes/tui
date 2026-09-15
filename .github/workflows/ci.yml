@@ -19,3 +19,25 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./cmd/zn
+
+  homebrew:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Homebrew/actions/setup-homebrew@master
+      - run: python3 -B -m unittest discover -s packaging/homebrew -p 'test_*.py'
+      - name: Load the formula under test
+        run: |
+          brew tap zennotes/tap
+          mkdir -p "$(brew --repository zennotes/tap)/Formula"
+          cp packaging/homebrew/Formula/zn.rb "$(brew --repository zennotes/tap)/Formula/zn.rb"
+      - run: brew style packaging/homebrew/Formula/zn.rb
+      - run: brew audit --strict zennotes/tap/zn
+      - run: brew install zennotes/tap/zn
+      - run: brew test zennotes/tap/zn

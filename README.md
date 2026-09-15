@@ -32,6 +32,17 @@ vault too.
 
 `zn` is a single static binary with no runtime dependencies. Pick one:
 
+**Homebrew (macOS and Linux).** Install from the same tap as the desktop app:
+
+```bash
+brew install zennotes/tap/zn
+zn tui
+```
+
+Update with `brew update && brew upgrade zn`. If you previously installed
+`zn` with Go or by downloading a binary, use `type -a zn` to check which
+copy your shell runs; the Homebrew copy is at `$(brew --prefix)/bin/zn`.
+
 **Download a release.** Grab the archive for your platform from the
 [releases page](https://github.com/ZenNotes/tui/releases) (Linux, macOS and
 Windows, amd64 and arm64), unpack it, and put `zn` somewhere on your PATH:
@@ -58,8 +69,10 @@ export PATH="$PATH:$(go env GOPATH)/bin"
 
 **Build from a checkout** with `go build -o zn ./cmd/zn`.
 
-Either way, `zn --version` confirms the install. Homebrew and AUR packages
-are not published yet.
+Either way, `zn --version` confirms the install. AUR packages are not
+published yet.
+
+Maintainers: [Homebrew packaging and release updates](packaging/homebrew/README.md).
 
 ## Quick start
 

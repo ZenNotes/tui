@@ -56,5 +56,7 @@ release:
   footer: |
     ## Install
 
+    With Homebrew on macOS or Linux, run `brew install zennotes/tap/zn`, then `zn tui`.
+
     Download the archive for your platform, unpack it, and put `zn` on your PATH.
     With Go installed, `go install github.com/ZenNotes/tui/cmd/zn@latest` builds the same thing.
