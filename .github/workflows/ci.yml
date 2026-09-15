@@ -30,7 +30,7 @@ jobs:
       HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
       - uses: actions/checkout@v4
-      - uses: Homebrew/actions/setup-homebrew@master
+      - uses: Homebrew/actions/setup-homebrew@082c94ee19e776205cfa8e43802917d1425e2fe7 # main
       - run: python3 -B -m unittest discover -s packaging/homebrew -p 'test_*.py'
       - name: Load the formula under test
         run: |
