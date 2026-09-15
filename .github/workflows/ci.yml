@@ -34,6 +34,7 @@ jobs:
       - run: python3 -B -m unittest discover -s packaging/homebrew -p 'test_*.py'
       - name: Load the formula under test
         run: |
+          brew trust zennotes/tap
           brew tap zennotes/tap
           mkdir -p "$(brew --repository zennotes/tap)/Formula"
           cp packaging/homebrew/Formula/zn.rb "$(brew --repository zennotes/tap)/Formula/zn.rb"
