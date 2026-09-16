@@ -52,7 +52,7 @@ func (a *App) commandTable() []command {
 			}
 			return a.closeActiveTabCommand(true)
 		}},
-		{names: []string{"qa", "qall", "quitall"}, title: "Quit ZenNotes", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"qa", "qall", "quitall"}, title: "Quit ZenNotes", hint: ":qa", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
 			if cmd.Bang {
 				a.quitting = true
 				return nil

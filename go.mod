@@ -10,10 +10,12 @@ require (
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/charmbracelet/x/ansi v0.11.5
+	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/charmbracelet/x/editor v0.2.0
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/mattn/go-runewidth v0.0.29
 	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/muesli/termenv v0.16.0
 	github.com/yashikota/mermaigo v0.0.0-20260204123623-da6036fcd378
 	golang.org/x/image v0.21.0
 	golang.org/x/sys v0.47.0
@@ -25,7 +27,6 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
-	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250327172914-2fdc97757edf // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.9.0 // indirect
@@ -47,7 +48,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
-	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

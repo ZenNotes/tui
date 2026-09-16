@@ -78,6 +78,28 @@ func NewTheme(mode string, systemDark bool) Theme {
 	return t
 }
 
+// paint supplies terminal-independent colors for every row, including the
+// whitespace and unstyled text after nested styles reset their colors.
+func (t Theme) paint(screen string) string {
+	fg := stylePrefix(t.Base)
+	bg := backgroundSeq(t.Bg)
+	if fg == "" && bg == "" {
+		return screen
+	}
+	base := fg + bg
+	reset := strings.NewReplacer(
+		"\x1b[0m", "\x1b[0m"+base,
+		"\x1b[m", "\x1b[m"+base,
+		"\x1b[39m", fg,
+		"\x1b[49m", bg,
+	)
+	rows := strings.Split(screen, "\n")
+	for i, row := range rows {
+		rows[i] = base + reset.Replace(row) + "\x1b[0m"
+	}
+	return strings.Join(rows, "\n")
+}
+
 // pair is a light/dark color choice, the way Glow's styles are written.
 type pair struct{ light, dark string }
 
@@ -92,8 +114,8 @@ func buildTheme(dark bool) Theme {
 	t.Accent = c(pair{"#b5651d", "#fe8019"})
 	t.AccentSoft = c(pair{"#d9a066", "#d65d0e"})
 	t.Fg = c(pair{"#3c3836", "#ebdbb2"})
-	t.FgDim = c(pair{"#7c6f64", "#a89984"})
-	t.FgMuted = c(pair{"#a89984", "#7c6f64"})
+	t.FgDim = c(pair{"#665c54", "#a89984"})
+	t.FgMuted = c(pair{"#76695f", "#9d8e7d"})
 	t.Bg = c(pair{"#fbf1c7", "#1d2021"})
 	t.BgPanel = c(pair{"#f2e5bc", "#282828"})
 	t.BgSelected = c(pair{"#ebdbb2", "#3c3836"})

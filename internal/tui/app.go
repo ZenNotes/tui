@@ -525,7 +525,7 @@ func (a *App) tabBarHeight() int {
 
 func (a *App) View() string {
 	if !a.ready {
-		return "Loading…"
+		return a.theme.paint("Loading…")
 	}
 	main := a.mainRect()
 	var columns []string
@@ -551,7 +551,7 @@ func (a *App) View() string {
 	if len(a.toasts) > 0 {
 		screen = a.renderToasts(screen)
 	}
-	return screen
+	return a.theme.paint(screen)
 }
 
 func (a *App) renderVerticalBorder(h int, focused bool) string {

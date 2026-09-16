@@ -89,7 +89,8 @@ var (
 		{"nav.filter", "search"}, {"key:Esc", "editor"}, {"key:?", "keys"},
 	}
 	editorHints = []hintPair{
-		{"vim.leaderPrefix", "leader"}, {"key:Space z p", "preview"}, {"key:Space z s", "split"}, {"key::help", "manual"}, {"global.searchNotes", "search"},
+		{"vim.leaderPrefix", "leader"}, {"key::qa", "quit"}, {"key::help", "manual"}, {"global.searchNotes", "search"},
+		{"key:Space z p", "preview"}, {"key:Space z s", "split"},
 		{"vim.panePrefix", "pane"}, {"global.newNoteHere", "new note"}, {"vim.goToDefinition", "follow link"},
 		{"editor.toggleCheckbox", "checkbox"},
 	}

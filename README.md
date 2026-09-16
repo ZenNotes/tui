@@ -7,7 +7,7 @@ in one static Go binary.
   <a href="docs/media/zn-tui-workspace.png"><img src="docs/media/zn-tui-workspace.png" alt="ZenNotes TUI with a Markdown editor and live preview side by side, a note tree, open tabs, checklists, wikilinks, and syntax-highlighted code" width="880"></a>
 </p>
 <p align="center">
-  <sub>Markdown editing and live preview, with your notes, tabs, and tasks close at hand. <a href="docs/media/zn-tui-demo.mp4">Watch the demo.</a></sub>
+  <sub>Markdown editing and live preview, with your notes, tabs, and tasks close at hand. <a href="https://zennotes.org/tui#recording">Watch the demo.</a></sub>
 </p>
 
 Notes stay plain Markdown files in a folder you own. `zn` reads the same
@@ -89,6 +89,9 @@ published yet.
 Maintainers: [Homebrew packaging and release updates](packaging/homebrew/README.md).
 
 ## Quick start
+
+To leave the TUI, press `Esc`, type `:qa`, and press `Enter`. This saves all
+notes and quits ZenNotes. `:q` closes only the current tab (the last tab quits).
 
 Three commands cover every way to get a vault in front of `zn`. Each one
 remembers its result and makes it the default, so the next `zn` or `zn tui`

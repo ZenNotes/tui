@@ -238,7 +238,11 @@ func withBackground(line string, bg lipgloss.Color) string {
 
 // backgroundSeq is the SGR prefix the active color profile uses for bg.
 func backgroundSeq(bg lipgloss.Color) string {
-	probe := lipgloss.NewStyle().Background(bg).Render("x")
+	return stylePrefix(lipgloss.NewStyle().Background(bg))
+}
+
+func stylePrefix(style lipgloss.Style) string {
+	probe := style.Render("x")
 	i := strings.Index(probe, "x")
 	if i <= 0 {
 		return ""
