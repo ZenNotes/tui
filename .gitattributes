@@ -1,0 +1,5 @@
+# Shared contract fixtures are checksummed against provenance recorded from the
+# main repository, so they must check out with LF on every platform, including
+# Windows runners whose Git defaults to CRLF conversion.
+internal/remote/testdata/** text eol=lf
+internal/vault/testdata/** text eol=lf
