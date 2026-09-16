@@ -82,7 +82,7 @@ func Main(argv []string) int {
 // ResolveTargetFromArgs picks the vault for an invocation from the global
 // flags.
 func ResolveTargetFromArgs(args Args) (backend.Target, error) {
-	return backend.ResolveTarget(args.Str("vault"), args.Str("server"), args.Str("token"))
+	return backend.ResolveTargetWithSource(args.Str("vault"), args.Str("server"), args.Str("token"), args.Str("workspace-source"))
 }
 
 // OpenBackend binds a target with the user's portable preferences applied.
@@ -108,6 +108,10 @@ func peelSubcommand(command string, rest []string) (string, Args) {
 }
 
 func run(argv []string) (int, error) {
+	if len(argv) == 1 && argv[0] == "--desktop-integration" {
+		emitJSON(map[string]any{"protocol": 1, "version": Version})
+		return 0, nil
+	}
 	if len(argv) == 0 || argv[0] == "--help" || argv[0] == "-h" || argv[0] == "help" {
 		fmt.Fprint(stdout, RenderHelp(argv))
 		return 0, nil

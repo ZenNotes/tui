@@ -76,8 +76,18 @@ type vaultListEntry struct {
 }
 
 func cmdVaultList(args Args) error {
-	ws := config.LoadWorkspaces()
-	defaultTarget, _ := backend.ResolveDefaultTarget("")
+	source, err := backend.ResolveWorkspaceSource(args.Str("workspace-source"))
+	if err != nil {
+		return err
+	}
+	ws := config.Workspaces{}
+	if source == "terminal" {
+		ws = config.LoadWorkspaces()
+	}
+	defaultTarget, err := ResolveTargetFromArgs(args)
+	if err != nil && !errors.Is(err, config.ErrNoVault) {
+		return err
+	}
 	isDefault := func(kind, root, baseURL string) bool {
 		if kind == "local" {
 			return defaultTarget.Kind == backend.KindLocal && root != "" && filepath.Clean(root) == filepath.Clean(defaultTarget.Root)

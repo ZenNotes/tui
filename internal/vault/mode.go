@@ -10,9 +10,9 @@ import (
 
 // SwitchPrimaryMode moves a vault between the classic layout, where notes
 // live under the inbox directory, and root mode, where they sit at the
-// vault root with the other system folders beside them. The layout drives
-// mode detection, so the files move and `primaryNotesLocation` is written
-// to match. Favorites that name moved notes are rewritten. It refuses to
+// vault root with the other system folders beside them. Files move and the
+// explicit `primaryNotesLocation` setting is written to match. Favorites
+// that name moved notes are rewritten. It refuses to
 // run when a move would overwrite something.
 func (v *Vault) SwitchPrimaryMode(target PrimaryNotesLocation) ([]string, error) {
 	current := v.PrimaryNotesLocation()

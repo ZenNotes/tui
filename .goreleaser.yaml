@@ -13,6 +13,7 @@ builds:
   - id: zn
     main: ./cmd/zn
     binary: zn
+    flags: [-trimpath]
     env:
       - CGO_ENABLED=0
     goos:

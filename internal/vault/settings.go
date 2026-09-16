@@ -73,7 +73,7 @@ type PeriodicNotes struct {
 // VaultSettings is the parsed, normalized `.zennotes/vault.json`.
 type VaultSettings struct {
 	// ExplicitPrimary is the file's own primaryNotesLocation, empty when the
-	// file says nothing. The effective location comes from the layout; see
+	// file says nothing. Only an absent value is inferred from the layout; see
 	// (*Vault).PrimaryNotesLocation.
 	ExplicitPrimary   PrimaryNotesLocation
 	DailyNotes        PeriodicNotes

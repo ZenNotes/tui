@@ -61,6 +61,15 @@ func ResolveAuthTokenFor(baseURL, flagToken, profileToken string) string {
 	return strings.TrimSpace(profileToken)
 }
 
+// ResolveAuthTokenForSource preserves the desktop CLI's token precedence in
+// app mode; terminal mode may additionally use credentials saved by zn connect.
+func ResolveAuthTokenForSource(baseURL, flagToken, profileToken, source string) string {
+	if source == "app" {
+		return ResolveAuthToken(flagToken, profileToken)
+	}
+	return ResolveAuthTokenFor(baseURL, flagToken, profileToken)
+}
+
 // TargetForWorkspace resolves one of zn's own saved workspaces by name.
 func TargetForWorkspace(ws config.Workspaces, name, flagToken string) (Target, bool) {
 	if v := ws.FindVault(name); v != nil {
@@ -94,11 +103,22 @@ func findProfile(profiles []config.RemoteProfile, selector string) *config.Remot
 
 // ResolveServerTarget resolves `--server <name|url>`.
 func ResolveServerTarget(selector, flagToken string) (Target, error) {
+	source, err := ResolveWorkspaceSource("")
+	if err != nil {
+		return Target{}, err
+	}
+	return resolveServerTarget(selector, flagToken, source)
+}
+
+func resolveServerTarget(selector, flagToken, source string) (Target, error) {
 	trimmed := strings.TrimSpace(selector)
 	if trimmed == "" || trimmed == "true" {
 		return Target{}, errors.New("--server needs a server name or URL, e.g. `--server home` or `--server localhost:7878`.")
 	}
-	ws := config.LoadWorkspaces()
+	ws := config.Workspaces{}
+	if source == "terminal" {
+		ws = config.LoadWorkspaces()
+	}
 	if saved := ws.FindServer(trimmed); saved != nil {
 		return Target{Kind: KindRemote, Name: saved.Name, BaseURL: saved.URL, AuthToken: ResolveAuthTokenFor(saved.URL, flagToken, "")}, nil
 	}
@@ -108,7 +128,7 @@ func ResolveServerTarget(selector, flagToken string) (Target, error) {
 			Kind:      KindRemote,
 			Name:      profile.Name,
 			BaseURL:   profile.BaseURL,
-			AuthToken: ResolveAuthTokenFor(profile.BaseURL, flagToken, profile.AuthToken),
+			AuthToken: ResolveAuthTokenForSource(profile.BaseURL, flagToken, profile.AuthToken, source),
 		}, nil
 	}
 	if LooksLikeServerURL(trimmed) {
@@ -116,7 +136,7 @@ func ResolveServerTarget(selector, flagToken string) (Target, error) {
 		return Target{
 			Kind:      KindRemote,
 			BaseURL:   base,
-			AuthToken: ResolveAuthTokenFor(base, flagToken, ""),
+			AuthToken: ResolveAuthTokenForSource(base, flagToken, "", source),
 		}, nil
 	}
 	names := []string{}
@@ -135,8 +155,16 @@ func ResolveServerTarget(selector, flagToken string) (Target, error) {
 // ResolveVaultTarget resolves `--vault <name|path>`: a local vault name, then
 // a server profile name, then a directory path.
 func ResolveVaultTarget(selector, flagToken string) (Target, error) {
+	source, err := ResolveWorkspaceSource("")
+	if err != nil {
+		return Target{}, err
+	}
+	return resolveVaultTarget(selector, flagToken, source)
+}
+
+func resolveVaultTarget(selector, flagToken, source string) (Target, error) {
 	trimmed := strings.TrimSpace(selector)
-	if t, ok := TargetForWorkspace(config.LoadWorkspaces(), trimmed, flagToken); ok {
+	if t, ok := TargetForWorkspace(config.LoadWorkspaces(), trimmed, flagToken); source == "terminal" && ok {
 		return t, nil
 	}
 	known := config.KnownVaults()
@@ -156,7 +184,7 @@ func ResolveVaultTarget(selector, flagToken string) (Target, error) {
 			Kind:      KindRemote,
 			Name:      profile.Name,
 			BaseURL:   profile.BaseURL,
-			AuthToken: ResolveAuthToken(flagToken, profile.AuthToken),
+			AuthToken: ResolveAuthTokenForSource(profile.BaseURL, flagToken, profile.AuthToken, source),
 		}, nil
 	}
 	root, err := config.ResolveVaultRoot(trimmed)
@@ -167,11 +195,19 @@ func ResolveVaultTarget(selector, flagToken string) (Target, error) {
 }
 
 // ResolveDefaultTarget is the target when nothing named one: ZENNOTES_SERVER,
-// then ZENNOTES_VAULT, then whatever the desktop app has open, a connected
-// server included.
+// then ZENNOTES_VAULT, then the selected source's default. Terminal mode
+// prefers its saved default before falling back to the desktop workspace.
 func ResolveDefaultTarget(flagToken string) (Target, error) {
+	source, err := ResolveWorkspaceSource("")
+	if err != nil {
+		return Target{}, err
+	}
+	return resolveDefaultTarget(flagToken, source)
+}
+
+func resolveDefaultTarget(flagToken, source string) (Target, error) {
 	if envServer := strings.TrimSpace(os.Getenv("ZENNOTES_SERVER")); envServer != "" {
-		return ResolveServerTarget(envServer, flagToken)
+		return resolveServerTarget(envServer, flagToken, source)
 	}
 	if strings.TrimSpace(os.Getenv("ZENNOTES_VAULT")) != "" {
 		root, err := config.ResolveVaultRoot("")
@@ -182,7 +218,7 @@ func ResolveDefaultTarget(flagToken string) (Target, error) {
 	}
 	// zn's own default, set by `zn connect`, `zn init`, `zn use` or a switch
 	// in the TUI, comes before whatever the desktop app has open.
-	if ws := config.LoadWorkspaces(); strings.TrimSpace(ws.Default) != "" {
+	if ws := config.LoadWorkspaces(); source == "terminal" && strings.TrimSpace(ws.Default) != "" {
 		if t, ok := TargetForWorkspace(ws, ws.Default, flagToken); ok {
 			return t, nil
 		}
@@ -193,7 +229,7 @@ func ResolveDefaultTarget(flagToken string) (Target, error) {
 			Kind:      KindRemote,
 			Name:      active.Name,
 			BaseURL:   active.BaseURL,
-			AuthToken: ResolveAuthTokenFor(active.BaseURL, flagToken, active.AuthToken),
+			AuthToken: ResolveAuthTokenForSource(active.BaseURL, flagToken, active.AuthToken, source),
 		}, nil
 	}
 	root, err := config.ResolveVaultRoot("")
@@ -204,15 +240,41 @@ func ResolveDefaultTarget(flagToken string) (Target, error) {
 }
 
 // ResolveTarget is the target for one invocation. `--server` wins over
-// `--vault`; with neither, the environment and then the app decide.
+// `--vault`; with neither, the environment and selected workspace source decide.
 func ResolveTarget(vaultSelector, serverSelector, flagToken string) (Target, error) {
+	return ResolveTargetWithSource(vaultSelector, serverSelector, flagToken, "")
+}
+
+// ResolveTargetWithSource keeps desktop commands attached to the desktop even
+// when the terminal UI remembers a different workspace. Flags and environment
+// vault overrides still win. Empty source reads ZENNOTES_WORKSPACE_SOURCE.
+func ResolveTargetWithSource(vaultSelector, serverSelector, flagToken, source string) (Target, error) {
+	source, err := ResolveWorkspaceSource(source)
+	if err != nil {
+		return Target{}, err
+	}
 	if strings.TrimSpace(serverSelector) != "" {
-		return ResolveServerTarget(serverSelector, flagToken)
+		return resolveServerTarget(serverSelector, flagToken, source)
 	}
 	if strings.TrimSpace(vaultSelector) != "" {
-		return ResolveVaultTarget(vaultSelector, flagToken)
+		return resolveVaultTarget(vaultSelector, flagToken, source)
 	}
-	return ResolveDefaultTarget(flagToken)
+	return resolveDefaultTarget(flagToken, source)
+}
+
+// ResolveWorkspaceSource returns app or terminal, applying the environment default.
+func ResolveWorkspaceSource(source string) (string, error) {
+	if source == "" {
+		source = strings.TrimSpace(os.Getenv("ZENNOTES_WORKSPACE_SOURCE"))
+	}
+	switch source {
+	case "", "terminal":
+		return "terminal", nil
+	case "app":
+		return "app", nil
+	default:
+		return "", fmt.Errorf("Unknown workspace source %q; use app or terminal.", source)
+	}
 }
 
 // RememberTarget makes a target zn's default for next time, saving a path

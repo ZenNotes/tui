@@ -53,7 +53,7 @@ func (a *App) parityCommands() []command {
 			}
 			// A saved name switches; anything else goes through the connect
 			// flow, which verifies the token before the app changes vaults.
-			if t, ok := backend.TargetForWorkspace(config.LoadWorkspaces(), arg, ""); ok && t.Kind == backend.KindRemote {
+			if t, err := backend.ResolveTargetWithSource("", arg, "", a.opts.WorkspaceSource); err == nil {
 				a.switchTarget(t)
 				return nil
 			}
@@ -65,7 +65,7 @@ func (a *App) parityCommands() []command {
 			var target backend.Target
 			var err error
 			if arg != "" {
-				target, err = backend.ResolveVaultTarget(arg, "")
+				target, err = backend.ResolveTargetWithSource(arg, "", "", a.opts.WorkspaceSource)
 			} else {
 				var root string
 				root, err = config.ResolveVaultRoot("")
@@ -315,7 +315,10 @@ func (a *App) openVaultSwitcher() {
 		}
 		return "local"
 	}
-	ws := config.LoadWorkspaces()
+	ws := config.Workspaces{}
+	if a.opts.WorkspaceSource != "app" {
+		ws = config.LoadWorkspaces()
+	}
 	for _, v := range ws.Vaults {
 		seenRoot[filepath.Clean(v.Root)] = true
 		t := backend.Target{Kind: backend.KindLocal, Root: v.Root}
@@ -337,7 +340,7 @@ func (a *App) openVaultSwitcher() {
 		if seenURL[strings.ToLower(p.BaseURL)] {
 			continue
 		}
-		t := backend.Target{Kind: backend.KindRemote, Name: p.Name, BaseURL: p.BaseURL, AuthToken: backend.ResolveAuthTokenFor(p.BaseURL, "", p.AuthToken)}
+		t := backend.Target{Kind: backend.KindRemote, Name: p.Name, BaseURL: p.BaseURL, AuthToken: backend.ResolveAuthTokenForSource(p.BaseURL, "", p.AuthToken, a.opts.WorkspaceSource)}
 		items = append(items, paletteItem{label: p.Name, detail: p.BaseURL, hint: current(t), id: "server:" + p.BaseURL, data: t})
 	}
 	items = append(items,
@@ -370,7 +373,11 @@ const (
 func (a *App) openServerPicker() {
 	items := []paletteItem{}
 	seenURL := map[string]bool{}
-	for _, s := range config.LoadWorkspaces().Servers {
+	ws := config.Workspaces{}
+	if a.opts.WorkspaceSource != "app" {
+		ws = config.LoadWorkspaces()
+	}
+	for _, s := range ws.Servers {
 		seenURL[strings.ToLower(s.URL)] = true
 		items = append(items, paletteItem{label: s.Name, detail: s.URL, hint: "server", data: backend.Target{Kind: backend.KindRemote, Name: s.Name, BaseURL: s.URL, AuthToken: backend.ResolveAuthTokenFor(s.URL, "", "")}})
 	}
@@ -378,7 +385,7 @@ func (a *App) openServerPicker() {
 		if seenURL[strings.ToLower(p.BaseURL)] {
 			continue
 		}
-		items = append(items, paletteItem{label: p.Name, detail: p.BaseURL, hint: "server", data: backend.Target{Kind: backend.KindRemote, Name: p.Name, BaseURL: p.BaseURL, AuthToken: backend.ResolveAuthTokenFor(p.BaseURL, "", p.AuthToken)}})
+		items = append(items, paletteItem{label: p.Name, detail: p.BaseURL, hint: "server", data: backend.Target{Kind: backend.KindRemote, Name: p.Name, BaseURL: p.BaseURL, AuthToken: backend.ResolveAuthTokenForSource(p.BaseURL, "", p.AuthToken, a.opts.WorkspaceSource)}})
 	}
 	if len(items) == 0 {
 		a.connectServerFlow("")
@@ -411,8 +418,10 @@ func (a *App) connectServerFlow(rawURL string) {
 		return
 	}
 	baseURL := remote.NormalizeBaseURL(rawURL)
-	if saved := config.LoadWorkspaces().FindServer(rawURL); saved != nil {
-		baseURL = saved.URL
+	token := backend.ResolveAuthTokenForSource(baseURL, "", "", a.opts.WorkspaceSource)
+	if target, err := backend.ResolveTargetWithSource("", rawURL, "", a.opts.WorkspaceSource); err == nil {
+		baseURL = target.BaseURL
+		token = target.AuthToken
 	}
 	finish := func(a *App, token string) {
 		client := remote.NewClient(baseURL, token)
@@ -440,7 +449,7 @@ func (a *App) connectServerFlow(rawURL string) {
 		}
 		a.switchTarget(backend.Target{Kind: backend.KindRemote, Name: entry.Name, BaseURL: baseURL, AuthToken: token})
 	}
-	if token := backend.ResolveAuthTokenFor(baseURL, "", ""); token != "" {
+	if token != "" {
 		finish(a, token)
 		return
 	}
@@ -480,7 +489,7 @@ func (a *App) switchByText(text string) {
 		a.connectServerFlow(text)
 		return
 	}
-	target, err = backend.ResolveVaultTarget(text, "")
+	target, err = backend.ResolveTargetWithSource(text, "", "", a.opts.WorkspaceSource)
 	if err != nil {
 		a.notifyError(err.Error())
 		return

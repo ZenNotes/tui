@@ -41,22 +41,21 @@ zn tui
 
 Update with `brew update && brew upgrade zn`.
 
-If `zn tui` reports **Unknown command**, your shell may be running the
-desktop app's bundled CLI or another older installation. Check which copy
-runs, then launch the Homebrew TUI directly:
+**Installed from the desktop app.** Desktop builds that include this terminal
+runtime update their managed `zn` installation when the app opens. Keep using the
+same command; `zn tui` opens the terminal app. Settings shows the installed version
+and offers Repair when needed. Desktop never replaces a Homebrew or manual install.
 
-```bash
-type -a zn
-"$(brew --prefix)/bin/zn" tui
-```
+Desktop-managed commands follow the desktop workspace even when the TUI remembers
+a different one. Standalone installations keep their own default. Use
+`--workspace-source app|terminal` or `ZENNOTES_WORKSPACE_SOURCE` to select the source
+explicitly; `--vault` and `--server` still select a specific destination. The TUI
+uses its own saved selection unless `--workspace-source app` is explicitly passed.
 
-If `~/.local/bin/zn` is a symlink installed by the desktop app, point that
-shortcut to Homebrew so the usual `zn tui` command works:
-
-```bash
-ls -l ~/.local/bin/zn
-ln -sfn "$(brew --prefix)/bin/zn" ~/.local/bin/zn
-```
+If an older desktop build reports **Unknown command** for `zn tui`, check
+`type -a zn`. A Homebrew installation can be run directly with
+`"$(brew --prefix)/bin/zn" tui`. Update the installation that owns your command;
+there is no need to overwrite one package manager's files with another installer.
 
 **Download a release.** Grab the archive for your platform from the
 [releases page](https://github.com/ZenNotes/tui/releases) (Linux, macOS and
@@ -108,7 +107,7 @@ wizard when nothing is configured yet. Later:
 | Command | What it does |
 | --- | --- |
 | `zn vault list` | Every saved vault and server, the default starred |
-| `zn use <name>` | Make a saved vault or server the default (`zn use app` follows the desktop app's vault again) |
+| `zn use <name>` | Set the terminal default (`zn use app` follows desktop again); desktop-managed scripts keep their own app default |
 | `zn disconnect <name>` | Forget a server and its token |
 | `zn vault mode root\|inbox` | Move a vault between the flat layout and the classic `inbox/` layout |
 

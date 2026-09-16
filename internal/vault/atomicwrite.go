@@ -36,7 +36,9 @@ func writeFileAtomic(abs string, data []byte, fileMode, dirMode fs.FileMode) err
 	}
 	mode := fileMode
 	replacing := false
+	var previous fs.FileInfo
 	if info, statErr := os.Stat(target); statErr == nil {
+		previous = info
 		mode = info.Mode().Perm()
 		replacing = true
 	} else if !errors.Is(statErr, os.ErrNotExist) {
@@ -63,6 +65,12 @@ func writeFileAtomic(abs string, data []byte, fileMode, dirMode fs.FileMode) err
 	}
 	if replacing {
 		if err := os.Chmod(temp, mode); err != nil {
+			_ = os.Remove(temp)
+			return err
+		}
+	}
+	if previous != nil {
+		if err := preserveCreationTime(temp, previous); err != nil {
 			_ = os.Remove(temp)
 			return err
 		}

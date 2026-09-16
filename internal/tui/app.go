@@ -25,6 +25,9 @@ type Options struct {
 	Target   backend.Target
 	OpenPath string
 	Version  string
+	// WorkspaceSource controls name resolution throughout the session. The
+	// TUI defaults to its own workspaces, even inside the desktop launcher.
+	WorkspaceSource string
 }
 
 // focusTarget is which panel owns the keyboard.
@@ -160,6 +163,9 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bool) *App {
+	if opts.WorkspaceSource == "" {
+		opts.WorkspaceSource = "terminal"
+	}
 	a := &App{
 		ctx:          ctx,
 		opts:         opts,

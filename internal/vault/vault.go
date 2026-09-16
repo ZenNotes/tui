@@ -84,8 +84,15 @@ func countLooseRootContent(root string, paths map[string]string) int {
 	if err != nil {
 		return 0
 	}
-	hidden := hiddenPrimaryRootNames(paths)
-	inboxDir := ResolveFolderPath(FolderInbox, paths)
+	// Inference ignores the default system names even after a remap, matching
+	// the desktop. Walking an explicitly root-mode vault still treats a
+	// vacated default name as an ordinary folder; that is a separate rule.
+	hidden := hiddenPrimaryRootNames(nil)
+	hidden[defaultFolderPaths[FolderInbox]] = struct{}{}
+	custom := map[string]struct{}{}
+	for _, name := range paths {
+		custom[strings.ToLower(name)] = struct{}{}
+	}
 	count := 0
 	for _, entry := range entries {
 		name := entry.Name()
@@ -95,7 +102,7 @@ func countLooseRootContent(root string, paths map[string]string) int {
 		if _, skip := hidden[name]; skip {
 			continue
 		}
-		if name == "inbox" || name == inboxDir {
+		if _, skip := custom[strings.ToLower(name)]; skip {
 			continue
 		}
 		if entry.IsDir() || (entry.Type().IsRegular() && strings.EqualFold(filepath.Ext(name), ".md")) {
@@ -105,31 +112,10 @@ func countLooseRootContent(root string, paths map[string]string) int {
 	return count
 }
 
-func hasMdFilesRecursively(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		if entry.IsDir() {
-			if hasMdFilesRecursively(filepath.Join(dir, name)) {
-				return true
-			}
-		} else if strings.EqualFold(filepath.Ext(name), ".md") {
-			return true
-		}
-	}
-	return false
-}
-
 // PrimaryNotesLocation decides whether the inbox lives under `inbox/` or at
-// the vault root. The on-disk layout is the strongest signal; the explicit
-// vault.json setting only breaks the tie for an empty vault. Cached briefly:
-// every operation consults it and the inbox scan is not free.
+// the vault root. An explicit vault.json setting wins, as it does in the
+// desktop app. Only an absent setting needs disk inference. Cached briefly:
+// every operation consults it and a root directory scan is not free.
 func (v *Vault) PrimaryNotesLocation() PrimaryNotesLocation {
 	v.primaryMu.Lock()
 	defer v.primaryMu.Unlock()
@@ -140,12 +126,10 @@ func (v *Vault) PrimaryNotesLocation() PrimaryNotesLocation {
 	paths := settings.SystemFolderPaths
 	var result PrimaryNotesLocation
 	switch {
-	case countLooseRootContent(v.root, paths) >= 1:
-		result = PrimaryNotesRoot
-	case hasMdFilesRecursively(filepath.Join(v.root, ResolveFolderPath(FolderInbox, paths))):
-		result = PrimaryNotesInbox
 	case settings.ExplicitPrimary != "":
 		result = settings.ExplicitPrimary
+	case countLooseRootContent(v.root, paths) >= 1:
+		result = PrimaryNotesRoot
 	default:
 		result = PrimaryNotesInbox
 	}
@@ -232,7 +216,8 @@ func (v *Vault) readMeta(abs string, folder NoteFolder, preambleFolder string) (
 	}
 	body, _ := os.ReadFile(abs)
 	rel := v.relPosix(abs)
-	created, updated := fileTimes(info)
+	created, updated := fileTimes(abs, info)
+	created = v.noteCreatedAt(rel, created)
 	bodyStr := string(body)
 	meta := NoteMeta{
 		Path:      rel,
@@ -471,7 +456,7 @@ func (v *Vault) WriteNote(rel, body string) (NoteMeta, error) {
 	if err != nil {
 		return NoteMeta{}, err
 	}
-	if err := writeFileAtomic(abs, []byte(body), v.fileMode, v.dirMode); err != nil {
+	if err := v.writeNoteFileAtomic(abs, []byte(body)); err != nil {
 		return NoteMeta{}, err
 	}
 	v.invalidateLayout()
@@ -514,7 +499,7 @@ func (v *Vault) WriteFileText(rel, text string) error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(abs, []byte(text), v.fileMode, v.dirMode)
+	return v.writeNoteFileAtomic(abs, []byte(text))
 }
 
 var titleBadCharsRe = regexp.MustCompile(`[\\/:\x00-\x1f*?"<>|]`)
@@ -576,7 +561,7 @@ func (v *Vault) CreateNote(folder NoteFolder, title, subpath string, body *strin
 	if body != nil {
 		content = *body
 	}
-	if err := writeFileAtomic(abs, []byte(content), v.fileMode, v.dirMode); err != nil {
+	if err := v.writeNoteFileAtomic(abs, []byte(content)); err != nil {
 		return NoteMeta{}, err
 	}
 	v.invalidateLayout()
@@ -627,13 +612,13 @@ func (v *Vault) renameNoteFile(rel, nextTitle string) (NoteMeta, error) {
 		}
 		if strings.EqualFold(abs, target) {
 			tmp := fmt.Sprintf("%s_rename_tmp_%d", abs, time.Now().UnixMilli())
-			if err := os.Rename(abs, tmp); err != nil {
+			if err := v.relocateWithMetadata(abs, tmp, false); err != nil {
 				return NoteMeta{}, err
 			}
-			if err := os.Rename(tmp, target); err != nil {
+			if err := v.relocateWithMetadata(tmp, target, false); err != nil {
 				return NoteMeta{}, err
 			}
-		} else if err := os.Rename(abs, target); err != nil {
+		} else if err := v.relocateWithMetadata(abs, target, false); err != nil {
 			return NoteMeta{}, err
 		}
 		_ = v.moveNoteComments(v.relPosix(abs), v.relPosix(target))
@@ -657,7 +642,7 @@ func (v *Vault) syncTitleHeading(sourceAbs, targetAbs, title string) {
 	}
 	next := RetitleLeadingHeading(string(body), title)
 	if next != string(body) {
-		_ = writeFileAtomic(targetAbs, []byte(next), v.fileMode, v.dirMode)
+		_ = v.writeNoteFileAtomic(targetAbs, []byte(next))
 	}
 }
 
@@ -712,7 +697,7 @@ func (v *Vault) moveBetweenFolders(rel string, target NoteFolder) (NoteMeta, err
 	baseTitle := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 	finalTitle := uniqueTitle(destDir, baseTitle)
 	destAbs := filepath.Join(destDir, finalTitle+".md")
-	if err := os.Rename(abs, destAbs); err != nil {
+	if err := v.relocateWithMetadata(abs, destAbs, false); err != nil {
 		return NoteMeta{}, err
 	}
 	v.invalidateLayout()
@@ -773,7 +758,7 @@ func (v *Vault) MoveNote(rel string, target NoteFolder, targetSubpath string) (N
 	baseTitle := strings.TrimSuffix(filepath.Base(oldAbs), ext)
 	finalTitle := uniqueTitle(destDir, baseTitle)
 	destAbs := filepath.Join(destDir, finalTitle+ext)
-	if err := os.Rename(oldAbs, destAbs); err != nil {
+	if err := v.relocateWithMetadata(oldAbs, destAbs, false); err != nil {
 		return NoteMeta{}, err
 	}
 	v.invalidateLayout()
@@ -802,7 +787,7 @@ func (v *Vault) DuplicateNote(rel string) (NoteMeta, error) {
 	if err != nil {
 		return NoteMeta{}, err
 	}
-	if err := writeFileAtomic(destAbs, body, v.fileMode, v.dirMode); err != nil {
+	if err := v.writeNoteFileAtomic(destAbs, body); err != nil {
 		return NoteMeta{}, err
 	}
 	_ = v.copyNoteComments(v.relPosix(abs), v.relPosix(destAbs))
@@ -821,6 +806,9 @@ func (v *Vault) DeleteNote(rel string) error {
 		return err
 	}
 	v.invalidateLayout()
+	if err := v.removeMetadata(v.relPosix(abs), false); err != nil {
+		return err
+	}
 	return v.removeNoteComments(v.relPosix(abs))
 }
 
@@ -835,10 +823,13 @@ func (v *Vault) EmptyTrash() error {
 	}
 	trashRel := v.relPosix(trashDir)
 	for _, e := range entries {
-		_ = v.removeNoteComments(trashRel + "/" + e.Name())
 		if err := os.RemoveAll(filepath.Join(trashDir, e.Name())); err != nil {
 			return err
 		}
+		if err := v.removeMetadata(trashRel+"/"+e.Name(), e.IsDir()); err != nil {
+			return err
+		}
+		_ = v.removeNoteComments(trashRel + "/" + e.Name())
 	}
 	return nil
 }
@@ -898,7 +889,7 @@ func (v *Vault) RenameFolder(folder NoteFolder, oldSubpath, newSubpath string) (
 	if err := os.MkdirAll(filepath.Dir(newAbs), v.dirMode); err != nil {
 		return "", err
 	}
-	if err := os.Rename(oldAbs, newAbs); err != nil {
+	if err := v.relocateWithMetadata(oldAbs, newAbs, true); err != nil {
 		return "", err
 	}
 	v.invalidateLayout()
@@ -918,6 +909,9 @@ func (v *Vault) DeleteFolder(folder NoteFolder, subpath string) error {
 		return fmt.Errorf("Path escapes vault: %s", clean)
 	}
 	if err := os.RemoveAll(abs); err != nil {
+		return err
+	}
+	if err := v.removeMetadata(v.relPosix(abs), true); err != nil {
 		return err
 	}
 	v.invalidateLayout()
@@ -1335,5 +1329,9 @@ func (v *Vault) RenameFile(oldRel, newRel string) error {
 	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
 		return err
 	}
-	return os.Rename(from, to)
+	info, err := os.Stat(from)
+	if err != nil {
+		return err
+	}
+	return v.relocateWithMetadata(from, to, info.IsDir())
 }
