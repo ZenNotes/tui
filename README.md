@@ -348,3 +348,8 @@ implementation, so the two stay interchangeable.
 ## License
 
 MIT
+
+## Compatibility development
+
+See [shared contract fixtures](docs/shared-contracts.md) for the task-format and
+self-hosted HTTP boundary checks, including optional tests against a real server.
