@@ -353,3 +353,10 @@ MIT
 
 See [shared contract fixtures](docs/shared-contracts.md) for the task-format and
 self-hosted HTTP boundary checks, including optional tests against a real server.
+
+### Desktop migration and creation dates
+
+Desktop-managed commands keep following the desktop vault, while `zn tui` keeps
+its own terminal selection. Atomic note saves preserve creation dates in portable
+metadata without changing Markdown. See [Desktop CLI compatibility](docs/desktop-integration.md)
+for the metadata format, client compatibility and rollback behavior.
