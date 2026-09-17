@@ -253,8 +253,23 @@ tabs, and the vault you switch to becomes the default for the next launch.
 The mouse works everywhere: click to focus and select, double click to
 open, right click for the same menus `m` opens, wheel to scroll, drag to
 select or to resize the sidebar and splits. `mouse = false` under
-`[terminal]` turns it off. `theme_mode` under `[appearance]` is `dark`,
-`light` or `system`; `:theme` toggles it.
+`[terminal]` turns it off.
+
+`zn tui` draws with the color scheme the desktop app is set to. It reads
+`theme_family`, `theme_mode` and `theme_id` under `[appearance]`, so every
+built-in scheme works (Apple, Gruvbox, Catppuccin, GitHub, Solarized, One,
+Nord, Tokyo Night, Kanagawa, Black Metal, Rosé Pine, each in its variants),
+and so do the [custom themes](https://zennotes.org/docs#custom-themes) under
+`~/.config/zennotes/themes/` and the accent and syntax colors set with Quick
+tweaks. `theme_mode = "auto"` follows the terminal background. Colors a
+terminal would draw too faint are nudged toward the text color until they
+read; the rest of a palette is used as is.
+
+`:theme` flips dark and light, `:theme nord` or `:theme catppuccin-mocha`
+switches for the session, and `:themes` opens a picker that previews each
+scheme. To give the terminal its own look, set `theme` under `[terminal]` to
+a family, a variant or a custom theme's folder name; left empty, zn matches
+the desktop app.
 
 ### Tag completion
 
@@ -281,8 +296,9 @@ creates it with comments when it is missing. The sections `zn` reads:
 | `[vim]` | `enabled`, `which_key_hints`, `insert_escape` |
 | `[editor]` | `line_number_mode`, `word_wrap`, `completed_task_style` |
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
-| `[appearance]` | `theme_mode` |
-| `[terminal]` | `mouse`, `preview_style`, `images` (terminal only) |
+| `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
+| `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
+| `[terminal]` | `mouse`, `preview_style`, `images`, `theme` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
 

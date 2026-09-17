@@ -135,6 +135,8 @@ type palette struct {
 	// onCancel runs when the palette closes without a choice, so a flow
 	// that opened it from another overlay can restore that overlay.
 	onCancel func(a *App)
+	// onMove runs when the cursor lands on another item, for live previews.
+	onMove func(a *App, item paletteItem)
 }
 
 func (p *palette) refilter(a *App) {
@@ -174,6 +176,14 @@ func (p *palette) refilter(a *App) {
 }
 
 func (p *palette) handleKey(a *App, k vim.Key) {
+	if p.onMove != nil {
+		before := p.currentID()
+		defer func() {
+			if a.overlay == p && p.currentID() != before && p.cursor < len(p.filtered) {
+				p.onMove(a, p.filtered[p.cursor])
+			}
+		}()
+	}
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsCtrl('['):
 		a.overlay = nil
@@ -219,6 +229,14 @@ func (p *palette) handleKey(a *App, k vim.Key) {
 	if p.cursor < 0 {
 		p.cursor = 0
 	}
+}
+
+// currentID names the item under the cursor, "" when nothing matches.
+func (p *palette) currentID() string {
+	if p.cursor < 0 || p.cursor >= len(p.filtered) {
+		return ""
+	}
+	return p.filtered[p.cursor].id
 }
 
 func (p *palette) render(a *App, w, h int) string {

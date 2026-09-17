@@ -13,6 +13,7 @@ import (
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -562,23 +563,20 @@ func (a *App) commandTable() []command {
 			return nil
 		}},
 		{names: []string{"theme"}, title: "Toggle dark/light theme", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
-			mode := strings.ToLower(strings.TrimSpace(cmd.Args))
-			if mode == "" {
+			name := strings.TrimSpace(cmd.Args)
+			if name == "" {
+				name = "dark"
 				if a.theme.Dark {
-					mode = "light"
-				} else {
-					mode = "dark"
+					name = "light"
 				}
 			}
-			if mode != "dark" && mode != "light" && mode != "system" {
-				return fmt.Errorf("theme is dark, light or system")
+			return a.selectTheme(name)
+		}},
+		{names: []string{"themes", "colorscheme", "colo"}, title: "Pick a color scheme", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+			if name := strings.TrimSpace(cmd.Args); name != "" {
+				return a.selectTheme(name)
 			}
-			a.prefs.ThemeMode = mode
-			a.theme = NewTheme(mode, a.systemDark)
-			a.styleCache = nil
-			a.glamour = nil
-			a.invalidatePreviews()
-			a.notify("Theme: " + mode)
+			a.openThemePicker()
 			return nil
 		}},
 		{names: []string{"previewstyle", "style"}, title: "Preview style (Glamour name, JSON path, or zen)", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
@@ -732,8 +730,8 @@ func (a *App) completeEx(text string) (string, []string) {
 		}
 	case "style", "previewstyle":
 		cands = append(append([]string{}, glamourStyleNames...), "zen")
-	case "theme":
-		cands = []string{"dark", "light", "system"}
+	case "theme", "themes", "colorscheme", "colo":
+		cands = themeNames()
 	case "view":
 		cands = []string{"tasks", "tags", "trash", "quick", "archive", "home", "help", "settings", "list", "board", "calendar"}
 	case "template", "tmpl", "insert", "inserttemplate":
@@ -1104,6 +1102,69 @@ func (a *App) openPreviewStylePicker() {
 		}
 		a.notify("Preview style: " + it.id)
 	}}
+}
+
+// themeNames lists what :theme takes: the modes, the families, every
+// built-in variant and the custom themes on disk.
+func themeNames() []string {
+	names := append([]string{"dark", "light", "auto"}, themes.Families()...)
+	for _, o := range themes.Builtin {
+		names = append(names, o.ID)
+	}
+	for _, c := range themes.ListCustom(config.CustomThemesDir()) {
+		names = append(names, c.ID())
+	}
+	return names
+}
+
+// selectTheme applies what the user named for this session: a mode, a
+// family, a variant or a custom theme. config.toml stays the desktop's.
+func (a *App) selectTheme(name string) error {
+	sel, err := themes.Select(name, a.themeSel, config.CustomThemesDir())
+	if err != nil {
+		return err
+	}
+	if err := a.setTheme(sel); err != nil {
+		return err
+	}
+	a.notify("Theme: " + a.theme.Name)
+	return nil
+}
+
+// openThemePicker lists every color scheme and previews the one under the
+// cursor; Esc puts the theme back.
+func (a *App) openThemePicker() {
+	items := []paletteItem{}
+	for _, o := range themes.Builtin {
+		mode := "light"
+		if o.Dark {
+			mode = "dark"
+		}
+		items = append(items, paletteItem{label: o.Label, detail: mode + " · " + o.ID, id: o.ID})
+	}
+	for _, c := range themes.ListCustom(config.CustomThemesDir()) {
+		items = append(items, paletteItem{label: c.Name, detail: "custom · " + c.ID(), id: c.ID()})
+	}
+	before := a.themeSel
+	preview := func(a *App, it paletteItem) {
+		if sel, err := themes.Select(it.id, before, config.CustomThemesDir()); err == nil {
+			_ = a.setTheme(sel)
+		}
+	}
+	p := &palette{title: "Color scheme (the desktop app's themes)", placeholder: "Theme", items: items, filtered: items, onMove: preview,
+		onSelect: func(a *App, it paletteItem) {
+			if err := a.selectTheme(it.id); err != nil {
+				a.notifyError(err.Error())
+			}
+		},
+		onCancel: func(a *App) { _ = a.setTheme(before) },
+	}
+	for i, it := range items {
+		if it.id == a.theme.ID {
+			p.cursor = i
+		}
+	}
+	a.overlay = p
 }
 
 // openTasksMode opens the Tasks view, switched to a mode when one is

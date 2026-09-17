@@ -64,6 +64,12 @@ func ConfigTomlPath() string {
 	return filepath.Join(PortableConfigDir(), "config.toml")
 }
 
+// CustomThemesDir is where the desktop app keeps user-authored themes, one
+// folder each, next to config.toml.
+func CustomThemesDir() string {
+	return filepath.Join(PortableConfigDir(), "themes")
+}
+
 // ExpandHome turns `~` and `~/x` into absolute paths.
 func ExpandHome(target string) string {
 	if target == "~" {

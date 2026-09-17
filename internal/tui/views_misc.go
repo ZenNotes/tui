@@ -123,7 +123,11 @@ func (v *settingsView) refresh(a *App) {
 		"sync_title_heading\t" + fmt.Sprint(p.SyncTitleHeadingOnRename),
 		"",
 		"## Appearance",
+		"theme\t" + a.theme.Name + " (" + a.theme.ID + ")",
+		"theme_family\t" + p.ThemeFamily,
 		"theme_mode\t" + p.ThemeMode,
+		"theme_id\t" + p.ThemeID,
+		"terminal theme\t" + orDash(p.TerminalTheme) + " ([terminal] theme, for zn alone)",
 		"unified_sidebar\t" + fmt.Sprint(p.UnifiedSidebar) + " (the terminal always nests notes under folders)",
 		"",
 		"## Views",
@@ -168,6 +172,14 @@ func (v *settingsView) refresh(a *App) {
 		}
 	}
 	v.lines = append(v.lines, "", "# Connection", "backend\t"+a.backend.Label())
+}
+
+// orDash shows an unset preference as a dash.
+func orDash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "—"
+	}
+	return s
 }
 
 func (v *settingsView) render(a *App, w, h int, focused bool) string {

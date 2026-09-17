@@ -32,7 +32,12 @@ type Prefs struct {
 	TextReplacementsEnabled  bool
 	TextReplacements         map[string]string
 
+	// ThemeFamily, ThemeMode and ThemeID are the desktop's theme selection;
+	// ThemeTweaks its Quick tweaks (accent and syntax hues, by slug).
+	ThemeFamily    string
 	ThemeMode      string
+	ThemeID        string
+	ThemeTweaks    map[string]string
 	UnifiedSidebar bool
 
 	NoteSortOrder           string
@@ -60,6 +65,9 @@ type Prefs struct {
 	// TerminalImages is auto, kitty or off: whether the preview paints
 	// pictures with the Kitty graphics protocol.
 	TerminalImages string
+	// TerminalTheme names a theme for zn alone: a family, a theme id or a
+	// custom theme. Empty follows the desktop's [appearance] selection.
+	TerminalTheme string
 }
 
 // DefaultPrefs are the shipped defaults.
@@ -81,7 +89,10 @@ func DefaultPrefs() Prefs {
 		MarkdownSnippets:         true,
 		TextReplacementsEnabled:  true,
 		TextReplacements:         map[string]string{"->": "→"},
+		ThemeFamily:              "gruvbox",
 		ThemeMode:                "dark",
+		ThemeID:                  "dark-hard",
+		ThemeTweaks:              map[string]string{},
 		PreviewStyle:             "auto",
 		TerminalMouse:            true,
 		UnifiedSidebar:           true,
@@ -149,7 +160,9 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setBool(editor, "text_replacements_enabled", &p.TextReplacementsEnabled)
 
 	appearance := section("appearance")
+	setString(appearance, "theme_family", &p.ThemeFamily)
 	setString(appearance, "theme_mode", &p.ThemeMode)
+	setString(appearance, "theme_id", &p.ThemeID)
 	setBool(appearance, "unified_sidebar", &p.UnifiedSidebar)
 
 	view := section("view")
@@ -177,6 +190,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setBool(terminal, "mouse", &p.TerminalMouse)
 	setString(terminal, "preview_style", &p.PreviewStyle)
 	setString(terminal, "images", &p.TerminalImages)
+	setString(terminal, "theme", &p.TerminalTheme)
 	if strings.TrimSpace(p.PreviewStyle) == "" {
 		p.PreviewStyle = "auto"
 	}
@@ -184,6 +198,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	p.KeymapOverrides = mergeStringTable(p.KeymapOverrides, section("keymaps"))
 	p.SystemFolderLabels = mergeStringTable(p.SystemFolderLabels, section("folder_labels"))
 	p.KanbanColumnTitles = mergeStringTable(p.KanbanColumnTitles, section("kanban_column_titles"))
+	p.ThemeTweaks = mergeStringTable(p.ThemeTweaks, section("tweaks"))
 	if table := section("text_replacements"); table != nil {
 		p.TextReplacements = mergeStringTable(map[string]string{}, table)
 	}
@@ -255,8 +270,15 @@ text_replacements_enabled = true
 sync_title_heading_on_rename = true
 
 [appearance]
-# dark, light, or system (follows the terminal background in zn tui)
-theme_mode = "system"
+# The same color schemes as the desktop app: apple, gruvbox, catppuccin,
+# github, solarized, one, nord, tokyo-night, kanagawa, black-metal, rose-pine,
+# or custom with theme_id = "custom-<folder>" for a theme under themes/.
+theme_family = "gruvbox"
+# light, dark, or auto (follows the terminal background in zn tui)
+theme_mode = "auto"
+# The variant within the family, e.g. dark-hard or catppuccin-mocha. The
+# desktop app keeps it in step with the family and the mode.
+theme_id = "dark-hard"
 
 [view]
 note_sort_order = "none"
@@ -277,6 +299,9 @@ preview_style = "auto"
 # graphics protocol (Kitty and Ghostty; inside tmux, set allow-passthrough on).
 images = "auto"
 mouse = true
+# A theme for zn alone: a family, a theme id or a custom theme. Empty follows
+# [appearance], so the terminal matches the desktop app.
+theme = ""
 
 [keymaps]
 # "action.id" = "keys"   (an empty string unbinds an action)

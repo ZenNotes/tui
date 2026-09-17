@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -56,6 +58,8 @@ type App struct {
 	rawPref config.Prefs
 	keymap  *keymaps.Resolver
 	theme   Theme
+	// themeSel is the selection the theme was resolved from; :theme edits it.
+	themeSel themes.Selection
 
 	width, height int
 	ready         bool
@@ -153,7 +157,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	// The background query must happen before Bubble Tea owns the terminal.
 	systemDark := true
-	if strings.EqualFold(strings.TrimSpace(prefs.ThemeMode), "system") || strings.TrimSpace(prefs.ThemeMode) == "" || strings.EqualFold(prefs.ThemeMode, "auto") {
+	if sel, _ := themeSelection(prefs); themes.NormalizeMode(sel.Mode) == "auto" {
 		systemDark = DetectDarkBackground()
 	}
 	app := newApp(ctx, opts, prefs, systemDark)
@@ -179,7 +183,6 @@ func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bo
 		rawPref:      prefs,
 		prefs:        prefsView{Prefs: prefs},
 		keymap:       keymaps.NewResolver(prefs.KeymapOverrides),
-		theme:        NewTheme(prefs.ThemeMode, systemDark),
 		systemDark:   systemDark,
 		mouseEnabled: prefs.TerminalMouse,
 		buffers:      map[string]*noteBuffer{},
@@ -189,6 +192,10 @@ func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bo
 		sidebarWidth: 32,
 		ignoredPaths: map[string]time.Time{},
 		jumpIdx:      -1,
+	}
+	sel, selErr := themeSelection(prefs)
+	if err := a.setTheme(sel); err != nil || selErr != nil {
+		a.notifyError(errors.Join(selErr, err).Error())
 	}
 	a.activePane = a.panes.leaves()[0]
 	a.sidebar = newSidebar(a)

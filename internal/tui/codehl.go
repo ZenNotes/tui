@@ -22,26 +22,69 @@ type codeSpan struct {
 
 type codeHighlights struct {
 	version int
-	dark    bool
+	style   string
 	lines   map[int][]codeSpan
 }
 
-// chromaStyleName matches the preview's code theme.
-func chromaStyleName(dark bool) string {
-	if dark {
-		return "gruvbox"
+// registerChromaStyle builds the code style of a theme and registers it
+// under a name the editor and Glamour's code blocks both look up. The roles
+// follow the desktop's syntax colors: accent keywords, green strings, yellow
+// numbers and constants, blue functions, purple types, red tags. Registering
+// again under the same name replaces the style, so an edited custom theme
+// takes effect when it is selected again.
+func registerChromaStyle(t Theme) string {
+	name := "zennotes-" + t.ID
+	fg, dim, muted := string(t.Fg), string(t.FgDim), string(t.FgMuted)
+	accent, soft := string(t.Accent), string(t.AccentSoft)
+	red, green, yellow := string(t.Red), string(t.Green), string(t.Yellow)
+	blue, purple := string(t.Blue), string(t.Purple)
+	style, err := chroma.NewStyle(name, chroma.StyleEntries{
+		chroma.Background:        fg,
+		chroma.Text:              fg,
+		chroma.Error:             red,
+		chroma.Comment:           "italic " + muted,
+		chroma.CommentPreproc:    "italic " + soft,
+		chroma.Keyword:           "bold " + accent,
+		chroma.KeywordConstant:   yellow,
+		chroma.KeywordType:       purple,
+		chroma.Operator:          dim,
+		chroma.Punctuation:       dim,
+		chroma.Name:              fg,
+		chroma.NameAttribute:     purple,
+		chroma.NameBuiltin:       blue,
+		chroma.NameClass:         purple,
+		chroma.NameConstant:      yellow,
+		chroma.NameDecorator:     "italic " + soft,
+		chroma.NameFunction:      blue,
+		chroma.NameLabel:         purple,
+		chroma.NameTag:           red,
+		chroma.LiteralString:     green,
+		chroma.LiteralNumber:     yellow,
+		chroma.GenericDeleted:    red,
+		chroma.GenericInserted:   green,
+		chroma.GenericHeading:    "bold " + accent,
+		chroma.GenericSubheading: "bold " + accent,
+		chroma.GenericEmph:       "italic",
+		chroma.GenericStrong:     "bold",
+	})
+	if err != nil {
+		if t.Dark {
+			return "gruvbox"
+		}
+		return "gruvbox-light"
 	}
-	return "gruvbox-light"
+	styles.Register(style)
+	return name
 }
 
 // codeSpansFor computes (or reuses) the token spans of every fenced block.
 func (a *App) codeSpansFor(buf *noteBuffer, lines []string) map[int][]codeSpan {
-	dark := a.theme.Dark
-	if buf.codeHL != nil && buf.codeHL.version == buf.ed.Version() && buf.codeHL.dark == dark {
+	style := a.theme.ChromaStyle
+	if buf.codeHL != nil && buf.codeHL.version == buf.ed.Version() && buf.codeHL.style == style {
 		return buf.codeHL.lines
 	}
-	spans := highlightFences(lines, chromaStyleName(dark))
-	buf.codeHL = &codeHighlights{version: buf.ed.Version(), dark: dark, lines: spans}
+	spans := highlightFences(lines, style)
+	buf.codeHL = &codeHighlights{version: buf.ed.Version(), style: style, lines: spans}
 	return spans
 }
 

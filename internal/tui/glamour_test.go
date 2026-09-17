@@ -47,7 +47,7 @@ func TestPrepareMarkdown(t *testing.T) {
 
 func TestResolveGlamourStyle(t *testing.T) {
 	for _, name := range []string{"auto", "dark", "light", "dracula", "tokyo-night", "pink", "ascii", "notty"} {
-		cfg, err := resolveGlamourStyle(name, true)
+		cfg, err := resolveGlamourStyle(name, buildTheme(true))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -55,7 +55,7 @@ func TestResolveGlamourStyle(t *testing.T) {
 			t.Fatalf("%s: margin should be zeroed", name)
 		}
 	}
-	if _, err := resolveGlamourStyle("/no/such/style.json", true); err == nil {
+	if _, err := resolveGlamourStyle("/no/such/style.json", buildTheme(true)); err == nil {
 		t.Fatal("missing file should error")
 	}
 }

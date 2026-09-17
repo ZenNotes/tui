@@ -2,7 +2,7 @@ package tui
 
 import (
 	"context"
-	"fmt"
+	"image/color"
 	"strings"
 	"testing"
 
@@ -13,6 +13,7 @@ import (
 	"github.com/muesli/termenv"
 
 	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/themes"
 )
 
 func TestViewPaintsEveryCellIndependentlyOfTerminalColors(t *testing.T) {
@@ -47,6 +48,18 @@ func TestViewPaintsEveryCellIndependentlyOfTerminalColors(t *testing.T) {
 	}
 }
 
+// sameColor compares a painted color with a palette hex, allowing the one
+// step per channel that termenv's float conversion can lose.
+func sameColor(got color.Color, want lipgloss.Color) bool {
+	c, ok := themes.ParseColor(string(want))
+	if !ok || got == nil {
+		return false
+	}
+	r, g, b, _ := got.RGBA()
+	near := func(a uint32, b uint8) bool { return max(int(a>>8), int(b))-min(int(a>>8), int(b)) <= 1 }
+	return near(r, c.R) && near(g, c.G) && near(b, c.B)
+}
+
 func TestThemePaintPreservesNestedColorsAndHonorsNoColor(t *testing.T) {
 	profile := lipgloss.ColorProfile()
 	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
@@ -71,12 +84,8 @@ func TestThemePaintPreservesNestedColorsAndHonorsNoColor(t *testing.T) {
 			if pen.Fg == nil || pen.Bg == nil {
 				t.Fatalf("%q has unset colors: %+v", seq, pen)
 			}
-			r, g, b, _ := pen.Fg.RGBA()
-			actualFg := fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
-			r, g, b, _ = pen.Bg.RGBA()
-			actualBg := fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
-			if actualFg != string(fg) || actualBg != string(bg) {
-				t.Fatalf("%q has %s on %s, want %s on %s", seq, actualFg, actualBg, fg, bg)
+			if !sameColor(pen.Fg, fg) || !sameColor(pen.Bg, bg) {
+				t.Fatalf("%q has %v on %v, want %s on %s", seq, pen.Fg, pen.Bg, fg, bg)
 			}
 		}
 		row, state = row[n:], next

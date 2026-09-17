@@ -25,7 +25,7 @@ import (
 type glamourState struct {
 	style string
 	width int
-	dark  bool
+	theme string
 	r     *glamour.TermRenderer
 	err   error
 }
@@ -35,12 +35,12 @@ var glamourStyleNames = []string{"auto", "zennotes", "dark", "light", "dracula",
 
 // resolveGlamourStyle turns a name or JSON path into a style config with
 // the document margin removed, since the pane already pads the text.
-func resolveGlamourStyle(name string, dark bool) (ansi.StyleConfig, error) {
+func resolveGlamourStyle(name string, th Theme) (ansi.StyleConfig, error) {
 	var cfg ansi.StyleConfig
 	key := strings.ToLower(strings.TrimSpace(name))
 	switch key {
 	case "", "auto", "system", "zennotes":
-		cfg = zennotesStyle(dark)
+		cfg = zennotesStyle(th)
 	default:
 		if builtin, ok := styles.DefaultStyles[key]; ok {
 			cfg = *builtin
@@ -69,11 +69,11 @@ func resolveGlamourStyle(name string, dark bool) (ansi.StyleConfig, error) {
 // glamourRenderer returns the cached renderer for the active style.
 func (a *App) glamourRenderer(width int) (*glamour.TermRenderer, error) {
 	style := a.prefs.PreviewStyle
-	if a.glamour != nil && a.glamour.style == style && a.glamour.width == width && a.glamour.dark == a.theme.Dark {
+	if a.glamour != nil && a.glamour.style == style && a.glamour.width == width && a.glamour.theme == a.theme.ID {
 		return a.glamour.r, a.glamour.err
 	}
-	st := &glamourState{style: style, width: width, dark: a.theme.Dark}
-	cfg, err := resolveGlamourStyle(style, a.theme.Dark)
+	st := &glamourState{style: style, width: width, theme: a.theme.ID}
+	cfg, err := resolveGlamourStyle(style, a.theme)
 	if err != nil {
 		st.err = err
 	} else {
@@ -450,7 +450,7 @@ func (a *App) setPreviewStyle(name string) error {
 		name = "auto"
 	}
 	if !strings.EqualFold(name, "zen") {
-		if _, err := resolveGlamourStyle(name, a.theme.Dark); err != nil {
+		if _, err := resolveGlamourStyle(name, a.theme); err != nil {
 			return err
 		}
 	}
@@ -473,15 +473,12 @@ func (a *App) invalidatePreviews() {
 
 // zennotesStyle is the reading-view style that matches the interface
 // palette: accent headings, dim quotes, the task and tag colors of the
-// editor. It starts from Glamour's dark or light style so code blocks
-// keep a sensible chroma theme.
-func zennotesStyle(dark bool) ansi.StyleConfig {
+// editor, code in the theme's own syntax colors. It starts from Glamour's
+// dark or light style for everything the palette has no opinion on.
+func zennotesStyle(th Theme) ansi.StyleConfig {
 	cfg := styles.LightStyleConfig
-	th := buildTheme(dark)
-	chroma := "gruvbox-light"
-	if dark {
+	if th.Dark {
 		cfg = styles.DarkStyleConfig
-		chroma = "gruvbox"
 	}
 	str := func(v string) *string { return &v }
 	b := func(v bool) *bool { return &v }
@@ -516,7 +513,8 @@ func zennotesStyle(dark bool) ansi.StyleConfig {
 	cfg.ImageText.Color = str(string(th.FgDim))
 	cfg.Code.StylePrimitive.Color = str(string(th.Green))
 	cfg.Code.StylePrimitive.BackgroundColor = nil
-	cfg.CodeBlock.Theme = chroma
+	cfg.CodeBlock.Theme = th.ChromaStyle
+	cfg.CodeBlock.Chroma = nil
 	cfg.CodeBlock.Margin = u(2)
 	cfg.CodeBlock.StyleBlock.StylePrimitive.Color = str(string(th.Green))
 	cfg.HorizontalRule.Color = str(string(th.FgMuted))
