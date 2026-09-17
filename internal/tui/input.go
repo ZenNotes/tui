@@ -61,13 +61,14 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		editing = m == vim.ModeInsert || m == vim.ModeReplace || m == vim.ModeCmdline || !a.prefs.VimMode
 	}
 	if editing {
-		if a.chordKey(k, true) {
+		if a.completionKey(buf, k) || a.chordKey(k, true) {
 			return a.afterKey()
 		}
 		buf.ed.HandleKey(k)
 		if k.IsRune('[') {
 			a.maybeWikilinkCompletion(buf)
 		}
+		a.refreshTagMenu(buf)
 		return a.afterKey()
 	}
 	if a.chordKey(k, false) {
@@ -92,6 +93,39 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		a.paneKey(k)
 	}
 	return a.afterKey()
+}
+
+// completionKey takes the keys insert-mode completion owns: the ones that
+// drive an open tag menu, and Vim's Ctrl-X prefix, under which Ctrl-O (omni)
+// and Ctrl-] (tags) open that menu on demand. Ctrl-Space does the same, as
+// in the desktop editor.
+func (a *App) completionKey(buf *noteBuffer, k vim.Key) bool {
+	if buf.ed.Mode() != vim.ModeInsert {
+		a.insertCtrlX = false
+		return false
+	}
+	if a.insertCtrlX {
+		a.insertCtrlX = false
+		if k.IsCtrl('o') || k.IsCtrl(']') {
+			a.openTagMenu(buf)
+			return true
+		}
+		a.message = ""
+		return k.IsCtrl('x')
+	}
+	if a.tagMenuKey(buf, k) {
+		return true
+	}
+	switch {
+	case k.IsCtrl('x') && a.prefs.VimMode:
+		a.insertCtrlX = true
+		a.message, a.messageErr = "-- ^X mode (^O tags)", false
+	case k.IsCtrl('@'):
+		a.openTagMenu(buf)
+	default:
+		return false
+	}
+	return true
 }
 
 // afterKey flushes queued commands and the quit signal.

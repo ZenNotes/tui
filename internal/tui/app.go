@@ -85,6 +85,12 @@ type App struct {
 	navKeys  []vim.Key
 	paneKeys bool
 
+	// tagMenu is the tag completion under the cursor; tagDismissed the token
+	// it was closed on; insertCtrlX a pending Ctrl-X in insert mode.
+	tagMenu      *tagMenu
+	tagDismissed *tagDismissal
+	insertCtrlX  bool
+
 	jumps      []jumpEntry
 	jumpIdx    int
 	recent     []string
@@ -547,6 +553,8 @@ func (a *App) View() string {
 		screen, a.overlayRect = overlayPlace(screen, a.overlay.render(a, a.width, a.height), a.width, a.height)
 	} else if a.leader != nil && a.leader.showHints {
 		screen = overlayOn(screen, a.renderWhichKey(), a.width, a.height)
+	} else {
+		screen = a.paintTagMenu(screen)
 	}
 	if len(a.toasts) > 0 {
 		screen = a.renderToasts(screen)

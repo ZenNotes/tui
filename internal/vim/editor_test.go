@@ -467,3 +467,26 @@ func TestHostExCommand(t *testing.T) {
 		t.Fatalf("ZZ got %+v", got)
 	}
 }
+
+func TestReplaceAtCursorJoinsTheInsert(t *testing.T) {
+	opts := DefaultOptions()
+	opts.TextReplacementsEnabled = false
+	e := New("see  end", opts, Hooks{})
+	e.SetViewport(10)
+	e.SetCursor(Pos{0, 3})
+	e.Feed("a#pro")
+	e.ReplaceAtCursor(4, 0, "#project")
+	if got, cur := e.Text(), e.Cursor(); got != "see #project end" || cur != (Pos{0, 12}) || e.Mode() != ModeInsert {
+		t.Fatalf("after the completion: %q %+v %v", got, cur, e.Mode())
+	}
+	// The runes right of the cursor go too, clamped to the line.
+	e.ReplaceAtCursor(0, 99, "!")
+	if got := e.Text(); got != "see #project!" {
+		t.Fatalf("replacing to the end: %q", got)
+	}
+	// One undo takes the typing and both replacements.
+	e.Feed("<Esc>u")
+	if got := e.Text(); got != "see  end" {
+		t.Fatalf("after undo: %q", got)
+	}
+}

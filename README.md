@@ -256,6 +256,16 @@ select or to resize the sidebar and splits. `mouse = false` under
 `[terminal]` turns it off. `theme_mode` under `[appearance]` is `dark`,
 `light` or `system`; `:theme` toggles it.
 
+### Tag completion
+
+Typing `#` and a letter in insert mode offers the vault's existing tags in a
+menu under the cursor, as the desktop editor does: tags that start with what
+you typed first, then tags that contain it, most used first. `Ctrl+N` /
+`Ctrl+P` or the arrows move, `Enter`, `Tab` or `Ctrl+Y` accept, `Ctrl+E`
+dismisses, and typing narrows the list. Inside a frontmatter `tags:` value
+the same menu completes bare tags. `Ctrl+X Ctrl+O` opens it on demand, with
+every tag when nothing is typed yet.
+
 ### What stays in the desktop app
 
 Workflows, Atlas, sharing, cloud sync, Harper grammar checks and image

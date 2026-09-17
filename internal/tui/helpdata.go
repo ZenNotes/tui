@@ -108,6 +108,8 @@ func helpLines(a *App, filter string) []string {
 		":bn :bp ]b [b gt gT\tNext and previous tab",
 		":pin :tabmove -1|+1|first|last\tPin or unpin the tab (pinned tabs sit first and survive :tabonly); reorder tabs",
 		":link, or [[ in insert mode\tPick a note and insert a wikilink to it",
+		"# and a letter in insert mode\tOffers the vault's tags under the cursor, most used first, as the desktop app does; inside a frontmatter tags: value it completes bare tags. Ctrl+N / Ctrl+P or ↑↓ move, Enter / Tab / Ctrl+Y accept, Ctrl+E dismisses, typing narrows",
+		"Ctrl+X Ctrl+O in insert mode\tThe same tag menu on demand (Vim's omni completion; Ctrl+X Ctrl+] and Ctrl+Space also open it): every tag when nothing is typed yet, and a plain word becomes #tag",
 		":s/x/y/g :%s :g/pat/d :v :sort :norm\tSubstitute, global, sort and normal, with ranges",
 		":move inbox/Work :mv archive\tMove the note to a folder",
 		":rename <title> :delete :archive :restore :duplicate :favorite\tNote actions",

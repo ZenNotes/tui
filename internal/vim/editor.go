@@ -1589,6 +1589,23 @@ func (e *Editor) InsertAtCursor(text string) {
 	}
 }
 
+// ReplaceAtCursor swaps the before runes left of the cursor and the after
+// runes right of it for text and leaves the cursor behind the text: what
+// accepting a completion does. In insert mode it joins the insert in
+// progress, so one undo takes the typing and the completion together.
+func (e *Editor) ReplaceAtCursor(before, after int, text string) {
+	e.beginChange()
+	n := e.buf.LineLen(e.cursor.Line)
+	start := Pos{e.cursor.Line, max(0, e.cursor.Col-before)}
+	end := Pos{e.cursor.Line, min(n, e.cursor.Col+after)}
+	e.buf.DeleteRange(start, end)
+	e.cursor = e.buf.InsertText(start, text)
+	if e.mode != ModeInsert && e.mode != ModeReplace {
+		e.cursor = e.buf.clampNormal(e.cursor)
+		e.commitChange()
+	}
+}
+
 // ReplaceLineText swaps one line as a change.
 func (e *Editor) ReplaceLineText(line int, text string) {
 	e.beginChange()
