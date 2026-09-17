@@ -269,7 +269,8 @@ read; the rest of a palette is used as is.
 switches for the session, and `:themes` opens a picker that previews each
 scheme. To give the terminal its own look, set `theme` under `[terminal]` to
 a family, a variant or a custom theme's folder name; left empty, zn matches
-the desktop app.
+the desktop app. [Themes](docs/themes.md) lists every variant and covers
+custom themes in a terminal, the contrast rules and troubleshooting.
 
 ### Tag completion
 
