@@ -140,6 +140,22 @@ func executableInside(p string) (string, bool) {
 // called good.
 const launchGrace = 500 * time.Millisecond
 
+// newWindowSwitch is the app's argv switch for `zn open -n`: open a fresh
+// window even when one already shows the same vault, folder or note, instead
+// of raising that window. Chrome spells its flag the same way. The switch
+// rides ahead of the paths so it covers every path of this launch and none
+// of a later `zn open`; the app skips `-`-prefixed argv entries when it
+// collects paths, so it can never be mistaken for one.
+const newWindowSwitch = "--new-window"
+
+// launchArgs is the argv handed to the desktop app for one `zn open`.
+func launchArgs(newWindow bool, paths []string) []string {
+	if !newWindow {
+		return paths
+	}
+	return append([]string{newWindowSwitch}, paths...)
+}
+
 func cmdOpen(vaultRoot string, args Args) error {
 	if len(args.Positionals) == 0 {
 		return errors.New("zn open needs a path. Usage: zn open <file.md | folder> [more ...]")
@@ -191,10 +207,11 @@ func cmdOpen(vaultRoot string, args Args) error {
 	for i, t := range resolved {
 		paths[i] = t.abs
 	}
+	newWindow := args.Bool("n") || args.Bool("new-window")
 	// The app's single-instance handling routes the paths to a running
 	// ZenNotes (or starts one), where the open logic decides whether each is
 	// a vault note, a standalone file, or a folder session.
-	cmd := exec.Command(app, paths...)
+	cmd := exec.Command(app, launchArgs(newWindow, paths)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	detachProcess(cmd)
 	if err := cmd.Start(); err != nil {
@@ -212,14 +229,22 @@ func cmdOpen(vaultRoot string, args Args) error {
 		}
 	case <-time.After(launchGrace):
 	}
+	emitOK(openMessage(resolved, newWindow))
+	return nil
+}
+
+// openMessage is the success line: what opened, and where.
+func openMessage(resolved []openTarget, newWindow bool) string {
+	where := "in ZenNotes"
+	if newWindow {
+		where = "in a new ZenNotes window"
+	}
 	if len(resolved) == 1 {
 		prefix := ""
 		if resolved[0].isDirectory {
 			prefix = "folder "
 		}
-		emitOK(fmt.Sprintf("Opening %s%s in ZenNotes", prefix, resolved[0].abs))
-	} else {
-		emitOK(fmt.Sprintf("Opening %d items in ZenNotes", len(resolved)))
+		return fmt.Sprintf("Opening %s%s %s", prefix, resolved[0].abs, where)
 	}
-	return nil
+	return fmt.Sprintf("Opening %d items %s", len(resolved), where)
 }

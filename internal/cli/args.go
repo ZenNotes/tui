@@ -16,13 +16,37 @@ import (
 //	zn <command> [<subcommand>] [positional...] [--flag value | --flag=value | -x value]
 //
 // Repeated flags collect in order. Boolean flags are inferred when no value
-// follows or when the next token starts with `--`.
+// follows or when the next token starts with `--`, and the switches in
+// valuelessFlags never take one.
 type Args struct {
 	Positionals []string
 	Flags       map[string][]string
 }
 
 var shortFlagRe = regexp.MustCompile(`^-[A-Za-z][\w-]*$`)
+
+// valuelessFlags are the long flags that are switches, never `--flag <value>`.
+// Without this list a switch written before a positional swallowed it:
+// `zn open --new-window ~/notes` parsed as new-window="~/notes" with no path,
+// and `zn delete --yes inbox/a.md` the same way. `--flag=value` still works
+// for all of them. The desktop CLI's parser (apps/desktop/src/cli/args.ts,
+// VALUELESS_FLAGS) holds the same list minus the switches only this CLI has
+// (no-default, no-edit, path, pretty). Keep the two in sync.
+var valuelessFlags = map[string]bool{
+	"all":              true,
+	"include-excluded": true,
+	"json":             true,
+	"meta":             true,
+	"new-window":       true,
+	"no-default":       true,
+	"no-edit":          true,
+	"page":             true,
+	"path":             true,
+	"pretty":           true,
+	"reopen":           true,
+	"unchecked":        true,
+	"yes":              true,
+}
 
 // Parse mirrors the desktop CLI's parser, including its one subtlety: only
 // a dash followed by a letter is a short flag, so `zn capture "- [ ] task"`
@@ -41,7 +65,7 @@ func Parse(argv []string) Args {
 				continue
 			}
 			name := token[2:]
-			if i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "--") {
+			if !valuelessFlags[name] && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "--") {
 				args.push(name, argv[i+1])
 				i++
 			} else {

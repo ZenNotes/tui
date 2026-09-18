@@ -95,7 +95,7 @@ var helpSections = []helpSection{
 		{"capture \"...\"", "Quick add. Pipes stdin if no positional", "--folder <f>  --tag <t>  --title <t>  --json"},
 	}},
 	{"OPEN", []helpRow{
-		{"open <path>", "Open markdown files, or a folder / vault (a focused session), in the app", ""},
+		{"open <path>", "Open markdown files, or a folder / vault (a focused session), in the app", "-n, --new-window"},
 	}},
 	{"TUI", []helpRow{
 		{"tui", "Open ZenNotes in the terminal: sidebar, tabs, splits, Vim motions, tasks, tags", "--vault <v>  --server <s>  [path]"},
@@ -139,6 +139,7 @@ var examples = []string{
 	`zn tui                               # the whole app, in the terminal`,
 	`zn open ~/Downloads/notes.md`,
 	`zn open ~/code/project/docs   # focus a folder as a session`,
+	`zn open -n ~/notes            # a second window on a vault that is already open`,
 }
 
 type helpStyle struct {
