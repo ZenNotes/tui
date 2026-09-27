@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -68,6 +69,36 @@ func ResolveAuthTokenForSource(baseURL, flagToken, profileToken, source string) 
 		return ResolveAuthToken(flagToken, profileToken)
 	}
 	return ResolveAuthTokenFor(baseURL, flagToken, profileToken)
+}
+
+// Label names a target the way Backend.Label names an open one: the
+// directory, or the server's profile name and URL. Never the token.
+func (t Target) Label() string {
+	if t.Kind == KindRemote {
+		if t.Name != "" {
+			return fmt.Sprintf("%s (%s)", t.Name, t.BaseURL)
+		}
+		return t.BaseURL
+	}
+	return t.Root
+}
+
+// SameVault says two targets reach the same vault: the same server URL, or
+// the same directory however its path is spelled. Tokens and profile names
+// do not matter.
+func SameVault(a, b Target) bool {
+	if a.Kind != b.Kind {
+		return false
+	}
+	if a.Kind == KindRemote {
+		return strings.EqualFold(remote.NormalizeBaseURL(a.BaseURL), remote.NormalizeBaseURL(b.BaseURL))
+	}
+	if filepath.Clean(a.Root) == filepath.Clean(b.Root) {
+		return true
+	}
+	aInfo, aErr := os.Stat(a.Root)
+	bInfo, bErr := os.Stat(b.Root)
+	return aErr == nil && bErr == nil && os.SameFile(aInfo, bInfo)
 }
 
 // TargetForWorkspace resolves one of zn's own saved workspaces by name.

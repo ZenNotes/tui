@@ -335,6 +335,13 @@ For other clients, register the command `zn` with the argument `mcp`:
 The tools match the desktop's MCP server one for one: notes, folders,
 search, tasks, assets, comments, archive and trash.
 
+The vault is resolved again before every tool call, so the server follows
+the desktop app (or `zn use`) the way a fresh `zn` does. A switch never
+redirects work silently: once the vault changes, every tool call stops with a
+message naming the old and the new vault until the assistant calls
+`vault_info`, which confirms the switch, and the calls after it run in the
+new vault. Nothing an assistant planned in one vault lands in the other.
+
 ## Demo recordings
 
 `docs/demo/` holds the seeded vaults and the keystroke choreography;

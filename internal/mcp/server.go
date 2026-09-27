@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -27,13 +26,21 @@ type Backend = backend.Backend
 
 // Options configure the server.
 type Options struct {
-	// ResolveBackend is called lazily and once; when it fails, every tool
-	// call reports the error and the next call tries again rather than
-	// repeating a stale failure.
-	ResolveBackend func() (Backend, error)
+	// ResolveTarget picks the vault. It runs before every tool call (see
+	// session); a failure is that call's error, and the next call tries
+	// again rather than repeating a stale failure.
+	ResolveTarget func() (backend.Target, error)
+	// OpenBackend binds a resolved target.
+	OpenBackend func(backend.Target) (Backend, error)
 	// Version is reported to clients.
 	Version string
+	// Transport defaults to stdio; tests pass an in-memory one.
+	Transport sdk.Transport
 }
+
+// previousVaultKey carries, into vault_info, the vault a session left when
+// that call moved it to the one the app has open now.
+type previousVaultKey struct{}
 
 type args map[string]any
 
@@ -151,6 +158,10 @@ func tools() []toolDef {
 				}
 				isRoot := description.PrimaryNotesLocation == vault.PrimaryNotesRoot
 				pathNotes := "IMPORTANT: Always use the `path` returned by other tools verbatim. Never prepend `inbox/` to a path you got back from list_notes / create_note / read_note. "
+				switchNote := ""
+				if previous, ok := ctx.Value(previousVaultKey{}).(backend.Target); ok {
+					switchNote = "The vault changed: until this call the session worked in " + describeTarget(previous) + ". Every tool runs here now, and paths or content you got from the previous vault do not apply to this one. "
+				}
 				if isRoot {
 					pathNotes += "This vault uses ROOT mode: notes for the conceptual `inbox` folder live directly at the vault root (e.g. `MyNote.md`), not under `inbox/`. The folders quick/, archive/, trash/ are real subdirectories at the root."
 				} else {
@@ -182,7 +193,7 @@ func tools() []toolDef {
 						{"topFolders", top},
 						{"subfolders", folders},
 						{"authConfigured", description.AuthConfigured},
-						{"notes", notes},
+						{"notes", switchNote + notes},
 					}, nil
 				}
 				inboxAbs := description.Root + "/inbox"
@@ -196,7 +207,7 @@ func tools() []toolDef {
 					{"inboxAbsolutePath", inboxAbs},
 					{"topFolders", top},
 					{"subfolders", folders},
-					{"notes", pathNotes},
+					{"notes", switchNote + pathNotes},
 				}, nil
 			},
 		},
@@ -1013,27 +1024,14 @@ func Payload(result any) (string, error) {
 	return strings.TrimRight(buf.String(), "\n"), nil
 }
 
-// Run serves MCP over stdio until the client closes the pipe.
+// Run serves MCP (over stdio unless Options names a transport) until the
+// client closes the connection.
 func Run(ctx context.Context, opts Options) error {
 	version := opts.Version
 	if version == "" {
 		version = "0.1.0"
 	}
-	var mu sync.Mutex
-	var cached Backend
-	getBackend := func() (Backend, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if cached != nil {
-			return cached, nil
-		}
-		b, err := opts.ResolveBackend()
-		if err != nil {
-			return nil, err
-		}
-		cached = b
-		return b, nil
-	}
+	vaults := &session{resolve: opts.ResolveTarget, open: opts.OpenBackend}
 
 	server := sdk.NewServer(&sdk.Implementation{Name: "zennotes", Version: version}, &sdk.ServerOptions{
 		Instructions: ResolveInstructions(),
@@ -1052,9 +1050,12 @@ func Run(ctx context.Context, opts Options) error {
 					return errorResult("Error: invalid arguments: " + err.Error()), nil
 				}
 			}
-			b, err := getBackend()
+			b, previous, err := vaults.backendFor(def.name == "vault_info")
 			if err != nil {
 				return errorResult("Error: " + DescribeToolError(err)), nil
+			}
+			if previous != nil {
+				ctx = context.WithValue(ctx, previousVaultKey{}, *previous)
 			}
 			result, err := def.handler(ctx, args(a), b)
 			if err != nil {
@@ -1067,7 +1068,11 @@ func Run(ctx context.Context, opts Options) error {
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: payload}}}, nil
 		})
 	}
-	return server.Run(ctx, &sdk.StdioTransport{})
+	transport := opts.Transport
+	if transport == nil {
+		transport = &sdk.StdioTransport{}
+	}
+	return server.Run(ctx, transport)
 }
 
 func errorResult(text string) *sdk.CallToolResult {

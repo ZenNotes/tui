@@ -11,8 +11,10 @@ vault/profile names, credentials and current selection. A terminal workspace wit
 the same name cannot redirect an existing desktop script or MCP client.
 
 `zn tui` defaults to the separately saved terminal workspace. Explicit selectors
-and `--workspace-source app|terminal` take precedence. MCP retains the first
-successfully resolved workspace until its process restarts.
+and `--workspace-source app|terminal` take precedence. MCP resolves the workspace
+again before every tool call and follows a desktop switch once `vault_info`
+confirms it. Until then every other tool stops with a message naming the old and
+new workspace, so a switch never redirects in-flight edits.
 
 ## Creation dates
 

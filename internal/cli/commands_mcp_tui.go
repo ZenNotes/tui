@@ -11,18 +11,14 @@ import (
 )
 
 // cmdMCP runs the MCP stdio server for as long as the client keeps the
-// pipe open. The server pins the first successfully resolved backend for the
-// session and retries resolution failures, so starting before configuration
-// works without letting later desktop switches redirect in-flight edits.
+// pipe open. The vault is resolved again for every tool call, so the server
+// follows the desktop app the way a fresh zn does and starting before
+// anything is configured works; after a switch, calls stop until vault_info
+// confirms the new vault, so a switch never redirects in-flight edits.
 func cmdMCP(ctx context.Context, args Args) error {
 	return mcp.Run(ctx, mcp.Options{
-		ResolveBackend: func() (mcp.Backend, error) {
-			target, err := ResolveTargetFromArgs(args)
-			if err != nil {
-				return nil, err
-			}
-			return OpenBackend(target)
-		},
+		ResolveTarget: func() (backend.Target, error) { return ResolveTargetFromArgs(args) },
+		OpenBackend:   OpenBackend,
 	})
 }
 
