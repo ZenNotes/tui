@@ -10,6 +10,12 @@ Desktop-managed commands set `ZENNOTES_WORKSPACE_SOURCE=app`. They use desktop
 vault/profile names, credentials and current selection. A terminal workspace with
 the same name cannot redirect an existing desktop script or MCP client.
 
+The desktop keeps server tokens in the OS secret store, which zn cannot read. When
+neither `--token`, `ZENNOTES_REMOTE_TOKEN` nor the desktop profile supplies one, app
+mode uses the token `zn connect` saved for the same server URL. The lookup is keyed
+by the URL the desktop selected, so it authenticates that server and never selects
+a different one.
+
 `zn tui` defaults to the separately saved terminal workspace. Explicit selectors
 and `--workspace-source app|terminal` take precedence. MCP resolves the workspace
 again before every tool call and follows a desktop switch once `vault_info`

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -171,7 +172,7 @@ func tools() []toolDef {
 				if description.Kind == backend.KindRemote {
 					notes := "This vault lives on a self-hosted ZenNotes server, the workspace the desktop app currently has open. Every tool works on it through the server API; paths are vault-relative POSIX paths exactly as the server reports them. " + pathNotes
 					if !description.AuthConfigured {
-						notes += " No token is configured for this server in this process. If calls fail with 401, set ZENNOTES_REMOTE_TOKEN in the MCP server's environment to the token the server was started with."
+						notes += " No token is configured for this server in this process. If calls fail with 401, " + tokenHint(description.BaseURL)
 					}
 					var serverName, vaultPath, vaultName *string
 					if description.Name != "" {
@@ -998,14 +999,34 @@ func CallTool(ctx context.Context, name string, a map[string]any, b Backend) (an
 
 // DescribeToolError phrases a failure for the agent. A server that turns
 // the request away is the one failure an agent cannot fix by retrying: the
-// desktop app keeps its token in the OS secret store, so this process only
-// has one if the environment supplied it.
-func DescribeToolError(err error) string {
+// desktop app keeps its token in the OS secret store, where zn cannot read
+// it, so say how to give this process one. b is the backend the call ran
+// against, nil when none resolved.
+func DescribeToolError(err error, b Backend) string {
 	msg := err.Error()
 	if status := remote.StatusOf(err); status == 401 || status == 403 {
-		return msg + " The MCP server has no valid token for this ZenNotes server. Set ZENNOTES_REMOTE_TOKEN in the MCP server's environment (the desktop app's copy lives in the OS secret store, which zn cannot read), or run zn with --token."
+		serverURL := ""
+		if r, ok := b.(*backend.Remote); ok {
+			serverURL = r.Client().BaseURL
+			// The environment outranks a saved token, so a stale one there
+			// keeps failing however often `zn connect` runs.
+			if fromEnv := strings.TrimSpace(os.Getenv(backend.RemoteTokenEnv)); fromEnv != "" && r.Client().AuthToken == fromEnv {
+				return msg + " The rejected token is ZENNOTES_REMOTE_TOKEN from the MCP server's environment, which wins over one saved with `zn connect`: update it there, or remove it and run `zn connect " + serverURL + " --no-default` once in a terminal."
+			}
+		}
+		return msg + " The MCP server has no valid token for this ZenNotes server; the desktop app keeps its copy in the OS secret store, which zn cannot read. To fix it, " + tokenHint(serverURL)
 	}
 	return msg
+}
+
+// tokenHint says how to hand zn a server token. `--no-default` matters: a
+// plain `zn connect` also makes the server zn's own default, and an MCP
+// server in terminal mode would then stop following the app.
+func tokenHint(serverURL string) string {
+	if serverURL == "" {
+		serverURL = "<server-url>"
+	}
+	return "run `zn connect " + serverURL + " --no-default` once in a terminal (it saves the token where zn and this MCP server look, and the next call uses it), or set ZENNOTES_REMOTE_TOKEN in the MCP server's environment."
 }
 
 // Payload renders a tool result the way the desktop server does: a string
@@ -1052,14 +1073,14 @@ func Run(ctx context.Context, opts Options) error {
 			}
 			b, previous, err := vaults.backendFor(def.name == "vault_info")
 			if err != nil {
-				return errorResult("Error: " + DescribeToolError(err)), nil
+				return errorResult("Error: " + DescribeToolError(err, nil)), nil
 			}
 			if previous != nil {
 				ctx = context.WithValue(ctx, previousVaultKey{}, *previous)
 			}
 			result, err := def.handler(ctx, args(a), b)
 			if err != nil {
-				return errorResult("Error: " + DescribeToolError(err)), nil
+				return errorResult("Error: " + DescribeToolError(err, b)), nil
 			}
 			payload, err := Payload(result)
 			if err != nil {

@@ -101,3 +101,56 @@ func TestConnectInitUseAndList(t *testing.T) {
 		t.Fatal("disconnect forgets the server and its token")
 	}
 }
+
+// A desktop-managed zn follows the app, so `zn connect` must not claim zn
+// now uses the server by default; what it does is give zn (and zn mcp) the
+// token for the server whenever the app has it open.
+func TestConnectUnderTheDesktopLauncherAuthenticatesTheAppsServer(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZENNOTES_CONFIG_DIR", dir)
+	t.Setenv("ZENNOTES_VAULT", "")
+	t.Setenv("ZENNOTES_SERVER", "")
+	t.Setenv("ZENNOTES_REMOTE_TOKEN", "")
+	t.Setenv("ZENNOTES_WORKSPACE_SOURCE", "app")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer right" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/vault":
+			_, _ = w.Write([]byte(`{"root":"/srv/notes","name":"notes"}`))
+		case "/api/notes":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer server.Close()
+	app := `{"workspaceMode":"remote","remoteWorkspace":{"baseUrl":"` + server.URL + `"},"remoteWorkspaceProfiles":[{"name":"home","baseUrl":"` + server.URL + `"}]}`
+	if err := os.WriteFile(filepath.Join(dir, config.AppConfigFile), []byte(app), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureOutput(t, func() { _ = Main([]string{"list", "--json"}) })
+	if !strings.Contains(out, "zn:") {
+		t.Fatalf("without a token the app's server must refuse: %s", out)
+	}
+	out = captureOutput(t, func() {
+		if code := Main([]string{"connect", server.URL, "--token", "right"}); code != 0 {
+			t.Errorf("connect failed")
+		}
+	})
+	if !strings.Contains(out, "zn tui opens it by default now") || !strings.Contains(out, "keep following the ZenNotes app") || strings.Contains(out, "zn and zn tui use it") {
+		t.Fatalf("connect output under the desktop launcher: %s", out)
+	}
+	out = captureOutput(t, func() { _ = Main([]string{"list", "--json"}) })
+	if strings.Contains(out, "zn:") {
+		t.Fatalf("the saved token must reach the app's server: %s", out)
+	}
+	out = captureOutput(t, func() { _ = Main([]string{"connect", server.URL, "--token", "right", "--no-default"}) })
+	if !strings.Contains(out, "zn commands and zn mcp use this token whenever the ZenNotes app is connected to "+server.URL) {
+		t.Fatalf("--no-default output under the desktop launcher: %s", out)
+	}
+}

@@ -122,6 +122,16 @@ func cmdConnect(ctx context.Context, args Args) error {
 		return nil
 	}
 	emitOK(fmt.Sprintf("Connected to %s (%s)", entry.Name, baseURL))
+	if source, _ := backend.ResolveWorkspaceSource(args.Str("workspace-source")); source == "app" {
+		// A desktop-managed zn follows the app whatever zn's default says, so
+		// "zn uses it by default now" would be wrong here: only zn tui does.
+		if makeDefault {
+			emitLine("zn tui opens it by default now. Other zn commands and zn mcp keep following the ZenNotes app, and use this token whenever the app is connected to " + baseURL + ".")
+		} else {
+			emitLine("zn commands and zn mcp use this token whenever the ZenNotes app is connected to " + baseURL + "; `--server " + baseURL + "` reaches it directly.")
+		}
+		return nil
+	}
 	if makeDefault {
 		emitLine("zn and zn tui use it by default now. `zn use <name>` switches, `zn disconnect " + entry.Name + "` forgets it.")
 	} else {

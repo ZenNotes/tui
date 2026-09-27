@@ -51,6 +51,9 @@ a different one. Standalone installations keep their own default. Use
 `--workspace-source app|terminal` or `ZENNOTES_WORKSPACE_SOURCE` to select the source
 explicitly; `--vault` and `--server` still select a specific destination. The TUI
 uses its own saved selection unless `--workspace-source app` is explicitly passed.
+When the desktop app is on a ZenNotes server, desktop-managed commands and `zn mcp`
+authenticate with the token `zn connect` saved for that server's URL: the app keeps
+its own copy in the OS secret store, which zn cannot read.
 
 If an older desktop build reports **Unknown command** for `zn tui`, check
 `type -a zn`. A Homebrew installation can be run directly with
@@ -341,6 +344,20 @@ redirects work silently: once the vault changes, every tool call stops with a
 message naming the old and the new vault until the assistant calls
 `vault_info`, which confirms the switch, and the calls after it run in the
 new vault. Nothing an assistant planned in one vault lands in the other.
+
+A vault on a ZenNotes server that needs a token gets it the way every
+command does: `--token`, then `ZENNOTES_REMOTE_TOKEN`, then the token
+`zn connect` saved for the server's URL. The desktop app keeps its copy in
+the OS secret store, which zn cannot read, so run this once and the MCP
+server authenticates whenever the app is connected to that server, with no
+token in any client config:
+
+```bash
+zn connect https://notes.example.com --no-default
+```
+
+`--no-default` saves the token without making the server zn's own default,
+so zn keeps following the app.
 
 ## Demo recordings
 

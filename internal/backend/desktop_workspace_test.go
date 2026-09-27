@@ -76,7 +76,9 @@ func TestDesktopWorkspaceSourceKeepsDesktopTokenPrecedence(t *testing.T) {
 		{"app default", "", "", "app", "app-token"},
 		{"app server", "", "home", "app", "app-token"},
 		{"app vault", "home", "", "app", "app-token"},
-		{"app URL", "", baseURL, "app", ""},
+		// No desktop token comes with a bare URL, so the one `zn connect`
+		// saved for it is the fallback.
+		{"app URL", "", baseURL, "app", "terminal-token"},
 		{"terminal default", "", "", "terminal", "terminal-token"},
 		{"terminal server", "", "home", "terminal", "terminal-token"},
 		{"terminal URL", "", baseURL, "terminal", "terminal-token"},
@@ -94,6 +96,68 @@ func TestDesktopWorkspaceSourceKeepsDesktopTokenPrecedence(t *testing.T) {
 			got, err = ResolveTargetWithSource(tc.vault, tc.server, "flag-token", tc.source)
 			if err != nil || got.AuthToken != "flag-token" {
 				t.Fatalf("flag token did not win: %+v %v", got, err)
+			}
+		})
+	}
+}
+
+// The app keeps its server tokens in the OS secret store, so a current
+// desktop config carries none. App mode then falls back to the token
+// `zn connect` saved for the server the app has open, and to nothing else.
+func TestDesktopWorkspaceSourceFallsBackToTheZnConnectToken(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZENNOTES_CONFIG_DIR", dir)
+	t.Setenv("ZENNOTES_VAULT", "")
+	t.Setenv("ZENNOTES_SERVER", "")
+	t.Setenv(RemoteTokenEnv, "")
+	data, _ := json.Marshal(map[string]any{
+		"workspaceMode": "remote", "remoteWorkspace": map[string]string{"baseUrl": "https://notes.example.com/"},
+		"remoteWorkspaceProfileId": "p1",
+		"remoteWorkspaceProfiles":  []map[string]string{{"id": "p1", "name": "home", "baseUrl": "https://Notes.Example.com"}},
+	})
+	if err := os.WriteFile(filepath.Join(dir, config.AppConfigFile), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, vault, server, want string }{
+		{"default", "", "", ""},
+		{"server", "", "home", ""},
+		{"vault", "home", "", ""},
+	} {
+		if got, err := ResolveTargetWithSource(tc.vault, tc.server, "", "app"); err != nil || got.AuthToken != tc.want {
+			t.Fatalf("%s before zn connect: token %q, error %v", tc.name, got.AuthToken, err)
+		}
+	}
+	if err := config.SaveToken("https://notes.example.com", "zn-token"); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SaveToken("https://other.example.com", "other-token"); err != nil {
+		t.Fatal(err)
+	}
+	// A terminal default elsewhere must not redirect the app's workspace.
+	ws := config.LoadWorkspaces()
+	ws.AddServer("other", "https://other.example.com")
+	ws.Default = "other"
+	if err := config.SaveWorkspaces(ws); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, vault, server, wantURL, want string }{
+		{"default", "", "", "https://notes.example.com", "zn-token"},
+		{"server", "", "home", "https://Notes.Example.com", "zn-token"},
+		{"vault", "home", "", "https://Notes.Example.com", "zn-token"},
+		{"other URL", "", "https://other.example.com", "https://other.example.com", "other-token"},
+		{"unsaved URL", "", "https://third.example.com", "https://third.example.com", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ResolveTargetWithSource(tc.vault, tc.server, "", "app")
+			if err != nil || got.Kind != KindRemote || got.BaseURL != tc.wantURL || got.AuthToken != tc.want {
+				t.Fatalf("got %s token %q, error %v; want %s token %q", got.Label(), got.AuthToken, err, tc.wantURL, tc.want)
+			}
+			t.Setenv(RemoteTokenEnv, "env-token")
+			if got, _ := ResolveTargetWithSource(tc.vault, tc.server, "", "app"); got.AuthToken != "env-token" {
+				t.Fatalf("environment token did not win: %q", got.AuthToken)
+			}
+			if got, _ := ResolveTargetWithSource(tc.vault, tc.server, "flag-token", "app"); got.AuthToken != "flag-token" {
+				t.Fatalf("flag token did not win: %q", got.AuthToken)
 			}
 		})
 	}

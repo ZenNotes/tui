@@ -62,13 +62,26 @@ func ResolveAuthTokenFor(baseURL, flagToken, profileToken string) string {
 	return strings.TrimSpace(profileToken)
 }
 
-// ResolveAuthTokenForSource preserves the desktop CLI's token precedence in
-// app mode; terminal mode may additionally use credentials saved by zn connect.
+// ResolveAuthTokenForSource is the token for a server the given source
+// picked. Both sources take `--token`, then the environment. Terminal mode
+// then prefers the token `zn connect` saved for the URL over the desktop
+// profile's. App mode keeps the desktop profile's token first and falls back
+// to the saved one, because the app keeps its own copy in the OS secret
+// store, where zn cannot read it: without the fallback, a desktop-managed zn
+// and its `zn mcp` cannot reach the server the app is connected to at all.
+// The saved token is looked up by the URL the app chose, so it can only
+// authenticate that server, never pick a different one.
 func ResolveAuthTokenForSource(baseURL, flagToken, profileToken, source string) string {
-	if source == "app" {
-		return ResolveAuthToken(flagToken, profileToken)
+	if source != "app" {
+		return ResolveAuthTokenFor(baseURL, flagToken, profileToken)
 	}
-	return ResolveAuthTokenFor(baseURL, flagToken, profileToken)
+	if token := ResolveAuthToken(flagToken, profileToken); token != "" {
+		return token
+	}
+	if baseURL == "" {
+		return ""
+	}
+	return config.LoadToken(baseURL)
 }
 
 // Label names a target the way Backend.Label names an open one: the

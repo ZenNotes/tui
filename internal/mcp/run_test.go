@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,5 +122,36 @@ func TestRunFollowsAVaultSwitchOnlyAfterVaultInfo(t *testing.T) {
 	}
 	if text, _ := callTool(t, cs, "vault_info", nil); strings.Contains(text, "The vault changed") {
 		t.Fatalf("the switch note repeats: %s", text)
+	}
+}
+
+func TestRunNamesTheZnConnectCommandOnA401(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	cs := runServer(t, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindRemote, BaseURL: server.URL}, nil
+	})
+	text, isErr := callTool(t, cs, "list_notes", nil)
+	if !isErr || !strings.Contains(text, "zn connect "+server.URL+" --no-default") || !strings.Contains(text, "ZENNOTES_REMOTE_TOKEN") {
+		t.Fatalf("401 hint: %s", text)
+	}
+}
+
+// A stale ZENNOTES_REMOTE_TOKEN outranks any token `zn connect` saves, so
+// the hint has to name it rather than send the user to zn connect again.
+func TestRunBlamesAStaleEnvironmentTokenOnA401(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	t.Setenv(backend.RemoteTokenEnv, "stale")
+	cs := runServer(t, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindRemote, BaseURL: server.URL, AuthToken: "stale"}, nil
+	})
+	text, isErr := callTool(t, cs, "list_notes", nil)
+	if !isErr || !strings.Contains(text, "The rejected token is ZENNOTES_REMOTE_TOKEN") || !strings.Contains(text, "zn connect "+server.URL+" --no-default") {
+		t.Fatalf("stale environment token hint: %s", text)
 	}
 }
