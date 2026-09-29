@@ -15,6 +15,10 @@ func TestSetValuePreservesUnknownTablesAndSymlink(t *testing.T) {
 	if err := os.WriteFile(target, []byte(before), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	original, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(target, ConfigTomlPath()); err != nil {
 		t.Skip(err)
 	}
@@ -35,8 +39,10 @@ func TestSetValuePreservesUnknownTablesAndSymlink(t *testing.T) {
 	if doc["cloud"].(map[string]any)["future_setting"] != "keep" || doc["unrecognized"] == nil {
 		t.Fatal("unknown data lost")
 	}
-	if info, _ := os.Stat(target); info.Mode().Perm() != 0o600 {
-		t.Fatal("permissions changed")
+	if info, err := os.Stat(target); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != original.Mode().Perm() {
+		t.Fatalf("permissions changed: got %o, want %o", info.Mode().Perm(), original.Mode().Perm())
 	}
 }
 
