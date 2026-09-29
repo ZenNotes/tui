@@ -29,12 +29,12 @@ func (a *App) createNote(folder vault.NoteFolder, title, subpath string, body *s
 	a.addNoteToIndex(meta)
 	if open {
 		a.openNote(meta.Path, true)
-		if buf := a.buffers[meta.Path]; buf != nil {
-			buf.ed.GotoLine(buf.ed.LineCount() - 1)
+		a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) {
+			buf.ed.GotoLine(buf.ed.LineCount())
 			if a.prefs.VimMode {
 				buf.ed.HandleKey(vim.R('A'))
 			}
-		}
+		})
 	}
 	a.refreshIndex()
 }
@@ -85,6 +85,9 @@ func (a *App) newQuickNote() {
 // one, else straight through the backend.
 func (a *App) mutateNote(path string, mutate func(body string) (string, bool)) error {
 	if buf, ok := a.buffers[path]; ok {
+		if buf.loading || buf.saving {
+			return fmt.Errorf("wait for note loading/saving to finish")
+		}
 		next, changed := mutate(buf.ed.Text())
 		if !changed {
 			return nil
@@ -102,7 +105,7 @@ func (a *App) mutateNote(path string, mutate func(body string) (string, bool)) e
 	if !changed {
 		return nil
 	}
-	if _, err := a.backend.WriteNote(context.Background(), path, next); err != nil {
+	if _, err := writeSnapshot(context.Background(), a.backend, path, content.Body, next); err != nil {
 		return err
 	}
 	a.ignoreChange(path)
@@ -218,7 +221,10 @@ func (a *App) trashNote(path string) {
 	}
 	do := func() {
 		if buf, ok := a.buffers[path]; ok {
-			_ = a.saveBuffer(buf)
+			if err := a.saveBuffer(buf); err != nil {
+				a.notifyError(err.Error())
+				return
+			}
 		}
 		next, err := a.backend.MoveToTrash(context.Background(), path)
 		if err != nil {
@@ -259,7 +265,10 @@ func (a *App) restoreNote(path string) {
 
 func (a *App) archiveNote(path string) {
 	if buf, ok := a.buffers[path]; ok {
-		_ = a.saveBuffer(buf)
+		if err := a.saveBuffer(buf); err != nil {
+			a.notifyError(err.Error())
+			return
+		}
 	}
 	next, err := a.backend.ArchiveNote(context.Background(), path)
 	if err != nil {
@@ -284,7 +293,10 @@ func (a *App) unarchiveNote(path string) {
 
 func (a *App) moveNote(path string, folder vault.NoteFolder, subpath string) {
 	if buf, ok := a.buffers[path]; ok {
-		_ = a.saveBuffer(buf)
+		if err := a.saveBuffer(buf); err != nil {
+			a.notifyError(err.Error())
+			return
+		}
 	}
 	next, err := a.backend.MoveNote(context.Background(), path, folder, subpath)
 	if err != nil {
@@ -302,7 +314,10 @@ func (a *App) moveNote(path string, folder vault.NoteFolder, subpath string) {
 
 func (a *App) duplicateNote(path string) {
 	if buf, ok := a.buffers[path]; ok {
-		_ = a.saveBuffer(buf)
+		if err := a.saveBuffer(buf); err != nil {
+			a.notifyError(err.Error())
+			return
+		}
 	}
 	next, err := a.backend.DuplicateNote(context.Background(), path)
 	if err != nil {
@@ -588,9 +603,7 @@ func (a *App) openPeriodicOn(kind periodic.Kind, date time.Time) {
 		a.rolloverUnfinishedTasks(meta.Path, date)
 	}
 	a.openNote(meta.Path, true)
-	if buf := a.buffers[meta.Path]; buf != nil {
-		buf.ed.GotoLine(buf.ed.LineCount() - 1)
-	}
+	a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.GotoLine(buf.ed.LineCount()) })
 	a.refreshIndex()
 }
 
@@ -599,7 +612,18 @@ func (a *App) periodicBody(kind periodic.Kind, title string, date time.Time) str
 	if id != "" {
 		for _, t := range a.allTemplates() {
 			if t.ID == id || t.BuiltinID == id {
-				return templates.Render(t.Body, title, date).Body
+				locale := "system"
+				if a.idx != nil {
+					switch kind {
+					case periodic.Daily:
+						locale = a.idx.settings.DailyNotes.Locale
+					case periodic.Weekly:
+						locale = a.idx.settings.WeeklyNotes.Locale
+					case periodic.Monthly:
+						locale = a.idx.settings.MonthlyNotes.Locale
+					}
+				}
+				return templates.RenderLocale(t.Body, title, date, locale).Body
 			}
 		}
 	}
@@ -652,8 +676,8 @@ func (a *App) createFromTemplate(t templates.Template) {
 		a.ignoreChange(meta.Path)
 		a.addNoteToIndex(meta)
 		a.openNote(meta.Path, true)
-		if buf := a.buffers[meta.Path]; buf != nil && rendered.CursorOffset >= 0 {
-			buf.ed.SetCursor(posForOffset(buf.ed.Text(), rendered.CursorOffset))
+		if rendered.CursorOffset >= 0 {
+			a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.SetCursor(posForOffset(buf.ed.Text(), rendered.CursorOffset)) })
 		}
 		a.refreshIndex()
 	})
@@ -733,7 +757,10 @@ func (a *App) renameFolderPrompt(folder vault.NoteFolder, sub string) {
 			next = parent + "/" + name
 		}
 		for _, buf := range a.buffers {
-			_ = a.saveBuffer(buf)
+			if err := a.saveBuffer(buf); err != nil {
+				a.notifyError(err.Error())
+				return
+			}
 		}
 		if _, err := a.backend.RenameFolder(context.Background(), folder, sub, next); err != nil {
 			a.notifyError(err.Error())
@@ -861,23 +888,11 @@ func shortFolder(a *App, n vault.NoteMeta) string {
 
 func (a *App) openTextSearch(initial string) {
 	p := &palette{title: "Search vault text", placeholder: "Text to find (2+ characters)", input: newTextInput(initial), minQuery: 2}
-	p.source = func(a *App, query string) []paletteItem {
-		matches, err := a.backend.SearchText(context.Background(), query, 200)
-		if err != nil {
-			return nil
-		}
-		items := make([]paletteItem, 0, len(matches))
-		for _, m := range matches {
-			items = append(items, paletteItem{label: strings.TrimSpace(m.LineText), detail: m.Title + ":" + fmt.Sprint(m.LineNumber), id: m.Path, data: m})
-		}
-		return items
-	}
+	p.asyncSearch = true
 	p.onSelect = func(a *App, it paletteItem) {
 		m := it.data.(vault.TextSearchMatch)
 		a.openNote(m.Path, true)
-		if buf := a.buffers[m.Path]; buf != nil {
-			buf.ed.GotoLine(max(0, m.LineNumber-1))
-		}
+		a.withLoadedBuffer(m.Path, func(buf *noteBuffer) { buf.ed.GotoLine(max(1, m.LineNumber)) })
 	}
 	p.emptyHint = "No matching lines"
 	p.refilter(a)

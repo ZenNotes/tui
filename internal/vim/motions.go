@@ -105,6 +105,23 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 	line := e.buf.Line(from.Line)
 	lineCount := e.buf.LineCount()
 	res := motionResult{pos: from}
+	if e.hooks.DisplayRowBounds != nil && ((m.kind == "$" && n == 1 && e.opts.WrappedLineMotions) || m.kind == "g$" || m.kind == "g0" || m.kind == "g^") {
+		start, end := e.hooks.DisplayRowBounds(from)
+		res.pos.Col = start
+		if m.kind == "$" || m.kind == "g$" {
+			res.pos.Col = max(start, end-1)
+			res.inclusive = true
+			if forOperator {
+				res.pos.Col = end
+				res.inclusive = false
+			}
+		} else if m.kind == "g^" {
+			for res.pos.Col < end && (line[res.pos.Col] == ' ' || line[res.pos.Col] == '\t') {
+				res.pos.Col++
+			}
+		}
+		return res, true
+	}
 	switch m.kind {
 	case "h":
 		if from.Col == 0 {

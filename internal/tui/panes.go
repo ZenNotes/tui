@@ -19,6 +19,8 @@ const (
 
 // Virtual tab paths, the same scheme the desktop uses.
 const (
+	tabFiles      = "zen://files"
+	tabTemplates  = "zen://templates"
 	tabTasks      = "zen://tasks"
 	tabTags       = "zen://tags"
 	tabQuickNotes = "zen://quick-notes"
@@ -241,6 +243,9 @@ func (a *App) openNote(path string, focus bool) {
 		a.pushJump(cur.path, cur.ed.Cursor())
 	}
 	a.touchRecent(path)
+	if a.commentsOpen && a.comments != nil {
+		a.comments.refresh(a)
+	}
 	if focus {
 		a.focus = focusPane
 	}

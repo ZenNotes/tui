@@ -228,6 +228,9 @@ const cursorToken = "{{cursor}}"
 var tokenRe = regexp.MustCompile(`\{\{\s*([^}]+?)\s*\}\}`)
 
 func substitute(input, title string, now time.Time) string {
+	return substituteLocale(input, title, now, "en")
+}
+func substituteLocale(input, title string, now time.Time, locale string) string {
 	return tokenRe.ReplaceAllStringFunc(input, func(full string) string {
 		m := tokenRe.FindStringSubmatch(full)
 		token := strings.TrimSpace(m[1])
@@ -244,7 +247,7 @@ func substitute(input, title string, now time.Time) string {
 		case token == "week":
 			return padTwo(week)
 		case strings.HasPrefix(token, "date:"):
-			return periodic.FormatTemplateDate(now, token[len("date:"):])
+			return periodic.FormatTemplateDateLocale(now, token[len("date:"):], locale)
 		}
 		return full
 	})
@@ -265,8 +268,9 @@ type Rendered struct {
 }
 
 // Render expands a template body.
-func Render(body, title string, now time.Time) Rendered {
-	substituted := substitute(body, title, now)
+func Render(body, title string, now time.Time) Rendered { return RenderLocale(body, title, now, "en") }
+func RenderLocale(body, title string, now time.Time, locale string) Rendered {
+	substituted := substituteLocale(body, title, now, locale)
 	offset := -1
 	if idx := strings.Index(substituted, cursorToken); idx >= 0 {
 		offset = len([]rune(substituted[:idx]))

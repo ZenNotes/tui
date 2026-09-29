@@ -384,15 +384,18 @@ func (v *Vault) ListDatabaseDirs() ([]FolderEntry, error) {
 	return v.walkFolders(true), nil
 }
 
-// ListAssets lists every file under the attachment directories, newest
-// first.
+// ListAssets includes loose files throughout the vault, like the server.
+// Notes, database internals, hidden files and symlinks are not attachments.
 func (v *Vault) ListAssets() ([]AssetMeta, error) {
 	out := []AssetMeta{}
-	var walk func(dir string)
-	walk = func(dir string) {
+	var walk func(dir string) error
+	walk = func(dir string) error {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			return
+			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
+				return nil
+			}
+			return err
 		}
 		for _, entry := range entries {
 			name := entry.Name()
@@ -401,7 +404,15 @@ func (v *Vault) ListAssets() ([]AssetMeta, error) {
 			}
 			full := filepath.Join(dir, name)
 			if entry.IsDir() {
-				walk(full)
+				if isFormDirName(name) {
+					continue
+				}
+				if err := walk(full); err != nil {
+					return err
+				}
+				continue
+			}
+			if !entry.Type().IsRegular() || strings.EqualFold(filepath.Ext(name), ".md") || strings.HasSuffix(strings.ToLower(name), ".excalidraw") {
 				continue
 			}
 			info, err := entry.Info()
@@ -415,11 +426,10 @@ func (v *Vault) ListAssets() ([]AssetMeta, error) {
 				UpdatedAt: info.ModTime().UnixMilli(),
 			})
 		}
+		return nil
 	}
-	for _, dir := range attachmentsDirs {
-		if info, err := os.Stat(filepath.Join(v.root, dir)); err == nil && info.IsDir() {
-			walk(filepath.Join(v.root, dir))
-		}
+	if err := walk(v.root); err != nil {
+		return nil, err
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out, nil

@@ -28,6 +28,9 @@ func (a *App) refreshViews() {
 }
 
 func (a *App) refreshPanels() {
+	if a.commentsOpen && a.comments != nil {
+		a.comments.refresh(a)
+	}
 	if a.outlineOpen {
 		a.outline.refresh(a)
 	}
@@ -42,6 +45,10 @@ func (a *App) refreshPanels() {
 // openVirtualByPath reopens a built-in view from its tab path.
 func (a *App) openVirtualByPath(path string) {
 	switch {
+	case path == tabTemplates:
+		a.openTemplates()
+	case path == tabFiles:
+		a.openFiles()
 	case path == tabTasks:
 		a.openTasks()
 	case path == tabTags:

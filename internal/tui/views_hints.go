@@ -4,7 +4,7 @@ package tui
 // exists so a rebinding in config.toml shows up in the hints.
 
 func (v *tasksView) hintPairs(a *App) []hintPair {
-	common := []hintPair{{"key:v", "view"}, {"key:f", "filter"}, {"key:F", "clear filter"}, {"key:n", "new task"}, {"key:A", "archived"}}
+	common := []hintPair{{"key:F2", "actions"}, {"key:S", "saved filters"}, {"key:B", "board options"}, {"key:v", "view"}, {"key:f", "filter"}, {"key:F", "clear filter"}, {"key:n", "new task"}, {"key:A", "archived"}}
 	switch v.mode {
 	case "kanban":
 		return append([]hintPair{{"key:h/l", "column"}, {"key:j/k", "card"}, {"key:H/L", "move card"}, {"nav.toggleTask", "toggle"}, {"key:Enter", "open"}, {"key:g", "group by"}, {"key:m", "menu"}}, common...)
@@ -19,7 +19,7 @@ func (v *tagsView) hintPairs(a *App) []hintPair {
 }
 
 func (v *noteListView) hintPairs(a *App) []hintPair {
-	base := []hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"key:Enter", "open"}}
+	base := []hintPair{{"key:Ctrl+Space", "mark"}, {"key:B", "bulk actions"}, {"key:F2", "actions"}, {"nav.moveDown|nav.moveUp", "move"}, {"key:Enter", "open"}}
 	switch v.path {
 	case tabArchive:
 		return append(base, hintPair{"nav.unarchive", "unarchive"}, hintPair{"nav.delete", "trash"}, hintPair{"nav.restore", "rename"}, hintPair{"nav.contextMenu", "menu"}, hintPair{"nav.filter", "filter"})
@@ -34,7 +34,7 @@ func (v *helpView) hintPairs(a *App) []hintPair {
 }
 
 func (v *settingsView) hintPairs(a *App) []hintPair {
-	return []hintPair{{"nav.moveDown|nav.moveUp", "scroll"}, {"key::theme", "theme"}, {"key::style", "preview style"}, {"key::vim", "vim mode"}, {"key::wrap", "wrap"}, {"key::nu", "line numbers"}}
+	return []hintPair{{"nav.moveDown|nav.moveUp", "select"}, {"key:enter", "edit"}, {"key:/", "filter"}, {"key::config", "config file"}}
 }
 
 // Mouse wheel scrolling for the list views.
@@ -68,7 +68,8 @@ func (v *helpView) scrollBy(a *App, delta int) {
 	v.scroll = max(0, min(max(0, len(v.lines)-v.rows), v.scroll+delta))
 }
 func (v *settingsView) scrollBy(a *App, delta int) {
-	v.scroll = max(0, min(max(0, len(v.lines)-v.rows), v.scroll+delta))
+	v.list.move(delta, len(v.settings))
+	v.scroll = v.list.scroll
 }
 
 func sign(n int) int {

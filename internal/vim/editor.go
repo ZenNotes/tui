@@ -43,6 +43,7 @@ func (m Mode) Label() string {
 
 // Options tune the engine. Zero values are filled by New.
 type Options struct {
+	WrappedLineMotions      bool
 	TabSize                 int
 	ScrollOff               int
 	IgnoreCase              bool
@@ -97,6 +98,7 @@ type ExCommand struct {
 
 // Hooks are the host's side of the engine. Every field is optional.
 type Hooks struct {
+	DisplayRowBounds func(Pos) (int, int)
 	// ExCommand runs a command the editor does not own; handled false means
 	// unknown command.
 	ExCommand func(cmd ExCommand) (handled bool, err error)
@@ -791,10 +793,23 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 			e.startInsert(p)
 			return parseComplete, true
 		case 'I':
-			e.startInsert(Pos{e.cursor.Line, firstNonBlankInsert(e.buf.Line(e.cursor.Line))})
+			p := Pos{e.cursor.Line, firstNonBlankInsert(e.buf.Line(e.cursor.Line))}
+			if e.opts.WrappedLineMotions && e.hooks.DisplayRowBounds != nil {
+				start, end := e.hooks.DisplayRowBounds(e.cursor)
+				p.Col = start
+				line := e.buf.Line(p.Line)
+				for p.Col < end && (line[p.Col] == ' ' || line[p.Col] == '\t') {
+					p.Col++
+				}
+			}
+			e.startInsert(p)
 			return parseComplete, true
 		case 'A':
-			e.startInsert(Pos{e.cursor.Line, e.buf.LineLen(e.cursor.Line)})
+			p := Pos{e.cursor.Line, e.buf.LineLen(e.cursor.Line)}
+			if e.opts.WrappedLineMotions && e.hooks.DisplayRowBounds != nil {
+				_, p.Col = e.hooks.DisplayRowBounds(e.cursor)
+			}
+			e.startInsert(p)
 			return parseComplete, true
 		case 'o':
 			e.beginChange()

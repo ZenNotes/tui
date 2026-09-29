@@ -12,6 +12,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.5
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/charmbracelet/x/editor v0.2.0
+	github.com/coder/websocket v1.8.12
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/mattn/go-runewidth v0.0.29
 	github.com/modelcontextprotocol/go-sdk v1.7.0

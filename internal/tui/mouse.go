@@ -170,6 +170,8 @@ func (a *App) scrollAt(x, y, delta int) {
 		s.cursor = max(0, min(max(0, len(s.rows)-1), s.cursor+delta))
 	case "sidepanel":
 		switch a.sidePanelFocus() {
+		case focusComments:
+			a.comments.list.move(delta, len(a.comments.threads))
 		case focusOutline:
 			a.outline.list.move(delta, len(a.outline.items))
 		case focusConnections:
@@ -392,6 +394,12 @@ func (a *App) sidePanelClick(m tea.MouseMsg, double bool, main rect) {
 	x0 := main.x + main.w + 3
 	y := m.Y - main.y
 	switch a.sidePanelFocus() {
+	case focusComments:
+		a.focus = focusComments
+		a.comments.list.cursor = max(0, min(len(a.comments.threads)-1, a.comments.list.scroll+y-2))
+		if double && len(a.comments.threads) > 0 {
+			a.comments.menu(a, a.comments.threads[a.comments.list.cursor])
+		}
 	case focusOutline:
 		a.focus = focusOutline
 		idx := a.outline.list.scroll + y - 1

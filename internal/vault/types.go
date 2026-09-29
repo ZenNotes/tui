@@ -80,7 +80,7 @@ type FolderEntry struct {
 	Subpath string     `json:"subpath"`
 }
 
-// AssetMeta describes a file under the vault's attachment directories.
+// AssetMeta describes an attachment anywhere in the vault.
 type AssetMeta struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`

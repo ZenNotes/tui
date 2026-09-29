@@ -129,6 +129,8 @@ func (s *sidebarState) buildRows(a *App) []sidebarRow {
 	}
 	rows = append(rows, sidebarRow{kind: "gap"})
 	rows = append(rows, sidebarRow{kind: "help", key: "help", label: "Help"})
+	rows = append(rows, sidebarRow{kind: "files", key: "files", label: "Files"})
+	rows = append(rows, sidebarRow{kind: "templates", key: "templates", label: "Templates"})
 	rows = append(rows, sidebarRow{kind: "settings", key: "settings", label: "Settings"})
 	return rows
 }
@@ -331,6 +333,9 @@ func (s *sidebarState) render(a *App, w, h int) string {
 		glyph = "⇅"
 	}
 	header := " " + th.Bold.Render(glyph+" "+truncateCells(name, w-4))
+	if len(a.markedNotes) > 0 {
+		header += fmt.Sprintf(" · %d marked", len(a.markedNotes))
+	}
 	rule := th.Border.Render(strings.Repeat("─", w))
 	if focused {
 		rule = th.BorderFocus.Render(strings.Repeat("─", w))
@@ -356,6 +361,9 @@ func (s *sidebarState) render(a *App, w, h int) string {
 		indent := strings.Repeat("  ", r.depth)
 		icon := sidebarGlyph(r)
 		label := r.label
+		if a.markedNotes[r.path] {
+			label = "✓ " + label
+		}
 		count := ""
 		if r.count > 0 && r.kind != "note" {
 			count = fmt.Sprint(r.count)
@@ -478,6 +486,31 @@ func sidebarGlyph(r sidebarRow) string {
 // --- keys ---
 
 func (s *sidebarState) handleKey(a *App, k vim.Key) {
+	if isMarkKey(k) {
+		if s.cursor < len(s.rows) {
+			a.markSidebarRow(s.rows[s.cursor])
+		}
+		return
+	}
+	if k.IsRune('B') {
+		a.bulkMenu()
+		return
+	}
+	if k.Shift && (k.Is("up") || k.Is("down")) {
+		if s.cursor < len(s.rows) {
+			a.selectSidebarRow(s.rows[s.cursor], true)
+		}
+		delta := 1
+		if k.Is("up") {
+			delta = -1
+		}
+		s.cursor = max(0, min(len(s.rows)-1, s.cursor+delta))
+		if s.cursor < len(s.rows) {
+			a.selectSidebarRow(s.rows[s.cursor], true)
+		}
+		return
+	}
+
 	n := len(s.rows)
 	if k.Is("esc") {
 		if len(a.navKeys) > 0 {
@@ -654,6 +687,10 @@ func (s *sidebarState) activate(a *App, open bool) {
 		a.openHelp()
 	case "settings":
 		a.openSettings()
+	case "files":
+		a.openFiles()
+	case "templates":
+		a.openTemplates()
 	}
 }
 
@@ -834,6 +871,10 @@ func isDatabaseDir(sub string) bool {
 func (a *App) noteContextMenu(path string) {
 	meta, _ := a.noteMeta(path)
 	items := []menuItem{
+		{key: "M", label: "Mark / unmark", run: func(a *App) { a.markPath(path) }},
+		{key: "B", label: "Actions on marked notes", run: func(a *App) { a.bulkMenu() }},
+		{key: "C", label: "Comments", run: func(a *App) { a.openNote(path, true); a.openComments() }},
+		{key: "F", label: "Markdown formatting", run: func(a *App) { a.openNote(path, true); a.formatMenu() }},
 		{key: "o", label: "Open", run: func(a *App) { a.openNote(path, true) }},
 		{key: "v", label: "Open in split", run: func(a *App) { a.splitPane(true); a.openNote(path, true) }},
 		{key: "p", label: "Preview", run: func(a *App) {
