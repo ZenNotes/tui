@@ -84,6 +84,7 @@ type App struct {
 	markedMoveDirs map[string]string
 	boardOrder     map[string][]string
 	buffers        map[string]*noteBuffer
+	registers      vim.RegisterStore
 	noteModes      map[string]paneMode
 	panes          *paneNode
 	activePane     *pane

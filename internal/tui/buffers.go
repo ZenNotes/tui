@@ -70,7 +70,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	if a.deferReads {
 		meta, _ := a.noteMeta(path)
 		buf := &noteBuffer{path: path, meta: meta, loading: true}
-		buf.ed = vim.New("", a.editorOptions(), a.editorHooks(buf))
+		buf.ed = vim.NewWithRegisters("", a.editorOptions(), a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[path] = buf
 		a.queue(a.readBufferCmd(buf))
@@ -81,7 +81,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 		return nil, err
 	}
 	buf := &noteBuffer{path: path, meta: content.NoteMeta, savedText: content.Body}
-	buf.ed = vim.New(content.Body, a.editorOptions(), a.editorHooks(buf))
+	buf.ed = vim.NewWithRegisters(content.Body, a.editorOptions(), a.editorHooks(buf), &a.registers)
 	buf.ed.MarkSaved()
 	a.buffers[path] = buf
 	return buf, nil

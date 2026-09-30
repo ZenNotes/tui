@@ -222,7 +222,7 @@ func (a *App) openTemplateFile(file vault.CustomTemplateFile) {
 	if buf := a.buffers[file.SourcePath]; buf == nil {
 		t := templates.ParseCustom(file)
 		buf = &noteBuffer{path: file.SourcePath, meta: vault.NoteMeta{Path: file.SourcePath, Title: t.Name}, savedText: file.Raw}
-		buf.ed = vim.New(file.Raw, a.editorOptions(), a.editorHooks(buf))
+		buf.ed = vim.NewWithRegisters(file.Raw, a.editorOptions(), a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[file.SourcePath] = buf
 	}

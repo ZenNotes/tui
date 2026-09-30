@@ -81,6 +81,13 @@ type Register struct {
 	Blockwise bool
 }
 
+// RegisterStore holds yank, delete, and macro registers shared by editors in
+// one host session. Its zero value is ready to use. Like Editor, it is owned by
+// the host's event loop rather than accessed concurrently.
+type RegisterStore struct {
+	values map[rune]Register
+}
+
 // Range is a line range for an ex command, zero-based and inclusive.
 type Range struct {
 	Start, End int
@@ -249,14 +256,27 @@ type Editor struct {
 
 // New creates an editor over text.
 func New(text string, opts Options, hooks Hooks) *Editor {
+	return NewWithRegisters(text, opts, hooks, nil)
+}
+
+// NewWithRegisters creates an editor with session-wide registers. Cursor,
+// selections, marks, and undo history remain local to this editor. A nil store
+// gives the editor private registers, as New does.
+func NewWithRegisters(text string, opts Options, hooks Hooks, store *RegisterStore) *Editor {
 	if opts.TabSize <= 0 {
 		opts.TabSize = 4
+	}
+	if store == nil {
+		store = &RegisterStore{}
+	}
+	if store.values == nil {
+		store.values = make(map[rune]Register)
 	}
 	e := &Editor{
 		buf:        NewBuffer(text),
 		opts:       opts,
 		hooks:      hooks,
-		registers:  map[rune]Register{},
+		registers:  store.values,
 		marks:      map[rune]Pos{},
 		desiredCol: -1,
 		searchDir:  1,
