@@ -2,26 +2,20 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
+	"golang.org/x/term"
 )
 
 // Handler runs one command against a resolved backend.
 type Handler func(ctx context.Context, b backend.Backend, args Args) error
-
-var subcommands = map[string][]string{
-	"folder":  {"list", "create", "rename", "delete"},
-	"tag":     {"list", "find"},
-	"task":    {"list", "toggle"},
-	"comment": {"list", "add", "reply", "resolve"},
-	"vault":   {"info", "list", "mode", "add", "remove", "rm", "use"},
-	"base":    {"list", "create", "rows", "get", "add", "set", "convert"},
-}
 
 func dispatchTable() map[string]Handler {
 	return map[string]Handler{
@@ -71,13 +65,35 @@ func dispatchTable() map[string]Handler {
 func Main(argv []string) int {
 	code, err := run(argv)
 	if err != nil {
-		emitError(err.Error())
+		var invocation *invocationError
+		if errors.Is(err, context.Canceled) {
+			code = 130
+		}
+		if errors.As(err, &invocation) && invocation.json {
+			kind := "error"
+			if code == 2 {
+				kind = "usage"
+			} else if code == 130 {
+				kind = "cancelled"
+			}
+			_ = json.NewEncoder(stderr).Encode(map[string]any{"error": map[string]string{"code": kind, "message": err.Error()}})
+		} else {
+			emitError(err.Error())
+		}
 		if code == 0 {
 			code = 1
 		}
 	}
 	return code
 }
+
+type invocationError struct {
+	err  error
+	json bool
+}
+
+func (e *invocationError) Error() string { return e.err.Error() }
+func (e *invocationError) Unwrap() error { return e.err }
 
 // ResolveTargetFromArgs picks the vault for an invocation from the global
 // flags.
@@ -91,61 +107,44 @@ func OpenBackend(target backend.Target) (backend.Backend, error) {
 	return backend.New(target, backend.Options{SyncTitleHeading: prefs.SyncTitleHeadingOnRename})
 }
 
-func peelSubcommand(command string, rest []string) (string, Args) {
-	choices, ok := subcommands[command]
-	if !ok {
-		return "", Parse(rest)
-	}
-	if len(rest) == 0 {
-		return "", Parse(rest)
-	}
-	for _, c := range choices {
-		if rest[0] == c {
-			return c, Parse(rest[1:])
+func run(argv []string) (code int, err error) {
+	var args Args
+	defer func() {
+		if err != nil {
+			err = &invocationError{err: err, json: requestedJSON(argv)}
 		}
-	}
-	return "", Parse(rest)
-}
-
-func run(argv []string) (int, error) {
+	}()
 	if len(argv) == 1 && argv[0] == "--desktop-integration" {
 		emitJSON(map[string]any{"protocol": 1, "version": Version})
 		return 0, nil
 	}
-	if len(argv) == 0 || argv[0] == "--help" || argv[0] == "-h" || argv[0] == "help" {
+	key, parsed, parseErr := parseCommand(argv)
+	args = parsed
+	if parseErr != nil {
+		return 2, parseErr
+	}
+	if key == "version" || args.Bool("version") && !commandSpecs()[key].Flags["version"] {
+		if args.Bool("json") {
+			emitJSON(map[string]string{"version": Version})
+		} else {
+			fmt.Fprint(stdout, RenderVersion(argv))
+		}
+		return 0, nil
+	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	if args.Bool("help") {
+		fmt.Fprint(stdout, RenderScopedHelp(key, argv))
+		return 0, nil
+	}
+	if key == "" {
+		if len(argv) == 0 && stdinIsTTY() && term.IsTerminal(int(os.Stdout.Fd())) {
+			return 0, cmdTUI(ctx, args)
+		}
 		fmt.Fprint(stdout, RenderHelp(argv))
 		return 0, nil
 	}
-	if argv[0] == "--version" || argv[0] == "version" {
-		fmt.Fprint(stdout, RenderVersion(argv))
-		return 0, nil
-	}
-	// Global flags may precede the command: `zn --vault work notes list`.
-	lead := []string{}
-	for len(argv) > 0 && strings.HasPrefix(argv[0], "--") {
-		flag := argv[0]
-		if i := strings.Index(flag, "="); i >= 0 || flag == "--json" || flag == "--no-color" {
-			lead = append(lead, flag)
-			argv = argv[1:]
-			continue
-		}
-		if len(argv) < 2 {
-			break
-		}
-		lead = append(lead, flag, argv[1])
-		argv = argv[2:]
-	}
-	if len(argv) == 0 {
-		fmt.Fprint(stdout, RenderHelp(argv))
-		return 0, nil
-	}
-	command, rest := argv[0], append(append([]string{}, argv[1:]...), lead...)
-	subcommand, args := peelSubcommand(command, rest)
-	ctx := context.Background()
-	key := command
-	if subcommand != "" {
-		key = command + " " + subcommand
-	}
+	command, _, _ := strings.Cut(key, " ")
 
 	switch command {
 	case "mcp":
@@ -153,7 +152,22 @@ func run(argv []string) (int, error) {
 	case "tui":
 		return 0, cmdTUI(ctx, args)
 	case "config":
-		return 0, cmdConfig(ctx, args)
+		return 0, cmdConfigAction(ctx, args, strings.TrimSpace(strings.TrimPrefix(key, "config")))
+	case "status":
+		return 0, cmdStatus(args)
+	case "doctor":
+		return 0, cmdDoctor(ctx, args)
+	case "completion":
+		return 0, cmdCompletion(args)
+	case "server":
+		return 0, cmdServer(ctx, strings.TrimPrefix(key, "server "), args)
+	case "update":
+		return 0, cmdUpdate(ctx, args)
+	case "__complete":
+		for _, value := range completionCandidates(args.Positionals) {
+			emitLine(value)
+		}
+		return 0, nil
 	case "connect":
 		return 0, cmdConnect(ctx, args)
 	case "disconnect":
@@ -163,6 +177,9 @@ func run(argv []string) (int, error) {
 	case "init":
 		return 0, cmdInit(args)
 	case "setup":
+		if args.Bool("no-input") {
+			return 2, errors.New("setup needs a terminal. Use `zn init <folder>`, `zn vault add <folder>` or `zn connect <url>` for automation")
+		}
 		return 0, runSetup(ctx)
 	}
 	switch key {

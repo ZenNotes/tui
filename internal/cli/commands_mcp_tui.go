@@ -33,7 +33,7 @@ func cmdTUI(ctx context.Context, args Args) error {
 		return backend.ResolveTargetWithSource(args.Str("vault"), args.Str("server"), args.Str("token"), source)
 	}
 	target, err := resolve()
-	if errors.Is(err, config.ErrNoVault) && args.Str("vault") == "" && args.Str("server") == "" && stdinIsTTY() {
+	if errors.Is(err, config.ErrNoVault) && args.Str("vault") == "" && args.Str("server") == "" && stdinIsTTY() && !args.Bool("no-input") {
 		// First run: set a vault up right here, then carry on into the app.
 		if setupErr := runSetup(ctx); setupErr != nil {
 			return setupErr

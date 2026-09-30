@@ -2,8 +2,27 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
+
+// ValidateConfig checks supported values without rewriting the user's file.
+func ValidateConfig() error {
+	raw, err := os.ReadFile(ConfigTomlPath())
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var doc map[string]any
+	if _, err := toml.Decode(string(raw), &doc); err != nil {
+		return err
+	}
+	return validateKnownValues(doc)
+}
 
 func validateKnownValues(doc map[string]any) error {
 	for section, defaults := range ValueTables(DefaultPrefs()) {

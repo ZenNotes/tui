@@ -36,6 +36,7 @@ const (
 
 func (a *App) parityCommands() []command {
 	return []command{
+		{names: []string{"servers"}, title: "Manage local servers…", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.managedServers(); return nil }},
 		{names: []string{"vault", "vaults"}, title: "Switch vault…", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			if arg == "" {

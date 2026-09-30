@@ -92,10 +92,11 @@ func TestConnectInitUseAndList(t *testing.T) {
 	if config.LoadWorkspaces().Default != "home" {
 		t.Fatal("use switches the default")
 	}
-	out = captureOutput(t, func() { _ = Main([]string{"list", "--json"}) })
-	if strings.Contains(out, "zn:") {
-		t.Fatalf("a command against the saved server should reach it: %s", out)
-	}
+	out = captureOutput(t, func() {
+		if code := Main([]string{"list", "--json"}); code != 0 {
+			t.Errorf("a command against the saved server exited %d", code)
+		}
+	})
 	captureOutput(t, func() { _ = Main([]string{"disconnect", "home"}) })
 	if config.LoadWorkspaces().FindServer("home") != nil || config.LoadToken(server.URL) != "" {
 		t.Fatal("disconnect forgets the server and its token")
@@ -133,8 +134,9 @@ func TestConnectUnderTheDesktopLauncherAuthenticatesTheAppsServer(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	out := captureOutput(t, func() { _ = Main([]string{"list", "--json"}) })
-	if !strings.Contains(out, "zn:") {
+	code := 0
+	out := captureOutput(t, func() { code = Main([]string{"list", "--json"}) })
+	if code == 0 || !strings.Contains(out, `"error"`) {
 		t.Fatalf("without a token the app's server must refuse: %s", out)
 	}
 	out = captureOutput(t, func() {
@@ -145,8 +147,8 @@ func TestConnectUnderTheDesktopLauncherAuthenticatesTheAppsServer(t *testing.T) 
 	if !strings.Contains(out, "zn tui opens it by default now") || !strings.Contains(out, "keep following the ZenNotes app") || strings.Contains(out, "zn and zn tui use it") {
 		t.Fatalf("connect output under the desktop launcher: %s", out)
 	}
-	out = captureOutput(t, func() { _ = Main([]string{"list", "--json"}) })
-	if strings.Contains(out, "zn:") {
+	out = captureOutput(t, func() { code = Main([]string{"list", "--json"}) })
+	if code != 0 {
 		t.Fatalf("the saved token must reach the app's server: %s", out)
 	}
 	out = captureOutput(t, func() { _ = Main([]string{"connect", server.URL, "--token", "right", "--no-default"}) })

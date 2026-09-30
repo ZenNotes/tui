@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -102,7 +103,30 @@ var helpSections = []helpSection{
 	}},
 	{"MCP", []helpRow{
 		{"mcp", "Start the MCP stdio server (Claude / Codex)", ""},
+	}},
+	{"CONFIGURATION", []helpRow{
 		{"config", "Open config.toml in $EDITOR, creating a commented starter file", "--path  --no-edit"},
+		{"config list", "List effective supported preferences", "--json"},
+		{"config get <key>", "Read a preference, e.g. editor.word_wrap", "--json"},
+		{"config set <key> <value>", "Validate and save a portable preference", "--json"},
+		{"config edit", "Open config.toml in $EDITOR", ""},
+		{"status", "Show the selected workspace, its source and config location", "--json"},
+		{"doctor", "Check configuration, workspace access and server connectivity", "--json"},
+		{"completion <shell>", "Print Bash, Zsh, Fish or PowerShell completions", ""},
+		{"update", "Update the CLI using its installation owner", "--check  --version <v>  --json"},
+	}},
+	{"MANAGED SERVERS", []helpRow{
+		{"server setup <name>", "Install a native server on this machine, start, verify and connect", "--vault <folder>  --bind <ip:port>  --base-path <path>  --version <v>  --no-start  --no-default  --json"},
+		{"server install <name>", "Install a verified native server without starting it", "--vault <folder>  --bind <ip:port>  --base-path <path>  --version <v>  --json"},
+		{"server list", "List locally managed server instances", "--json"},
+		{"server status <name>", "Check service state, authentication, version and vault", "--json"},
+		{"server start <name>", "Start a login service and verify its health", "--json"},
+		{"server stop <name>", "Stop and disable the login service", "--json"},
+		{"server restart <name>", "Restart a managed server and verify its health", "--json"},
+		{"server run <name>", "Run a managed server in the foreground until Ctrl-C", ""},
+		{"server logs <name>", "Print the last 64 KiB of the server log", ""},
+		{"server config <name>", "Show or change runtime settings with health verification", "--vault <folder>  --bind <ip:port>  --base-path <path>  --json"},
+		{"server update <name>", "Install a verified release, retaining a healthy rollback version", "--check  --version <v>  --rollback  --json"},
 	}},
 }
 
@@ -113,6 +137,7 @@ var globalFlags = []helpRow{
 	{"--workspace-source <app|terminal>", "Follow the desktop workspace or the terminal's saved default", ""},
 	{"--json", "Emit machine-readable JSON output", ""},
 	{"--no-color", "Disable ANSI color even on a TTY", ""},
+	{"--no-input", "Never prompt; require values through arguments or the environment", ""},
 	{"--help, -h", "Show this help", ""},
 	{"--version", "Print the CLI version", ""},
 }
@@ -282,4 +307,49 @@ func RenderHelp(argv []string) string {
 func RenderVersion(argv []string) string {
 	s := helpStyle{color: colorEnabled(argv)}
 	return s.cyan(s.bold("zn")) + " " + s.dim("v"+Version) + "\n"
+}
+
+// RenderScopedHelp describes one command or command group without resolving a
+// vault. Help must stay useful on a fresh installation and have no side effects.
+func RenderScopedHelp(name string, argv []string) string {
+	if name == "" {
+		return RenderHelp(argv)
+	}
+	s := helpStyle{color: colorEnabled(argv)}
+	width := termWidth()
+	specs := commandSpecs()
+	lines := []string{s.bold("USAGE")}
+	if spec, ok := specs[name]; ok {
+		lines = append(lines, "  zn "+spec.Usage+" [flags]", "", spec.Summary, "")
+		flags := make([]string, 0, len(spec.Flags))
+		for flag := range spec.Flags {
+			flags = append(flags, flag)
+		}
+		sort.Strings(flags)
+		if len(flags) > 0 {
+			lines = append(lines, s.bold("FLAGS"))
+			for _, flag := range flags {
+				suffix := ""
+				if spec.Flags[flag] {
+					suffix = " <value>"
+				}
+				lines = append(lines, "  --"+flag+suffix)
+			}
+		}
+	} else {
+		lines = append(lines, "  zn "+name+" <command> [flags]", "", s.bold("COMMANDS"))
+		var names []string
+		for key := range specs {
+			if strings.HasPrefix(key, name+" ") {
+				names = append(names, key)
+			}
+		}
+		sort.Strings(names)
+		for _, key := range names {
+			lines = append(lines, "  "+specs[key].Usage+"\n    "+specs[key].Summary)
+		}
+	}
+	lines = append(lines, "")
+	lines = append(lines, s.section("GLOBAL FLAGS", globalFlags, width)...)
+	return strings.Join(lines, "\n") + "\n"
 }

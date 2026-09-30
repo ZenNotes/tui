@@ -142,17 +142,18 @@ type App struct {
 	previewDepth        int
 	previewPath         string
 
-	systemDark    bool
-	exHistory     []string
-	mouse         mouseState
-	menuAnchor    *point
-	overlayRect   rect
-	mouseEnabled  bool
-	glamour       *glamourState
-	glamourWarned bool
-	autosaveArmed bool
-	sessionArmed  bool
-	pollArmed     bool
+	systemDark        bool
+	exHistory         []string
+	mouse             mouseState
+	menuAnchor        *point
+	overlayRect       rect
+	mouseEnabled      bool
+	glamour           *glamourState
+	glamourWarned     bool
+	autosaveArmed     bool
+	sessionArmed      bool
+	pollArmed         bool
+	managedServerBusy bool
 }
 
 type jumpEntry struct {
@@ -292,6 +293,9 @@ func (a *App) shutdown() error {
 // Update is the Bubble Tea message loop.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case managedServerResult:
+		a.finishManagedOperation(m)
+		return a, a.flush()
 	case configPollMsg:
 		data, _ := os.ReadFile(config.ConfigTomlPath())
 		hash := sha256.Sum256(data)

@@ -91,7 +91,7 @@ func cmdConnect(ctx context.Context, args Args) error {
 	}
 	token := backend.ResolveAuthTokenFor(baseURL, args.Str("token"), "")
 	if token == "" {
-		if !stdinIsTTY() {
+		if !stdinIsTTY() || args.Bool("no-input") {
 			return fmt.Errorf("No token for %s. Pass --token <token> or set %s (the server's ZENNOTES_AUTH_TOKEN).", baseURL, backend.RemoteTokenEnv)
 		}
 		secret, err := readSecret("Token for " + baseURL + " (the server's ZENNOTES_AUTH_TOKEN)")
@@ -351,6 +351,7 @@ func runSetup(ctx context.Context) error {
 	fmt.Fprintln(stderr, "  1  Create a new vault")
 	fmt.Fprintln(stderr, "  2  Use an existing folder of Markdown notes")
 	fmt.Fprintln(stderr, "  3  Connect to a ZenNotes server")
+	fmt.Fprintln(stderr, "  4  Install a ZenNotes server on this machine")
 	fmt.Fprintln(stderr)
 	choice, err := readLine("Pick one", "1")
 	if err != nil {
@@ -381,8 +382,22 @@ func runSetup(ctx context.Context) error {
 			return errors.New("A URL is required.")
 		}
 		return cmdConnect(ctx, Parse([]string{url}))
+	case "4":
+		name, err := readLine("Server name", "home")
+		if err != nil {
+			return err
+		}
+		path, err := readLine("Vault folder", "~/Notes")
+		if err != nil {
+			return err
+		}
+		bind, err := readLine("Listen address", "127.0.0.1:7878")
+		if err != nil {
+			return err
+		}
+		return cmdServer(ctx, "setup", Parse([]string{name, "--vault", path, "--bind", bind}))
 	}
-	return fmt.Errorf("Pick 1, 2 or 3.")
+	return fmt.Errorf("Pick 1, 2, 3 or 4.")
 }
 
 var _ = vault.FolderInbox
