@@ -294,6 +294,9 @@ func (a *App) shutdown() error {
 // Update is the Bubble Tea message loop.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
+	case versionDetailsMsg:
+		a.finishVersionDetails(m)
+		return a, a.flush()
 	case managedServerResult:
 		a.finishManagedOperation(m)
 		return a, a.flush()

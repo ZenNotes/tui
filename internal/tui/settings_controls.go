@@ -76,7 +76,7 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 	v.rows = max(1, h-2)
 	v.list.ensureVisible(v.rows)
 	v.scroll = v.list.scroll
-	lines := []string{padRight(" Enter edit · / filter · :config external editor", w), padRight(" "+v.filter, w)}
+	lines := []string{padRight(truncateCells(" Enter edit · / filter · v version · :config external editor", w), w), padRight(" "+v.filter, w)}
 	for i := v.scroll; i < len(v.lines) && len(lines) < h; i++ {
 		line := padRight(" "+truncateCells(v.lines[i], max(1, w-2)), w)
 		if focused && i == v.list.cursor {
@@ -87,6 +87,10 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
 func (v *settingsView) handleKey(a *App, k vim.Key) bool {
+	if k.IsRune('v') {
+		_ = a.showVersion(vim.ExCommand{Name: "version"})
+		return true
+	}
 	if a.listNav(&v.list, k, len(v.settings), v.rows) {
 		return true
 	}

@@ -669,9 +669,8 @@ func (a *App) commandTable() []command {
 			}
 			return a.createFolderNamed(folder, sub, name)
 		}},
-		{names: []string{"version"}, title: "Show version", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
-			a.notify("zn " + a.opts.Version + " · " + a.backend.Label())
-			return nil
+		{names: []string{"version", "ve"}, title: "Version details / copy bug report info", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+			return a.showVersion(cmd)
 		}},
 		{names: []string{"harper", "spell"}, title: "Grammar check (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
 		{names: []string{"imgwidth"}, title: "Image width (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},

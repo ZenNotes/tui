@@ -31,12 +31,16 @@ func (r *textReader) handleKey(a *App, k vim.Key) {
 	r.scroll = max(0, min(max(0, r.total-r.rows), r.scroll))
 }
 func (r *textReader) render(a *App, w, h int) string {
+	return r.renderWithHint(a, w, h, "↑/↓ scroll · Home/End · Esc close")
+}
+
+func (r *textReader) renderWithHint(a *App, w, h int, hint string) string {
 	width := max(1, min(100, w-6))
 	lines := wrapCommentText(r.body, width)
 	r.total = len(lines)
 	r.rows = max(1, h-8)
 	r.scroll = max(0, min(max(0, r.total-r.rows), r.scroll))
-	content := []string{a.theme.OverlayTitle.Render(truncateCells(r.title, width)), "↑/↓ scroll · Home/End · Esc close", ""}
+	content := []string{a.theme.OverlayTitle.Render(truncateCells(r.title, width)), truncateCells(hint, width), ""}
 	content = append(content, lines[r.scroll:min(len(lines), r.scroll+r.rows)]...)
 	return a.theme.Overlay.Width(width).Render(strings.Join(content, "\n"))
 }

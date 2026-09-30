@@ -34,7 +34,7 @@ func (v *helpView) hintPairs(a *App) []hintPair {
 }
 
 func (v *settingsView) hintPairs(a *App) []hintPair {
-	return []hintPair{{"nav.moveDown|nav.moveUp", "select"}, {"key:enter", "edit"}, {"key:/", "filter"}, {"key::config", "config file"}}
+	return []hintPair{{"nav.moveDown|nav.moveUp", "select"}, {"key:enter", "edit"}, {"key:/", "filter"}, {"key:v", "version details"}, {"key::config", "config file"}}
 }
 
 // Mouse wheel scrolling for the list views.
