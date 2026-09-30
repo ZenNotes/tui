@@ -1,7 +1,7 @@
 # Managed servers and CLI updates
 
-These commands are available in source builds on the CLI/server-experience
-branch. They are not part of the published v0.5.0 release.
+These commands are available in **zn v0.6.0 and later**. Upgrade older copies
+through their original installation method; v0.5.0 does not have `zn update`.
 
 ## Install a server on this machine
 
@@ -103,7 +103,7 @@ power-loss recovery or vault-format migrations performed by a server release.
 ```sh
 zn update --check --json
 zn update
-zn update --version 0.5.0
+zn update --version 0.6.0
 ```
 
 `zn update` checks the running executable's installation owner:

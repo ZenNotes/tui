@@ -19,18 +19,18 @@ vault too.
 **[Online manual](https://zennotes.org/tui/docs)** ·
 [Install](#install) · [Quick start](#quick-start) · [Commands](#commands) ·
 [Scripting](#scripting-and-shell-completion) ·
-[Managed servers](#managed-servers-source-preview) ·
-[Updates](#updating-the-cli-source-preview) ·
+[Managed servers](#managed-servers) ·
+[Updates](#updating-the-cli) ·
 [Terminal app](#the-terminal-app) · [Configuration](#configuration) ·
 [MCP](#mcp-server) · [Troubleshooting](#troubleshooting) ·
 [Contributing](#contributing-and-sandbox)
 
-> **Release status:** The published release is **v0.5.0**. This branch also
-> contains the newer **source-preview CLI/server experience**: managed servers,
-> installation-aware updates, status/doctor, settings commands, scoped help,
-> shell completion, and structured errors. These are not included in the
-> published v0.5.0 downloads or `go install …@latest`; you need a checkout
-> containing the new implementation. Preview sections below are labeled.
+> **New in v0.6.0:** Managed servers, installation-aware updates, status/doctor,
+> settings commands, scoped help, shell completion, structured errors, shared
+> cross-note yank registers, and copyable version reports. Upgrading from
+> **v0.5.0 or earlier?** Use Homebrew, Go, or a fresh release download once:
+> those versions do not yet have `zn update`. Desktop-managed installations get
+> the version bundled with a desktop app update.
 
 ## What you get
 
@@ -48,10 +48,10 @@ vault too.
 - **Local and self-hosted workspaces.** Keep several vaults and server
   connections, switch between them, and use the same note commands against
   either backend. Remote changes arrive over the live feed with polling fallback.
-- **Managed servers — source preview.** Install verified native server releases,
+- **Managed servers.** Install verified native server releases,
   configure a vault, start a login service, inspect logs, update, and roll back.
   CLI and TUI controls share the same implementation.
-- **Automation tools — source preview.** Command-specific help, validated
+- **Automation tools.** Command-specific help, validated
   arguments, JSON errors, noninteractive mode, four shell completions,
   configuration get/set, workspace status, and diagnostics.
 
@@ -128,17 +128,16 @@ go build -o zn ./cmd/zn
 ./zn tui
 ```
 
-This builds exactly the code in your checkout. Source-preview features require
-the corresponding development changes; cloning the default branch alone does
-not guarantee they are present. Build versions identify module versions or
-checkout revisions unless a release version was explicitly stamped.
+This builds exactly the code in your checkout. Use tag `v0.6.0` for this release
+or the default branch for ongoing development. Build versions identify module
+versions or checkout revisions unless a release version was explicitly stamped.
 
 Either way, `zn --version` confirms the install. AUR packages are not
 published yet.
 
 Maintainers: [Homebrew packaging and release updates](packaging/homebrew/README.md).
 
-Source builds also provide [installation-aware updates](#updating-the-cli-source-preview).
+Version 0.6.0 provides [installation-aware updates](#updating-the-cli).
 
 ## Quick start
 
@@ -163,7 +162,7 @@ to Normal mode, `Ctrl+S` saves, and `Ctrl+G` opens the command palette. `:settin
 lets you turn Vim off. `F2` exposes actions in either editing mode.
 
 `zn setup` asks those questions interactively, and `zn tui` runs the same
-wizard when nothing is configured yet. In source builds, bare `zn` opens the
+wizard when nothing is configured yet. Bare `zn` opens the
 TUI when stdin/stdout are terminals and prints help when piped. Later:
 
 | Command | What it does |
@@ -179,11 +178,11 @@ the store with `--server <url>` and `ZENNOTES_REMOTE_TOKEN`.
 
 ## Commands
 
-`zn --help` lists the commands; `zn <command> --help` shows scoped usage in source
-builds. Data commands support `--json`. Raw-text commands such as `read`,
+`zn --help` lists the commands; `zn <command> --help` shows scoped usage.
+Data commands support `--json`. Raw-text commands such as `read`,
 `completion` and `server logs` retain their text output unless documented otherwise.
 
-The source preview adds `--no-input` and structured errors; see
+Use `--no-input` and structured errors for automation; see
 [scripting](#scripting-and-shell-completion) for exit codes and stream conventions.
 
 | Area | Commands |
@@ -197,8 +196,8 @@ The source preview adds `--no-input` and structured errors; see
 | Databases | `base list\|create\|rows\|get\|add\|set\|convert`, for `.base` folders and loose `.csv` files |
 | Vaults | `setup` `init` `connect` `disconnect` `use` `vault info\|list\|mode\|add\|remove` |
 | Other | `capture "..."` (quick note from an argument or stdin), `open <path>` (hand a note to the desktop app), `config` (open `config.toml` in `$EDITOR`), `read --pretty` (render a note in the terminal) |
-| Managed servers | `server setup\|install\|list\|status\|start\|stop\|restart\|run\|logs\|config\|update` (source builds) |
-| Configuration | `config list\|get\|set\|edit`, `status`, `doctor`, `completion <shell>`, `update` (source builds) |
+| Managed servers | `server setup\|install\|list\|status\|start\|stop\|restart\|run\|logs\|config\|update` |
+| Configuration | `config list\|get\|set\|edit`, `status`, `doctor`, `completion <shell>`, `update` |
 | Runtimes | `mcp` (MCP stdio server), `tui [note]` (the terminal app) |
 
 ### Note and search examples
@@ -256,7 +255,7 @@ zn task list --unchecked --json
 IDs containing spaces or shell-special characters. Successful JSON shapes stay
 compatible with the desktop CLI.
 
-### Predictable automation — source preview
+### Predictable automation
 
 ```bash
 zn --vault ~/Notes list --json --no-input
@@ -287,7 +286,7 @@ variables. Raw-text commands such as completion scripts and logs remain text.
 `doctor --json` reports checks on stdout and returns a failure exit code when a
 check fails. Package-manager update output goes to stderr.
 
-### Completion — source preview
+### Completion
 
 ```bash
 # Bash: source this file from your shell profile to keep completion enabled.
@@ -305,7 +304,7 @@ Suggestions include commands, flags, saved vaults/connections, managed server
 names, preference keys, and local note paths. Completion never contacts a
 remote server.
 
-## Managed servers (source preview)
+## Managed servers
 
 Install a native server **on the machine running `zn`**, backed by a vault you
 choose:
@@ -403,12 +402,12 @@ specific `.lock`. `server restart` reapplies the saved manifest after interrupti
 Automatic rollback covers ordinary failures and cancellation, not power-loss
 recovery. See [the server guide](docs/managed-servers.md) for the full contract.
 
-## Updating the CLI (source preview)
+## Updating the CLI
 
 ```bash
 zn update --check --json
 zn update
-zn update --version 0.5.0
+zn update --version 0.6.0
 ```
 
 The updater detects the owner of the executable being run:
@@ -493,7 +492,7 @@ link, `gx` opens a URL, `gy` copies a link, `zc zo zM zR` fold headings,
 Enter continues lists, Tab indents list items, `[[` opens the note picker
 in insert mode, and fenced code is syntax-highlighted.
 
-**Source preview:** Yank/delete registers are shared across the TUI session.
+Yank/delete registers are shared across the TUI session.
 Yank with `yy` or a visual selection, switch notes with `[b` / `]b` (or another
 navigation method), then paste with `p` / `P`. Named registers such as `"a`,
 linewise and blockwise selections, and delete history work across notes too.
@@ -586,7 +585,7 @@ split layout, tabs, cursor/scroll positions and view state, and the vault
 you switch to becomes the default for the next launch. The old flat session
 format still restores. TUI layouts and card order have their own session file.
 
-In the source preview, `:servers` is the separate **local server management**
+`:servers` is the separate **local server management**
 menu. It can install, start/stop, inspect, update, and roll back an instance;
 `:server` continues to select or connect to a remote workspace.
 
@@ -678,7 +677,7 @@ layout choices do not change these terminal layouts.
 Per-vault settings (daily notes, favorites, folder layout) live in the
 vault's `.zennotes/vault.json`, also shared with the app.
 
-### Individual settings — source preview
+### Individual settings
 
 ```bash
 zn config list --json
@@ -726,7 +725,7 @@ automation use.
 | `ZENNOTES_APP_PATH` | Desktop application location for `zn open` |
 | `VISUAL`, `EDITOR` | External editor for notes and configuration |
 | `NO_COLOR` | Disable ANSI colors |
-| `GH_TOKEN` | Authenticate official release metadata requests in source-preview updaters |
+| `GH_TOKEN` | Authenticate official release metadata requests in the updaters |
 
 Tokens for a remote server are selected from an explicit flag, then the
 environment, then the applicable saved credentials. `zn connect` stores them
@@ -735,7 +734,7 @@ connection without embedding tokens in their own configuration.
 
 ## Troubleshooting
 
-### Copy a TUI version report — source preview
+### Copy a TUI version report
 
 Run `:version` (alias `:ve`) to open a persistent, scrollable report for a bug
 report. It includes the TUI version, OS version/distribution, architecture, Go
@@ -750,7 +749,7 @@ when collection completes. Esc closes the report. Outside Vim mode, choose
 An unreachable server is reported as unavailable; metadata collection runs in
 the background and times out rather than blocking the editor.
 
-### Start with status and doctor — source preview
+### Start with status and doctor
 
 ```bash
 zn status
@@ -848,7 +847,7 @@ implementation, so the two stay interchangeable.
 
 ## Contributing and sandbox
 
-The source-preview contributor sandbox builds your checkout and creates sample
+The contributor sandbox builds your checkout and creates sample
 notes, tasks, and isolated settings in a temporary directory:
 
 ```bash

@@ -68,7 +68,7 @@ Release publication and pushes require the maintainer's explicit approval.
 
 ## Implementation status
 
-The native-first path is implemented in this branch: CLI foundation, shared
+The native-first path ships in v0.6.0: CLI foundation, shared
 release verification, native managed instances, owner-aware CLI updates, TUI
 server menus, onboarding and the contributor sandbox. Docker and SSH deployment
 remain separate follow-ups; Windows uses foreground server execution and manual
