@@ -1095,7 +1095,7 @@ func Run(ctx context.Context, opts Options) error {
 		transport = &sdk.StdioTransport{}
 	}
 	err := server.Run(ctx, transport)
-	if err == nil || ctx.Err() != nil || isClientDisconnect(err) {
+	if err == nil || errors.Is(err, context.Canceled) || isClientDisconnect(err) {
 		return nil
 	}
 	return err
@@ -1104,7 +1104,9 @@ func Run(ctx context.Context, opts Options) error {
 // isClientDisconnect recognises the SDK's report that the client closed
 // the pipe, which is how MCP clients end a session: not an error.
 func isClientDisconnect(err error) bool {
-	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")
+	// The SDK sometimes formats EOF with %v rather than wrapping it. Match
+	// that exact fallback; the same prefix can accompany real I/O failures.
+	return errors.Is(err, io.EOF) || err.Error() == "server is closing: EOF"
 }
 
 func errorResult(text string) *sdk.CallToolResult {

@@ -3,6 +3,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +18,57 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 )
+
+type failingTransport struct{ err error }
+
+func (t failingTransport) Connect(context.Context) (sdk.Connection, error) {
+	return nil, t.err
+}
+
+func TestRunOnlySuppressesNormalShutdownErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		ok   bool
+	}{
+		{"EOF", io.EOF, true},
+		{"wrapped EOF", fmt.Errorf("read: %w", io.EOF), true},
+		{"SDK EOF", errors.New("server is closing: EOF"), true},
+		{"canceled", context.Canceled, true},
+		{"deadline", context.DeadlineExceeded, false},
+		{"truncated input", errors.New("server is closing: unexpected EOF"), false},
+		{"transport failure", errors.New("server is closing: input/output error"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Run(context.Background(), Options{Transport: failingTransport{tc.err}})
+			if tc.ok && err != nil {
+				t.Fatalf("normal shutdown must be quiet: %v", err)
+			}
+			if !tc.ok && !errors.Is(err, tc.err) {
+				t.Fatalf("lost transport failure: got %v, want %v", err, tc.err)
+			}
+		})
+	}
+}
+
+func TestRunReturnsOnClientDisconnect(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	serverT, clientT := sdk.NewInMemoryTransports()
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, Options{Transport: serverT}) }()
+	client := sdk.NewClient(&sdk.Implementation{Name: "test", Version: "0"}, nil)
+	cs, err := client.Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cs.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("client disconnect must be quiet: %v", err)
+	}
+}
 
 // runServer serves Run over an in-memory transport and returns a connected
 // client; resolve is consulted before every tool call, like the app's config.
