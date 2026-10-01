@@ -177,6 +177,9 @@ func validatePositionals(spec commandSpec, args Args) error {
 	if spec.Name == "task toggle" && args.Str("id") != "" {
 		minimum--
 	}
+	if spec.Name == "tag find" && args.Str("tag") != "" {
+		minimum--
+	}
 	if spec.Name == "base create" && args.Str("title") != "" {
 		minimum--
 	}
@@ -216,7 +219,7 @@ func parseFlag(argv []string, i int, allowed map[string]bool, args *Args) (int, 
 		return i, fmt.Errorf("unknown flag --%s.%s", name, suggestion(name, choices))
 	}
 	if takesValue && !assigned {
-		if i+1 >= len(argv) || strings.HasPrefix(argv[i+1], "--") || argv[i+1] == "-h" {
+		if i+1 >= len(argv) || startsAFlag(argv[i+1]) {
 			return i, fmt.Errorf("--%s needs a value", name)
 		}
 		i++
@@ -275,29 +278,40 @@ func suggestion(input string, choices []string) string {
 	sort.Strings(choices)
 	best, distance := "", 3
 	for _, choice := range choices {
-		row := make([]int, len(choice)+1)
-		for j := range row {
-			row[j] = j
-		}
-		for i := range input {
-			prev := row[0]
-			row[0] = i + 1
-			for j := range choice {
-				cost := 0
-				if input[i] != choice[j] {
-					cost = 1
-				}
-				old := row[j+1]
-				row[j+1] = min(row[j+1]+1, row[j]+1, prev+cost)
-				prev = old
-			}
-		}
-		if row[len(choice)] < distance {
-			best, distance = choice, row[len(choice)]
+		if d := editDistance(input, choice); d < distance {
+			best, distance = choice, d
 		}
 	}
 	if best == "" {
 		return ""
 	}
 	return " Did you mean " + strconv.Quote(best) + "?"
+}
+
+// editDistance counts insertions, deletions, substitutions and swaps of
+// adjacent characters, so `lsit` is one edit from `list` rather than two
+// (which tied it with `init` and lost on alphabetical order).
+func editDistance(a, b string) int {
+	rows, cols := len(a)+1, len(b)+1
+	d := make([][]int, rows)
+	for i := range d {
+		d[i] = make([]int, cols)
+		d[i][0] = i
+	}
+	for j := 0; j < cols; j++ {
+		d[0][j] = j
+	}
+	for i := 1; i < rows; i++ {
+		for j := 1; j < cols; j++ {
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			d[i][j] = min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				d[i][j] = min(d[i][j], d[i-2][j-2]+1)
+			}
+		}
+	}
+	return d[rows-1][cols-1]
 }

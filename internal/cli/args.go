@@ -25,6 +25,16 @@ type Args struct {
 
 var shortFlagRe = regexp.MustCompile(`^-[A-Za-z][\w-]*$`)
 
+// longFlagRe is `--` followed by a letter. `---` is not a flag, so a body
+// that starts with a frontmatter fence can follow --body.
+var longFlagRe = regexp.MustCompile(`^--[A-Za-z]`)
+
+// startsAFlag says whether the token after a value flag is the next flag
+// (or the `--` terminator) rather than the value.
+func startsAFlag(token string) bool {
+	return token == "--" || token == "-h" || longFlagRe.MatchString(token)
+}
+
 // valuelessFlags are the long flags that are switches, never `--flag <value>`.
 // Without this list a switch written before a positional swallowed it:
 // `zn open --new-window ~/notes` parsed as new-window="~/notes" with no path,
@@ -68,7 +78,7 @@ func Parse(argv []string) Args {
 				continue
 			}
 			name := token[2:]
-			if !valuelessFlags[name] && i+1 < len(argv) && !strings.HasPrefix(argv[i+1], "--") {
+			if !valuelessFlags[name] && i+1 < len(argv) && !startsAFlag(argv[i+1]) {
 				args.push(name, argv[i+1])
 				i++
 			} else {
