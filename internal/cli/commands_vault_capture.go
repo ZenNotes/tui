@@ -65,14 +65,35 @@ func cmdVaultInfo(ctx context.Context, b backend.Backend, args Args) error {
 }
 
 // vaultListEntry keeps `root` for local entries so scripts reading the JSON
-// keep working now that servers appear in the same list.
+// keep working now that servers appear in the same list. Source says who
+// saved the entry: "terminal" for zn's own list (what `zn use` and `zn vault
+// remove` act on), "app" for the ZenNotes desktop app's, which zn only reads.
 type vaultListEntry struct {
 	Name         string `json:"name"`
 	Kind         string `json:"kind"`
+	Source       string `json:"source"`
 	Root         string `json:"root,omitempty"`
 	BaseURL      string `json:"baseUrl,omitempty"`
 	LastOpenedAt *int64 `json:"lastOpenedAt"`
 	IsDefault    bool   `json:"isDefault"`
+}
+
+const (
+	sourceTerminal = "terminal"
+	sourceApp      = "app"
+)
+
+// desktopWorkspaces is the desktop app's vault and server list in the shape
+// of zn's own, so the same name/path/URL/host matching applies to both.
+func desktopWorkspaces() config.Workspaces {
+	ws := config.Workspaces{}
+	for _, v := range config.KnownVaults() {
+		ws.Vaults = append(ws.Vaults, config.LocalWorkspace{Name: v.Name, Root: v.Root})
+	}
+	for _, p := range config.RemoteProfiles() {
+		ws.Servers = append(ws.Servers, config.ServerWorkspace{Name: p.Name, URL: p.BaseURL})
+	}
+	return ws
 }
 
 func cmdVaultList(args Args) error {
@@ -80,6 +101,8 @@ func cmdVaultList(args Args) error {
 	if err != nil {
 		return err
 	}
+	// Every listed name must resolve through `--vault <name>` in this
+	// source, and a desktop-managed zn never resolves zn's own names.
 	ws := config.Workspaces{}
 	if source == "terminal" {
 		ws = config.LoadWorkspaces()
@@ -99,23 +122,23 @@ func cmdVaultList(args Args) error {
 	seenURL := map[string]bool{}
 	for _, v := range ws.Vaults {
 		seenRoot[filepath.Clean(v.Root)] = true
-		entries = append(entries, vaultListEntry{Name: v.Name, Kind: "local", Root: v.Root, IsDefault: isDefault("local", v.Root, "")})
+		entries = append(entries, vaultListEntry{Name: v.Name, Kind: "local", Source: sourceTerminal, Root: v.Root, IsDefault: isDefault("local", v.Root, "")})
 	}
 	for _, s := range ws.Servers {
-		seenURL[strings.ToLower(s.URL)] = true
-		entries = append(entries, vaultListEntry{Name: s.Name, Kind: "remote", BaseURL: s.URL, IsDefault: isDefault("remote", "", s.URL)})
+		seenURL[strings.ToLower(strings.TrimRight(s.URL, "/"))] = true
+		entries = append(entries, vaultListEntry{Name: s.Name, Kind: "remote", Source: sourceTerminal, BaseURL: s.URL, IsDefault: isDefault("remote", "", s.URL)})
 	}
 	for _, v := range config.KnownVaults() {
 		if seenRoot[filepath.Clean(v.Root)] {
 			continue
 		}
-		entries = append(entries, vaultListEntry{Name: v.Name, Kind: "local", Root: v.Root, LastOpenedAt: v.LastOpenedAt, IsDefault: isDefault("local", v.Root, "")})
+		entries = append(entries, vaultListEntry{Name: v.Name, Kind: "local", Source: sourceApp, Root: v.Root, LastOpenedAt: v.LastOpenedAt, IsDefault: isDefault("local", v.Root, "")})
 	}
 	for _, p := range config.RemoteProfiles() {
-		if seenURL[strings.ToLower(p.BaseURL)] {
+		if seenURL[strings.ToLower(strings.TrimRight(p.BaseURL, "/"))] {
 			continue
 		}
-		entries = append(entries, vaultListEntry{Name: p.Name, Kind: "remote", BaseURL: p.BaseURL, LastOpenedAt: p.LastConnectedAt, IsDefault: isDefault("remote", "", p.BaseURL)})
+		entries = append(entries, vaultListEntry{Name: p.Name, Kind: "remote", Source: sourceApp, BaseURL: p.BaseURL, LastOpenedAt: p.LastConnectedAt, IsDefault: isDefault("remote", "", p.BaseURL)})
 	}
 	if args.Bool("json") {
 		emitJSON(entries)
@@ -127,10 +150,14 @@ func cmdVaultList(args Args) error {
 	}
 	nameWidth := 4
 	kindWidth := 0
+	hasApp := false
 	for _, e := range entries {
 		nameWidth = max(nameWidth, len([]rune(e.Name)))
 		if e.Kind == "remote" {
 			kindWidth = 6
+		}
+		if e.Source == sourceApp {
+			hasApp = true
 		}
 	}
 	for _, e := range entries {
@@ -146,11 +173,19 @@ func cmdVaultList(args Args) error {
 		if kindWidth > 0 {
 			kind = pad(e.Kind, kindWidth) + "  "
 		}
+		source := ""
+		if hasApp {
+			source = pad(e.Source, len(sourceTerminal)) + "  "
+		}
 		location := e.Root
 		if location == "" {
 			location = e.BaseURL
 		}
-		emitLine(fmt.Sprintf("%s %s  %s%s  %s", marker, pad(e.Name, nameWidth), kind, pad(age, 8), location))
+		emitLine(fmt.Sprintf("%s %s  %s%s%s  %s", marker, pad(e.Name, nameWidth), kind, source, pad(age, 8), location))
+	}
+	if hasApp {
+		emitLine("")
+		emitLine("Entries marked app are saved by the ZenNotes desktop app and managed there. `zn use`, `zn disconnect` and `zn vault remove` act on zn's own (terminal) entries.")
 	}
 	return nil
 }

@@ -59,11 +59,16 @@ func completionCandidates(words []string) []string {
 	if len(before) > 0 {
 		previous = before[len(before)-1]
 	}
+	if len(before) >= 2 && before[len(before)-2] == "vault" && (previous == "remove" || previous == "rm") {
+		previous = "vault remove"
+	}
 	switch previous {
 	case "--server", "disconnect":
 		for _, s := range config.LoadWorkspaces().Servers {
 			candidates = append(candidates, s.Name)
 		}
+	case "vault remove":
+		candidates = config.LoadWorkspaces().Names()
 	case "--vault", "use":
 		candidates = config.LoadWorkspaces().Names()
 		for _, v := range config.KnownVaults() {
