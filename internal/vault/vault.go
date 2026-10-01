@@ -812,7 +812,11 @@ func (v *Vault) DeleteNote(rel string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
+	// A server answers 404 here; saying "Deleted" for a note that was never
+	// there hid typos in scripts, so the local vault reports it too.
+	if err := os.Remove(abs); errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("Note not found: %s", v.relPosix(abs))
+	} else if err != nil {
 		return err
 	}
 	v.invalidateLayout()

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -1093,7 +1094,17 @@ func Run(ctx context.Context, opts Options) error {
 	if transport == nil {
 		transport = &sdk.StdioTransport{}
 	}
-	return server.Run(ctx, transport)
+	err := server.Run(ctx, transport)
+	if err == nil || ctx.Err() != nil || isClientDisconnect(err) {
+		return nil
+	}
+	return err
+}
+
+// isClientDisconnect recognises the SDK's report that the client closed
+// the pipe, which is how MCP clients end a session: not an error.
+func isClientDisconnect(err error) bool {
+	return errors.Is(err, io.EOF) || strings.Contains(err.Error(), "server is closing")
 }
 
 func errorResult(text string) *sdk.CallToolResult {

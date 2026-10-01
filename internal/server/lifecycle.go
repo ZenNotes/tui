@@ -340,7 +340,12 @@ func (m *Manager) Run(ctx context.Context, name string, output io.Writer) error 
 	}
 	cmd.Stdout, cmd.Stderr = output, output
 	if err := cmd.Run(); err != nil {
-		return errors.Join(err, ctx.Err())
+		if ctx.Err() != nil {
+			// Ctrl-C: the operator stopped the server, which has already
+			// logged its shutdown; that is not an error to report twice.
+			return nil
+		}
+		return err
 	}
 	return nil
 }
