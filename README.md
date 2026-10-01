@@ -167,14 +167,17 @@ TUI when stdin/stdout are terminals and prints help when piped. Later:
 
 | Command | What it does |
 | --- | --- |
-| `zn vault list` | Every saved vault and server, the default starred |
+| `zn vault list` | Every saved vault and server, the default starred. Entries marked `app` come from the desktop app and are managed there |
 | `zn use <name>` | Set the terminal default (`zn use app` follows desktop again); desktop-managed scripts keep their own app default |
 | `zn disconnect <name>` | Forget a server and its token |
+| `zn vault remove <name\|url>` | Forget one of zn's own vaults or servers (a server's token too); note files stay |
 | `zn vault mode root\|inbox` | Move a vault between the flat layout and the classic `inbox/` layout |
 
 The list lives in `~/.config/zennotes/workspaces.toml`; server tokens go to
 `credentials.toml` next to it, readable only by you. Scripts and CI can skip
-the store with `--server <url>` and `ZENNOTES_REMOTE_TOKEN`.
+the store with `--server <url>` and `ZENNOTES_REMOTE_TOKEN`. If either file
+stops parsing, zn says so (`zn doctor`, `zn status`) and refuses to write over
+it rather than replace it with an empty list.
 
 ## Commands
 
