@@ -26,3 +26,18 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ZenNotes desktop updates the CLI it manages by reading these two assets
+      # from releases/latest/download/, and only trusts a manifest signed by a
+      # key it ships with. A release without them is never offered to desktop.
+      - name: Build and sign the desktop update manifest
+        # Tags are annotated; ^{commit} names the commit itself whichever
+        # object the push event reports.
+        run: go run ./scripts/releasemanifest build -dist dist -tag "$GITHUB_REF_NAME" -commit "$(git rev-parse "$GITHUB_REF_NAME^{commit}")" -require-signature
+        env:
+          ZN_RELEASE_SIGNING_KEY: ${{ secrets.ZN_RELEASE_SIGNING_KEY }}
+      - name: Verify the manifest against the committed public key
+        run: go run ./scripts/releasemanifest verify -manifest dist/terminal-release.json -sig dist/terminal-release.json.sig -public-key-file packaging/release-signing/zn-release-1.pub
+      - name: Upload the manifest and signature
+        run: gh release upload "$GITHUB_REF_NAME" dist/terminal-release.json dist/terminal-release.json.sig --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

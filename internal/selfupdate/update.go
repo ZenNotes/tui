@@ -31,7 +31,7 @@ func Detect(executable string, info *debug.BuildInfo) Installation {
 	case strings.Contains(path, "/Cellar/zn/") || strings.Contains(path, "/Cellar/zennotes/"):
 		i.Owner, i.Instruction = "homebrew", "brew upgrade zn"
 	case strings.Contains(path, "/cli/terminal/versions/") || strings.Contains(path, ".app/Contents/"):
-		i.Owner, i.Instruction = "desktop", "Update ZenNotes desktop; it owns and verifies this CLI runtime."
+		i.Owner, i.Instruction = "desktop", "ZenNotes keeps this CLI up to date: it checks for new releases daily and installs them. To check now, open ZenNotes and choose Settings > CLI > Check for updates."
 	case strings.HasPrefix(path, "/nix/store/") || strings.HasPrefix(path, "/snap/") || strings.HasPrefix(path, "/usr/bin/"):
 		i.Owner, i.Instruction = "package-manager", "Update zn with the package manager that installed it."
 	case goInstalled(info):

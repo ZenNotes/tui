@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"testing"
 )
 
@@ -27,6 +28,12 @@ func TestInstallationOwnerDetection(t *testing.T) {
 	checkout := &debug.BuildInfo{Main: debug.Module{Path: "github.com/ZenNotes/tui", Version: "v0.5.1-0.20260929205816-0cfb42256841+dirty"}, Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "0cfb42256841"}}}
 	if got := Detect("/tmp/zn", checkout); got.Owner != "standalone" {
 		t.Fatalf("source-built executable misclassified: %+v", got)
+	}
+	// Desktop installs its own CLI updates, so `zn update` points to the one
+	// control that triggers that check instead of replacing the file itself.
+	desktop := Detect("/Applications/ZenNotes.app/Contents/Resources/zn-cli/zn", nil)
+	if desktop.Owner != "desktop" || !strings.Contains(desktop.Instruction, "Settings > CLI > Check for updates") {
+		t.Fatalf("desktop instruction: %+v", desktop)
 	}
 }
 

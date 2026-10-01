@@ -43,6 +43,43 @@ OS. Cross-compilation alone does not exercise the service manager.
 Use copied executables for self-update tests. Releases and Homebrew installation
 files must not be replaced as a side effect of ordinary test commands.
 
+## Releases and signing
+
+A `v*` tag push runs [the release workflow](.github/workflows/release.yml).
+GoReleaser publishes the archives and `checksums.txt`; then
+`go run ./scripts/releasemanifest build` writes `terminal-release.json`, signs it
+into `terminal-release.json.sig`, verifies the pair against
+`packaging/release-signing/zn-release-1.pub` and uploads both to the release.
+ZenNotes desktop installs CLI updates only from a manifest signed by a key it
+ships with ([desktop integration](docs/desktop-integration.md#desktop-managed-updates)).
+
+The workflow needs the `ZN_RELEASE_SIGNING_KEY` repository secret, the base64
+Ed25519 seed that `keygen` writes. Generate it outside the checkout:
+
+```sh
+go run ./scripts/releasemanifest keygen -out ~/zn-release-1.key
+```
+
+The file is created with mode 0600 and never overwritten. `keygen` prints only the
+key id and the public key: store the file's single line as the secret, save the
+printed public key as `packaging/release-signing/zn-release-1.pub`, and ship the
+same public key in ZenNotes desktop.
+
+Back the seed up somewhere safe and offline. If it is lost, desktop builds cannot
+verify new CLI releases (they keep their current CLI) until a desktop release
+ships a new public key. A leaked seed needs the same rotation: create
+`zn-release-2` with `-key-id`, ship its public key in a desktop release first,
+then replace the secret and point the workflow's `-key-id` and
+`-public-key-file` at the new key.
+
+To rehearse locally, build a snapshot and run the manifest step without a key;
+it writes an unsigned manifest and warns:
+
+```sh
+goreleaser release --snapshot --clean
+go run ./scripts/releasemanifest build -dist dist -tag v<snapshot version> -commit "$(git rev-parse HEAD)"
+```
+
 ## Shared contracts
 
 The desktop protocol remains `1`. Preserve note command names, successful JSON

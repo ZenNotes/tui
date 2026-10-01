@@ -29,8 +29,9 @@ vault too.
 > settings commands, scoped help, shell completion, structured errors, shared
 > cross-note yank registers, and copyable version reports. Upgrading from
 > **v0.5.0 or earlier?** Use Homebrew, Go, or a fresh release download once:
-> those versions do not yet have `zn update`. Desktop-managed installations get
-> the version bundled with a desktop app update.
+> those versions do not yet have `zn update`. From desktop 2.60.0, ZenNotes updates its
+> managed `zn` itself: a daily check installs newer releases only, and only from
+> a signed manifest. For those installations `zn update` points to that check.
 
 ## What you get
 
@@ -74,9 +75,11 @@ zn tui
 Update with `brew update && brew upgrade zn`.
 
 **Installed from the desktop app.** Desktop builds that include this terminal
-runtime update their managed `zn` installation when the app opens. Keep using the
-same command; `zn tui` opens the terminal app. Settings shows the installed version
-and offers Repair when needed. Desktop never replaces a Homebrew or manual install.
+runtime install their managed `zn` when the app opens, then (from desktop 2.60.0) check daily for a newer
+CLI release and install it once its signed manifest verifies. Keep using the
+same command; `zn tui` opens the terminal app. Settings shows the installed version,
+offers Repair when needed, and has Check for updates under Settings > CLI. Desktop
+never replaces a Homebrew or manual install.
 
 Desktop-managed commands follow the desktop workspace even when the TUI remembers
 a different one. Standalone installations keep their own default. Use
@@ -419,7 +422,7 @@ The updater detects the owner of the executable being run:
 | --- | --- |
 | Homebrew | Runs `brew upgrade zn`; Homebrew selects its packaged version. Explicit version pinning is rejected. |
 | Go-installed module | Runs `go install github.com/ZenNotes/tui/cmd/zn@v<version>` into the existing executable directory. |
-| Desktop-managed | Directs you to update ZenNotes desktop, which owns the runtime. |
+| Desktop-managed | ZenNotes desktop 2.60.0 and later updates it: a daily check installs newer releases with a valid signed manifest. `zn update` refuses and points to Settings > CLI > Check for updates; `--check` still reports. |
 | Standalone macOS/Linux release | Verifies and extracts the release, probes version/protocol, retains `zn.previous`, then atomically replaces `zn`. |
 | Windows standalone / other package managers | Provides the release or owner-specific update instruction. |
 

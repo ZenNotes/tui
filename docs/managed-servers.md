@@ -112,7 +112,7 @@ zn update --version 0.6.0
 | --- | --- |
 | Homebrew | Runs `brew upgrade zn`. Homebrew chooses the packaged version; pinning through `--version` is rejected. |
 | Go-installed module | Runs `go install github.com/ZenNotes/tui/cmd/zn@v<version>` into the existing executable directory. |
-| Desktop-managed | Directs you to update ZenNotes desktop, which owns the CLI runtime. |
+| Desktop-managed | ZenNotes desktop 2.60.0 and later updates it: a daily check installs newer releases with a valid signed manifest. `zn update` refuses and points to Settings > CLI > Check for updates; `--check` still reports. See [desktop integration](desktop-integration.md#desktop-managed-updates). |
 | Standalone macOS/Linux release | Verifies the archive, extracts only the expected executable, probes version/protocol, retains `zn.previous`, then atomically replaces `zn`. |
 | Windows standalone / other package managers | Provides the release or owner-specific update instruction. |
 

@@ -4,6 +4,59 @@ The `zn` Go CLI and TUI expose desktop integration protocol 1 through
 `zn --desktop-integration`. Desktop bundles a pinned release archive, verifies it,
 and installs a persistent copy. No Node installation is needed for that copy.
 
+## Desktop-managed updates
+
+The bundled pin is where a desktop install starts, not where it stays. ZenNotes
+desktop checks once a day (and on demand from Settings > CLI > Check for updates)
+for two assets of the latest ZenNotes/tui release:
+
+```text
+https://github.com/ZenNotes/tui/releases/latest/download/terminal-release.json
+https://github.com/ZenNotes/tui/releases/latest/download/terminal-release.json.sig
+```
+
+`terminal-release.json` has the same schema as the desktop's bundled pin
+(`apps/desktop/terminal-release.json` in the desktop repository): the repository,
+the integration protocol, the version, the source commit, and a URL and SHA-256
+for each of `darwin-arm64`, `darwin-x64`, `linux-arm64` and `linux-x64`. It is
+2-space indented JSON ending in one newline, byte for byte what
+`JSON.stringify(value, null, 2) + "\n"` writes, so a desktop release can adopt a
+verified manifest as its new pin unchanged.
+
+The release workflow writes both files with `scripts/releasemanifest` after
+GoReleaser. It checks every archive against `checksums.txt` and takes `protocol`
+from the released Linux x64 binary's own `zn --desktop-integration` output, which
+must also report the tagged version. The signature file is:
+
+```json
+{
+  "keyId": "zn-release-1",
+  "algorithm": "ed25519",
+  "signature": "<base64 of the 64-byte Ed25519 signature>"
+}
+```
+
+The signature covers the exact bytes of `terminal-release.json`. Desktop ships
+the public key for every key id it trusts; this repository keeps the matching copy
+at `packaging/release-signing/zn-release-1.pub` (base64 of the raw 32-byte key),
+which the workflow verifies against before uploading. A manifest with a missing,
+unknown or invalid signature is ignored, and so is a release without these assets.
+
+Desktop installs a release only when its version is newer than the managed CLI
+and its `protocol` is one that desktop build supports, after the platform archive
+matches the manifest's SHA-256. The new version is installed next to the current
+one, and the previous version is kept so desktop can roll back to it. Desktop
+never downgrades and never touches a Homebrew, Go or manually installed `zn`.
+For a desktop-managed executable, `zn update` refuses to replace it and points to
+Settings > CLI > Check for updates; `zn update --check` still reports the latest
+release.
+
+A protocol change still needs a desktop release. Desktop builds that do not
+support the new protocol keep their current CLI, so ship the desktop update that
+speaks it before relying on the new CLI. Rotating the signing key works the same
+way: the new public key must reach users in a desktop release before any CLI
+release is signed with it.
+
 ## Workspace selection
 
 Desktop-managed commands set `ZENNOTES_WORKSPACE_SOURCE=app`. They use desktop
