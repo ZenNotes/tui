@@ -110,7 +110,27 @@ func loadCredentialsFile() (credentials, error) {
 		return c, nil
 	}
 	if err == nil {
-		_, err = toml.Decode(string(raw), &c)
+		var md toml.MetaData
+		md, err = toml.Decode(string(raw), &c)
+		if err != nil {
+			// Parser messages and key names can contain the token itself. Keep
+			// only the location; these errors also appear in doctor output.
+			var parseErr toml.ParseError
+			if errors.As(err, &parseErr) {
+				err = fmt.Errorf("invalid credentials TOML at line %d; fix or move the file, then retry", parseErr.Position.Line)
+			} else {
+				err = errors.New("invalid credentials TOML; fix or move the file, then retry")
+			}
+		} else {
+			// The decoder silently ignores non-table values assigned to a map.
+			// Treat that as a broken store instead of overwriting it as empty.
+			for _, key := range md.Keys() {
+				if len(key) == 1 && strings.EqualFold(key[0], "tokens") && md.Type(key...) != "Hash" {
+					err = errors.New("credentials must contain a [tokens] table; fix or move the file, then retry")
+					break
+				}
+			}
+		}
 	}
 	if err != nil {
 		c = credentials{Tokens: map[string]string{}, loadErr: fmt.Errorf("%s: %w", CredentialsPath(), err)}
@@ -154,7 +174,10 @@ func SaveToken(baseURL, token string) error {
 
 // DeleteToken forgets a server token.
 func DeleteToken(baseURL string) error {
-	c := loadCredentials()
+	c, err := loadCredentialsFile()
+	if err != nil {
+		return err
+	}
 	if _, ok := c.Tokens[tokenKey(baseURL)]; !ok {
 		return nil
 	}

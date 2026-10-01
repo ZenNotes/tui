@@ -78,6 +78,9 @@ func cmdConnect(ctx context.Context, args Args) error {
 	if raw == "" {
 		return errors.New("Usage: zn connect <url|saved name> [--name <name>] [--token <token>] [--no-default]")
 	}
+	if err := config.CredentialsProblem(); err != nil {
+		return fmt.Errorf("not connecting: %w", err)
+	}
 	ws := config.LoadWorkspaces()
 	baseURL := ""
 	name := strings.TrimSpace(args.Str("name"))
@@ -156,16 +159,15 @@ func cmdDisconnect(args Args) error {
 		return notSavedError(ws, name, "server")
 	}
 	url := saved.URL
-	ws.Remove(saved.Name)
-	if err := config.SaveWorkspaces(ws); err != nil {
+	savedName := saved.Name
+	if err := forgetSavedWorkspace(ws, savedName, url); err != nil {
 		return err
 	}
-	_ = config.DeleteToken(url)
 	if args.Bool("json") {
 		emitJSON(map[string]any{"ok": true, "name": name, "url": url})
 		return nil
 	}
-	emitOK(fmt.Sprintf("Forgot %s (%s)", saved.Name, url))
+	emitOK(fmt.Sprintf("Forgot %s (%s)", savedName, url))
 	return nil
 }
 
@@ -322,19 +324,37 @@ func cmdVaultRemove(args Args) error {
 	}
 	ws := config.LoadWorkspaces()
 	var kind, saved, location string
-	if v := ws.FindVault(name); v != nil {
-		kind, saved, location = "local", v.Name, v.Root
-	} else if s := ws.FindServer(name); s != nil {
-		kind, saved, location = "remote", s.Name, s.URL
-	} else {
-		return notSavedError(ws, name, "vault or server")
+	// An exact saved name wins over another entry's folder or host. Resolving
+	// those aliases first can silently forget the wrong workspace.
+	for _, v := range ws.Vaults {
+		if strings.EqualFold(v.Name, name) {
+			kind, saved, location = "local", v.Name, v.Root
+			break
+		}
 	}
-	ws.Remove(saved)
-	if err := config.SaveWorkspaces(ws); err != nil {
-		return err
+	if saved == "" {
+		for _, s := range ws.Servers {
+			if strings.EqualFold(s.Name, name) {
+				kind, saved, location = "remote", s.Name, s.URL
+				break
+			}
+		}
 	}
+	if saved == "" {
+		if v := ws.FindVault(name); v != nil {
+			kind, saved, location = "local", v.Name, v.Root
+		} else if s := ws.FindServer(name); s != nil {
+			kind, saved, location = "remote", s.Name, s.URL
+		} else {
+			return notSavedError(ws, name, "vault or server")
+		}
+	}
+	baseURL := ""
 	if kind == "remote" {
-		_ = config.DeleteToken(location)
+		baseURL = location
+	}
+	if err := forgetSavedWorkspace(ws, saved, baseURL); err != nil {
+		return err
 	}
 	if args.Bool("json") {
 		emitJSON(map[string]any{"ok": true, "name": saved, "kind": kind, "location": location})
@@ -345,6 +365,28 @@ func cmdVaultRemove(args Args) error {
 		return nil
 	}
 	emitOK(fmt.Sprintf("Forgot vault %s (%s). The notes are still there.", saved, location))
+	return nil
+}
+
+// forgetSavedWorkspace keeps the entry retryable if token cleanup fails, and
+// restores its token if saving the workspace list fails afterwards.
+func forgetSavedWorkspace(ws config.Workspaces, name, baseURL string) error {
+	token := ""
+	if baseURL != "" {
+		token = config.LoadToken(baseURL)
+		if err := config.DeleteToken(baseURL); err != nil {
+			return fmt.Errorf("could not remove the saved token: %w", err)
+		}
+	}
+	ws.Remove(name)
+	if err := config.SaveWorkspaces(ws); err != nil {
+		if token != "" {
+			if restoreErr := config.SaveToken(baseURL, token); restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("could not restore the saved token: %w", restoreErr))
+			}
+		}
+		return err
+	}
 	return nil
 }
 

@@ -120,7 +120,37 @@ func TestCorruptCredentialsFileIsNeverOverwritten(t *testing.T) {
 	if string(raw) != "[tokens]\n\"https://a.example.com\" = \"token-a\n" {
 		t.Fatal("the broken store was replaced")
 	}
-	if err := DeleteToken("https://a.example.com"); err != nil {
-		t.Fatalf("deleting from a broken store is a no-op, not an overwrite: %v", err)
+	if err := DeleteToken("https://a.example.com"); err == nil {
+		t.Fatal("deleting from a broken store must report that the token could not be removed")
+	}
+}
+
+func TestCredentialErrorsDoNotExposeFileContents(t *testing.T) {
+	const secret = "testsecrettoken"
+	for name, broken := range map[string]string{
+		"unquoted value": "[tokens]\n\"https://notes.example.com\" = " + secret + "\n",
+		"token as key":   "[tokens]\n" + secret + " = \"unterminated\n",
+		"wrong type":     "tokens = \"" + secret + "\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+			if err := os.WriteFile(CredentialsPath(), []byte(broken), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for operation, err := range map[string]error{
+				"diagnose": CredentialsProblem(),
+				"save":     SaveToken("https://other.example.com", "other"),
+				"delete":   DeleteToken("https://notes.example.com"),
+			} {
+				if err == nil || !strings.Contains(err.Error(), "credentials.toml") {
+					t.Errorf("%s: expected an actionable credentials error, got %v", operation, err)
+				} else if strings.Contains(err.Error(), secret) {
+					t.Errorf("%s exposed a credential in the diagnostic: %v", operation, err)
+				}
+			}
+			if raw, err := os.ReadFile(CredentialsPath()); err != nil || string(raw) != broken {
+				t.Fatalf("invalid credentials were overwritten: %q %v", raw, err)
+			}
+		})
 	}
 }

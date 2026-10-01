@@ -440,6 +440,10 @@ func (a *App) connectServerFlow(rawURL string) {
 		token = target.AuthToken
 	}
 	finish := func(a *App, token string) {
+		if err := config.CredentialsProblem(); err != nil {
+			a.notifyError("not connecting: " + err.Error())
+			return
+		}
 		client := remote.NewClient(baseURL, token)
 		if _, err := client.GetCurrentVault(a.ctx); err != nil {
 			switch remote.StatusOf(err) {

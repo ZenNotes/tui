@@ -103,6 +103,35 @@ func TestConnectInitUseAndList(t *testing.T) {
 	}
 }
 
+func TestConnectWithBrokenCredentialsKeepsTheSavedDefault(t *testing.T) {
+	dir := isolatedCLI(t)
+	ws := config.Workspaces{Default: "notes"}
+	ws.AddVault("notes", dir)
+	if err := config.SaveWorkspaces(ws); err != nil {
+		t.Fatal(err)
+	}
+	original, err := os.ReadFile(config.WorkspacesPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.CredentialsPath(), []byte("[tokens]\n\"https://other.example.com\" = \"unterminated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"root":"/srv/notes","name":"notes"}`))
+	}))
+	defer server.Close()
+	code := 0
+	out := captureOutput(t, func() { code = Main([]string{"connect", server.URL, "--token", "right", "--json"}) })
+	if code == 0 || !strings.Contains(out, "credentials.toml") {
+		t.Fatalf("must report the broken store: exit %d %s", code, out)
+	}
+	if raw, err := os.ReadFile(config.WorkspacesPath()); err != nil || string(raw) != string(original) {
+		t.Fatalf("failed connection changed saved workspaces: %s %v", raw, err)
+	}
+}
+
 // A desktop-managed zn follows the app, so `zn connect` must not claim zn
 // now uses the server by default; what it does is give zn (and zn mcp) the
 // token for the server whenever the app has it open.

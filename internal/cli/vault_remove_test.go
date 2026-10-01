@@ -142,6 +142,107 @@ func TestVaultRemoveCompletesZnsOwnNames(t *testing.T) {
 	}
 }
 
+func TestVaultRemovePrefersSavedNamesOverPathsAndHosts(t *testing.T) {
+	for _, kind := range []string{"local", "remote", "remote host"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := isolatedCLI(t)
+			t.Chdir(dir)
+			ws := config.Workspaces{}
+			if kind == "remote host" {
+				ws.AddServer("keep", "https://home")
+			} else {
+				ws.AddVault("keep", filepath.Join(dir, "home"))
+			}
+			if kind == "local" {
+				ws.AddVault("home", filepath.Join(dir, "other"))
+			} else {
+				ws.AddServer("home", "https://notes.example.com")
+				if err := config.SaveToken("https://notes.example.com", "token"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ws.Default = "keep"
+			if err := config.SaveWorkspaces(ws); err != nil {
+				t.Fatal(err)
+			}
+			code := 0
+			out := captureOutput(t, func() { code = Main([]string{"vault", "remove", "home", "--json"}) })
+			if code != 0 {
+				t.Fatalf("remove: exit %d %s", code, out)
+			}
+			remaining := config.LoadWorkspaces()
+			if names := remaining.Names(); len(names) != 1 || names[0] != "keep" || remaining.Default != "keep" {
+				t.Fatalf("removed the wrong entry: %+v; output: %s", remaining, out)
+			}
+			if kind != "local" && config.LoadToken("https://notes.example.com") != "" {
+				t.Fatal("the selected server's token was not deleted")
+			}
+		})
+	}
+}
+
+func TestForgetServerReportsStorageFailuresAndCanBeRetried(t *testing.T) {
+	for _, command := range [][]string{{"vault", "remove", "home"}, {"disconnect", "home"}} {
+		for _, problem := range []string{"corrupt", "write failure", "workspace write failure"} {
+			t.Run(strings.Join(command, " ")+"/"+problem, func(t *testing.T) {
+				isolatedCLI(t)
+				ws := config.Workspaces{Default: "home"}
+				ws.AddServer("home", "https://notes.example.com")
+				if err := config.SaveWorkspaces(ws); err != nil {
+					t.Fatal(err)
+				}
+				if err := config.SaveToken("https://notes.example.com", "token"); err != nil {
+					t.Fatal(err)
+				}
+				original, err := os.ReadFile(config.CredentialsPath())
+				if err != nil {
+					t.Fatal(err)
+				}
+				broken := []byte("[tokens]\n\"https://notes.example.com\" = \"token\n")
+				failedPath := config.CredentialsPath()
+				if problem == "workspace write failure" {
+					failedPath = config.WorkspacesPath()
+				}
+				if problem == "corrupt" {
+					err = os.WriteFile(config.CredentialsPath(), broken, 0o600)
+				} else {
+					err = os.Mkdir(failedPath+".tmp", 0o700)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				code := 0
+				out := captureOutput(t, func() { code = Main(append(command, "--json")) })
+				if code == 0 || !strings.Contains(out, filepath.Base(failedPath)) {
+					t.Errorf("must report failed removal: exit %d %s", code, out)
+				}
+				if saved := config.LoadWorkspaces(); saved.FindServer("home") == nil || saved.Default != "home" {
+					t.Fatalf("must keep the entry so removal can be retried: %+v", saved)
+				}
+				want := original
+				if problem == "corrupt" {
+					want = broken
+				}
+				if raw, err := os.ReadFile(config.CredentialsPath()); err != nil || string(raw) != string(want) {
+					t.Fatalf("credentials changed on failure: %q %v", raw, err)
+				}
+				if problem == "corrupt" {
+					err = os.WriteFile(config.CredentialsPath(), original, 0o600)
+				} else {
+					err = os.Remove(failedPath + ".tmp")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				out = captureOutput(t, func() { code = Main(command) })
+				if code != 0 || config.LoadWorkspaces().FindServer("home") != nil || config.LoadToken("https://notes.example.com") != "" {
+					t.Fatalf("retry did not remove the server and token: exit %d %s", code, out)
+				}
+			})
+		}
+	}
+}
+
 // With an unparseable workspaces.toml, every command that would save must
 // refuse rather than write an empty list over the user's saved entries.
 func TestCommandsRefuseToOverwriteABrokenWorkspacesFile(t *testing.T) {
