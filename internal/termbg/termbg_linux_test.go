@@ -44,7 +44,15 @@ func runOnTerminal(t *testing.T, mode string, answer func(master *os.File, seen 
 	t.Helper()
 	master, slave := openPTY(t)
 	cmd := exec.Command(os.Args[0])
-	cmd.Env = append(os.Environ(), "ZN_TERMBG_CHILD="+mode, "TERM=xterm-256color", "COLORFGBG=")
+	// termenv treats any output as a non-terminal while CI is set, which
+	// would make both tests pass without exercising anything; the child is
+	// a user's terminal session, so it runs without the runner's variables.
+	for _, kv := range os.Environ() {
+		if k, _, _ := strings.Cut(kv, "="); k != "CI" && k != "GITHUB_ACTIONS" && k != "TERM" && k != "COLORFGBG" && k != "ZN_TERMBG_CHILD" {
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env, "ZN_TERMBG_CHILD="+mode, "TERM=xterm-256color")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	cmd.SysProcAttr = &unix.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	start := time.Now()
