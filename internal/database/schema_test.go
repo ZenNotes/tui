@@ -3,6 +3,8 @@ package database
 import (
 	"strings"
 	"testing"
+
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 func testDoc(t *testing.T) *Doc {
@@ -95,5 +97,42 @@ func TestNoteLinksAndDuplicate(t *testing.T) {
 	row, ok := d.DuplicateRow("r1")
 	if !ok || len(d.Rows) != 2 || d.Rows[1].ID != row.ID || d.Rows[1].Cells["f1"] != "Dune" || d.Rows[1].Cells["f0"] != row.ID {
 		t.Fatalf("duplicate: %+v", d.Rows)
+	}
+}
+
+// A record page for a row with nothing but a title has no properties to
+// mirror, so it gets no frontmatter block; re-mirroring is idempotent either
+// way instead of stacking `---` fences on every `zn base set`.
+func TestComposePageBodyIsIdempotentWithoutProperties(t *testing.T) {
+	d := testDoc(t)
+	if err := d.DeleteField("f2"); err != nil {
+		t.Fatal(err)
+	}
+	row := d.Rows[0]
+	page := d.ComposePageBody(row, "# Dune\n\nbody\n")
+	if page != "# Dune\n\nbody\n" {
+		t.Fatalf("page without properties: %q", page)
+	}
+	_, body, _ := vault.Frontmatter(page)
+	if again := d.ComposePageBody(row, body); again != page {
+		t.Fatalf("re-mirror changed the page: %q", again)
+	}
+	// Pages written by older builds carry an empty block; it is recognised
+	// as frontmatter and replaced, not stacked.
+	_, body, ok := vault.Frontmatter("---\n---\n---\n---\n# Dune\n\nbody\n")
+	if !ok {
+		t.Fatal("empty frontmatter block not recognised")
+	}
+	if again := d.ComposePageBody(row, body); again != "---\n---\n# Dune\n\nbody\n" {
+		t.Fatalf("one stray block should remain to be stripped on the next pass, got %q", again)
+	}
+	full := testDoc(t)
+	withProps := full.ComposePageBody(full.Rows[0], "# Dune\n\nbody\n")
+	if withProps != "---\nStatus: todo\n---\n# Dune\n\nbody\n" {
+		t.Fatalf("page with properties: %q", withProps)
+	}
+	_, body, _ = vault.Frontmatter(withProps)
+	if again := full.ComposePageBody(full.Rows[0], body); again != withProps {
+		t.Fatalf("re-mirror with properties changed the page: %q", again)
 	}
 }

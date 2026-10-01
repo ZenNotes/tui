@@ -78,6 +78,9 @@ func cmdConnect(ctx context.Context, args Args) error {
 	if raw == "" {
 		return errors.New("Usage: zn connect <url|saved name> [--name <name>] [--token <token>] [--no-default]")
 	}
+	if err := config.CredentialsProblem(); err != nil {
+		return fmt.Errorf("not connecting: %w", err)
+	}
 	ws := config.LoadWorkspaces()
 	baseURL := ""
 	name := strings.TrimSpace(args.Str("name"))
@@ -153,20 +156,66 @@ func cmdDisconnect(args Args) error {
 	}
 	saved := ws.FindServer(name)
 	if saved == nil {
-		return fmt.Errorf("No saved server named %q. `zn vault list` shows them.", name)
+		return notSavedError(ws, name, "server")
 	}
 	url := saved.URL
-	ws.Remove(saved.Name)
-	if err := config.SaveWorkspaces(ws); err != nil {
+	savedName := saved.Name
+	if err := forgetSavedWorkspace(ws, savedName, url); err != nil {
 		return err
 	}
-	_ = config.DeleteToken(url)
 	if args.Bool("json") {
 		emitJSON(map[string]any{"ok": true, "name": name, "url": url})
 		return nil
 	}
-	emitOK(fmt.Sprintf("Forgot %s (%s)", saved.Name, url))
+	emitOK(fmt.Sprintf("Forgot %s (%s)", savedName, url))
 	return nil
+}
+
+// notSavedError explains why a selector matched nothing zn saved. `zn vault
+// list` also shows the desktop app's entries, so a name copied from there
+// gets told who owns it instead of a bare "no such name".
+func notSavedError(ws config.Workspaces, selector, noun string) error {
+	desktop := desktopWorkspaces()
+	if v := desktop.FindVault(selector); v != nil {
+		return fmt.Errorf("%q is a vault saved by the ZenNotes desktop app, not by zn; remove it in the app's vault switcher. zn only lists it.%s", v.Name, savedNamesHint(ws))
+	}
+	if s := desktop.FindServer(selector); s != nil {
+		return fmt.Errorf("%q is a server saved by the ZenNotes desktop app, not by zn; remove it in the app's server settings. zn only lists it.%s", s.Name, savedNamesHint(ws))
+	}
+	hint := savedNamesHint(ws)
+	if guess := containingName(selector, append(ws.Names(), desktop.Names()...)); guess != "" {
+		hint = fmt.Sprintf(" Did you mean %q?%s", guess, hint)
+	}
+	return fmt.Errorf("No saved %s named %q.%s", noun, selector, hint)
+}
+
+// savedNamesHint names what zn itself saved, which is what `zn use`,
+// `zn disconnect` and `zn vault remove` accept.
+func savedNamesHint(ws config.Workspaces) string {
+	names := ws.Names()
+	if len(names) == 0 {
+		return " zn has no saved vaults or servers of its own; `zn init`, `zn vault add` and `zn connect` save one."
+	}
+	return " zn's saved entries are: " + strings.Join(names, ", ") + ". A server's URL or host works too."
+}
+
+// containingName is the one saved name containing the selector as a word,
+// for `zn vault remove workspace` against "workspace (notes.example.com)".
+func containingName(selector string, names []string) string {
+	needle := strings.ToLower(strings.TrimSpace(selector))
+	if needle == "" {
+		return ""
+	}
+	match := ""
+	for _, name := range names {
+		if strings.Contains(strings.ToLower(name), needle) {
+			if match != "" {
+				return ""
+			}
+			match = name
+		}
+	}
+	return match
 }
 
 // cmdUse makes a saved vault or server the default; `app` follows the
@@ -186,8 +235,24 @@ func cmdUse(ctx context.Context, args Args) error {
 		return nil
 	}
 	if _, ok := backend.TargetForWorkspace(ws, sel, ""); !ok {
+		desktop := desktopWorkspaces()
 		switch {
 		case backend.LooksLikeServerURL(sel):
+			return cmdConnect(ctx, args)
+		case desktop.FindVault(sel) != nil:
+			// A vault the desktop app knows: save its folder under the same
+			// name so the terminal can keep using it by that name.
+			v := desktop.FindVault(sel)
+			ws.AddVault(v.Name, v.Root)
+			sel = v.Root
+		case desktop.FindServer(sel) != nil:
+			// The app keeps that server's token where zn cannot read it, so
+			// this is a connect: it asks for the token once.
+			s := desktop.FindServer(sel)
+			args.Positionals = []string{s.URL}
+			if args.Str("name") == "" {
+				args.push("name", s.Name)
+			}
 			return cmdConnect(ctx, args)
 		default:
 			root, err := filepath.Abs(config.ExpandHome(sel))
@@ -195,7 +260,7 @@ func cmdUse(ctx context.Context, args Args) error {
 				return err
 			}
 			if info, err := os.Stat(root); err != nil || !info.IsDir() {
-				return fmt.Errorf("%q is neither a saved name nor a folder. `zn vault list` shows the names.", sel)
+				return fmt.Errorf("%v `zn use` also takes a folder path or a server URL.", notSavedError(ws, sel, "vault or server"))
 			}
 			ws.AddVault("", root)
 		}
@@ -250,30 +315,78 @@ func cmdVaultAdd(args Args) error {
 	return nil
 }
 
-// cmdVaultRemove forgets a saved vault or server (files stay untouched).
+// cmdVaultRemove forgets a saved vault or server. Note files stay; a
+// server's token goes with it, as with `zn disconnect`.
 func cmdVaultRemove(args Args) error {
 	name := strings.TrimSpace(args.Positional(0))
 	if name == "" {
-		return errors.New("Usage: zn vault remove <name>")
+		return errors.New("Usage: zn vault remove <name|folder|url>  (see `zn vault list`)")
 	}
 	ws := config.LoadWorkspaces()
-	kind, ok := ws.Remove(name)
-	if !ok {
-		if v := ws.FindVault(name); v != nil {
-			kind, _ = ws.Remove(v.Name)
-			ok = true
-		} else if s := ws.FindServer(name); s != nil {
-			kind, _ = ws.Remove(s.Name)
-			ok = true
+	var kind, saved, location string
+	// An exact saved name wins over another entry's folder or host. Resolving
+	// those aliases first can silently forget the wrong workspace.
+	for _, v := range ws.Vaults {
+		if strings.EqualFold(v.Name, name) {
+			kind, saved, location = "local", v.Name, v.Root
+			break
 		}
 	}
-	if !ok {
-		return fmt.Errorf("No saved vault or server named %q. `zn vault list` shows them.", name)
+	if saved == "" {
+		for _, s := range ws.Servers {
+			if strings.EqualFold(s.Name, name) {
+				kind, saved, location = "remote", s.Name, s.URL
+				break
+			}
+		}
 	}
-	if err := config.SaveWorkspaces(ws); err != nil {
+	if saved == "" {
+		if v := ws.FindVault(name); v != nil {
+			kind, saved, location = "local", v.Name, v.Root
+		} else if s := ws.FindServer(name); s != nil {
+			kind, saved, location = "remote", s.Name, s.URL
+		} else {
+			return notSavedError(ws, name, "vault or server")
+		}
+	}
+	baseURL := ""
+	if kind == "remote" {
+		baseURL = location
+	}
+	if err := forgetSavedWorkspace(ws, saved, baseURL); err != nil {
 		return err
 	}
-	emitOK(fmt.Sprintf("Forgot %s (%s). Nothing on disk changed.", name, kind))
+	if args.Bool("json") {
+		emitJSON(map[string]any{"ok": true, "name": saved, "kind": kind, "location": location})
+		return nil
+	}
+	if kind == "remote" {
+		emitOK(fmt.Sprintf("Forgot server %s (%s) and its token. Nothing on the server changed.", saved, location))
+		return nil
+	}
+	emitOK(fmt.Sprintf("Forgot vault %s (%s). The notes are still there.", saved, location))
+	return nil
+}
+
+// forgetSavedWorkspace keeps the entry retryable if token cleanup fails, and
+// restores its token if saving the workspace list fails afterwards.
+func forgetSavedWorkspace(ws config.Workspaces, name, baseURL string) error {
+	token := ""
+	if baseURL != "" {
+		token = config.LoadToken(baseURL)
+		if err := config.DeleteToken(baseURL); err != nil {
+			return fmt.Errorf("could not remove the saved token: %w", err)
+		}
+	}
+	ws.Remove(name)
+	if err := config.SaveWorkspaces(ws); err != nil {
+		if token != "" {
+			if restoreErr := config.SaveToken(baseURL, token); restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("could not restore the saved token: %w", restoreErr))
+			}
+		}
+		return err
+	}
 	return nil
 }
 

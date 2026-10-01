@@ -13,7 +13,9 @@ import (
 const (
 	terminalColumnsFallback = 80
 	terminalColumnsCap      = 100
-	commandColumnWidth      = 26
+	commandColumnWidth      = 28
+	// columnGap is the least space between a row's name and its description.
+	columnGap = 2
 )
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -78,7 +80,7 @@ var helpSections = []helpSection{
 		{"disconnect [name]", "Forget a saved server and its token", "--json"},
 		{"use <name|folder|url|app>", "Set the terminal's saved default; app follows desktop again. Desktop-installed commands keep following desktop unless --workspace-source terminal is set", "--json"},
 		{"vault add <folder>", "Remember an existing folder as a vault", "--name <n>  --no-default  --json"},
-		{"vault remove <name>", "Forget a saved vault or server (files stay)", ""},
+		{"vault remove <name|url>", "Forget a saved vault or server (its token too; note files stay)", "--json"},
 		{"vault info", "Vault path (or server) + per-folder counts", "--json"},
 		{"vault list", "Known vaults and servers; the default is marked with *", "--json"},
 		{"vault mode [root|inbox]", "Show or switch the notes layout (moves the notes, rewrites favorites)", "--json"},
@@ -262,15 +264,27 @@ func (s helpStyle) header(width int) []string {
 func (s helpStyle) section(heading string, rows []helpRow, width int) []string {
 	out := []string{s.bold(s.yellow(heading))}
 	descWidth := width - commandColumnWidth - 2
+	indent := "  " + strings.Repeat(" ", commandColumnWidth)
 	for _, row := range rows {
 		descLines := wrapLines(row.description, descWidth)
-		out = append(out, "  "+padVisible(s.magenta(row.name), commandColumnWidth)+descLines[0])
-		for _, cont := range descLines[1:] {
-			out = append(out, "  "+strings.Repeat(" ", commandColumnWidth)+cont)
+		name := "  " + s.magenta(row.name)
+		if visibleLen(row.name)+columnGap > commandColumnWidth {
+			// A name too wide for the column gets a line of its own; the
+			// description still starts at the column, so nothing is glued
+			// to it and the rows below stay aligned.
+			out = append(out, name)
+			for _, line := range descLines {
+				out = append(out, indent+line)
+			}
+		} else {
+			out = append(out, padVisible(name, len(indent))+descLines[0])
+			for _, cont := range descLines[1:] {
+				out = append(out, indent+cont)
+			}
 		}
 		if row.flags != "" {
 			for _, line := range wrapLines(row.flags, descWidth) {
-				out = append(out, "  "+strings.Repeat(" ", commandColumnWidth)+s.dim(s.cyan(line)))
+				out = append(out, indent+s.dim(s.cyan(line)))
 			}
 		}
 	}

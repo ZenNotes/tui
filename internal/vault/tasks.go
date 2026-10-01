@@ -771,10 +771,9 @@ func RemoveTaskLine(markdown string, taskIndex int) (line string, body string, o
 }
 
 var (
-	tasksHeadingRe   = regexp.MustCompile(`(?i)^ {0,3}(#{1,6})\s+Tasks\s*$`)
-	anyHeadingRe     = regexp.MustCompile(`^ {0,3}(#{1,6})\s+`)
-	thematicBreakRe  = regexp.MustCompile(`^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
-	frontmatterOnlyR = regexp.MustCompile(`(?s)\A---\n.*?\n---\n?`)
+	tasksHeadingRe  = regexp.MustCompile(`(?i)^ {0,3}(#{1,6})\s+Tasks\s*$`)
+	anyHeadingRe    = regexp.MustCompile(`^ {0,3}(#{1,6})\s+`)
+	thematicBreakRe = regexp.MustCompile(`^ {0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
 )
 
 // InsertTasksUnderTasksHeading places task lines at the end of a `# Tasks`

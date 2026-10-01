@@ -2,6 +2,8 @@ package cli
 
 import (
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -62,5 +64,59 @@ func TestOpenLaunchArgsAndMessage(t *testing.T) {
 	two := []openTarget{{abs: "/a.md"}, {abs: "/b.md"}}
 	if got := openMessage(two, true); got != "Opening 2 items in a new ZenNotes window" {
 		t.Fatalf("two, -n: %q", got)
+	}
+}
+
+// A body that opens with a frontmatter fence starts with `---`, which is
+// not a flag; it must be taken as the value, while a real flag or the `--`
+// terminator after a value flag still means the value is missing.
+func TestValueFlagsAcceptValuesThatStartWithDashes(t *testing.T) {
+	fm := "---\ntitle: x\n---\nbody"
+	name, args, err := parseCommand([]string{"write", "a.md", "--body", fm})
+	if err != nil || name != "write" || args.Str("body") != fm {
+		t.Fatalf("frontmatter body: %q %v %v", name, args.Flags, err)
+	}
+	if _, args, err := parseCommand([]string{"capture", "--title", "---", "text"}); err != nil || args.Str("title") != "---" {
+		t.Fatalf("bare --- as a value: %v %v", args.Flags, err)
+	}
+	if _, args, err := parseCommand([]string{"write", "a.md", "--body", "-x"}); err != nil || args.Str("body") != "-x" {
+		t.Fatalf("single dash value: %v %v", args.Flags, err)
+	}
+	for _, argv := range [][]string{
+		{"create", "--title", "--json"},
+		{"create", "--title", "--", "x"},
+		{"create", "--title", "-h"},
+		{"create", "--title"},
+	} {
+		if _, _, err := parseCommand(argv); err == nil || !strings.Contains(err.Error(), "needs a value") {
+			t.Errorf("%v: want a missing-value error, got %v", argv, err)
+		}
+	}
+	if got := Parse([]string{"--body", fm}); got.Str("body") != fm {
+		t.Fatalf("Parse: %v", got.Flags)
+	}
+}
+
+func TestSuggestionsCountSwapsAsOneEdit(t *testing.T) {
+	roots := commandRoots()
+	for input, want := range map[string]string{"lsit": "list", "serach": "search", "craete": "create", "sevrer": "server", "lits": "list", "statsu": "status"} {
+		if got := suggestion(input, roots); got != " Did you mean "+strconv.Quote(want)+"?" {
+			t.Errorf("suggestion(%q) = %q, want %q", input, got, want)
+		}
+	}
+	if got := suggestion("zzzzzz", roots); got != "" {
+		t.Errorf("far-off input must not get a suggestion: %q", got)
+	}
+}
+
+// `--tag` is the flag form of tag find's positional; it must satisfy the
+// positional requirement the way --path does for note commands.
+func TestTagFindAcceptsTheTagFlag(t *testing.T) {
+	name, args, err := parseCommand([]string{"tag", "find", "--tag", "work", "--json"})
+	if err != nil || name != "tag find" || args.Str("tag") != "work" {
+		t.Fatalf("tag find --tag: %q %v %v", name, args.Flags, err)
+	}
+	if _, _, err := parseCommand([]string{"tag", "find"}); err == nil {
+		t.Fatal("tag find without a tag must be a usage error")
 	}
 }

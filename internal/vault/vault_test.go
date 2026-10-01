@@ -429,3 +429,23 @@ func TestCLIDialect(t *testing.T) {
 		t.Fatalf("cli toggle #1 should reopen 'two': %q", next)
 	}
 }
+
+// Deleting a note that is not there is an error, as it is on a server;
+// "Deleted" for a typo hid the mistake from scripts.
+func TestDeleteNoteReportsAMissingNote(t *testing.T) {
+	v := newTestVault(t)
+	writeFile(t, filepath.Join(v.Root(), "inbox", "Real.md"), "# Real\n")
+	if err := v.DeleteNote("inbox/Real.md"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(v.Root(), "inbox", "Real.md")); !os.IsNotExist(err) {
+		t.Fatal("note still exists")
+	}
+	err := v.DeleteNote("inbox/Real.md")
+	if err == nil || !strings.Contains(err.Error(), "Note not found: inbox/Real.md") {
+		t.Fatalf("second delete: %v", err)
+	}
+	if err := v.DeleteNote("inbox/never.md"); err == nil {
+		t.Fatal("deleting a note that never existed must fail")
+	}
+}

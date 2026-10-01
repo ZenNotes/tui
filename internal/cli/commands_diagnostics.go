@@ -28,6 +28,7 @@ type workspaceStatus struct {
 	Location          string       `json:"location,omitempty"`
 	AuthConfigured    bool         `json:"authConfigured"`
 	Problem           string       `json:"problem,omitempty"`
+	Warning           string       `json:"warning,omitempty"`
 	InstallationOwner string       `json:"installationOwner,omitempty"`
 }
 
@@ -40,6 +41,9 @@ func currentStatus(args Args) (workspaceStatus, error) {
 	st := workspaceStatus{Version: Version, Executable: exe, Platform: runtime.GOOS + "/" + runtime.GOARCH, ConfigPath: config.ConfigTomlPath(), Source: source}
 	if install, err := selfupdate.Current(); err == nil {
 		st.InstallationOwner = install.Owner
+	}
+	if _, err := config.LoadWorkspacesFile(); err != nil {
+		st.Warning = "saved vaults and servers are unavailable: " + err.Error()
 	}
 	switch {
 	case args.Str("server") != "":
@@ -91,6 +95,9 @@ func cmdStatus(args Args) error {
 	emitLine("Installation owner: " + st.InstallationOwner)
 	emitLine("Config: " + st.ConfigPath)
 	emitLine("Workspace source: " + st.Source + " · selected by " + st.SelectedBy)
+	if st.Warning != "" {
+		emitLine("Warning: " + st.Warning)
+	}
 	if st.Problem != "" {
 		emitLine(st.Problem)
 	} else {
@@ -118,6 +125,8 @@ func cmdDoctor(ctx context.Context, args Args) error {
 		checks = append(checks, diagnosticCheck{Name: name, OK: err == nil, Message: message})
 	}
 	add("configuration", config.ConfigTomlPath(), config.ValidateConfig())
+	ws, wsErr := config.LoadWorkspacesFile()
+	add("saved vaults", fmt.Sprintf("%d vaults and %d servers in %s", len(ws.Vaults), len(ws.Servers), config.WorkspacesPath()), wsErr)
 	if installation, err := selfupdate.Current(); err == nil {
 		add("installation", installation.Owner+": "+installation.Instruction, nil)
 	}
@@ -131,11 +140,11 @@ func cmdDoctor(ctx context.Context, args Args) error {
 		add("editor", "VISUAL/EDITOR unset; config edit uses the platform fallback", nil)
 	}
 	if info, err := os.Stat(config.CredentialsPath()); err == nil {
-		var permissionErr error
-		if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
-			permissionErr = fmt.Errorf("credentials.toml must be private (mode 0600)")
+		problem := config.CredentialsProblem()
+		if problem == nil && runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
+			problem = fmt.Errorf("credentials.toml must be private (mode 0600)")
 		}
-		add("credentials", "Stored credentials are private", permissionErr)
+		add("credentials", "Stored credentials are private", problem)
 	}
 	target, err := ResolveTargetFromArgs(args)
 	add("workspace", "Workspace selected", err)
