@@ -245,7 +245,8 @@ func (d *Doc) RecordTitle(row Row) string {
 }
 
 // ComposePageBody composes a record page: the row's properties as flat YAML
-// frontmatter (id and title fields omitted) followed by body.
+// frontmatter (id and title fields omitted) followed by body. A row with no
+// properties to mirror gets no frontmatter block at all.
 func (d *Doc) ComposePageBody(row Row, body string) string {
 	titleID := d.TitleFieldID()
 	lines := []string{"---"}
@@ -259,6 +260,9 @@ func (d *Doc) ComposePageBody(row Row, body string) string {
 		} else {
 			lines = append(lines, f.Name+":")
 		}
+	}
+	if len(lines) == 1 {
+		return strings.TrimLeft(body, "\n")
 	}
 	lines = append(lines, "---")
 	return strings.Join(lines, "\n") + "\n" + strings.TrimLeft(body, "\n")

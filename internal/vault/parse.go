@@ -9,13 +9,17 @@ import (
 // Regexes mirror the extractors in the desktop's vault-ops.ts and the
 // server's parse.go so the extracted metadata matches those builds.
 var (
-	fenceLineRe   = regexp.MustCompile("^[ \t]*(`{3,}|~{3,})(.*)$")
-	inlineCodeRe  = regexp.MustCompile("`[^`\n]*`")
-	tagRe         = regexp.MustCompile(`(?:^|\s)#(\p{L}[\p{L}\d_/-]*)`)
-	wikilinkRe    = regexp.MustCompile(`(!?)\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
-	linkRe        = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
-	embedRe       = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
-	frontmatterRe = regexp.MustCompile(`(?s)\A---\r?\n(.*?)\r?\n---\r?\n?`)
+	fenceLineRe  = regexp.MustCompile("^[ \t]*(`{3,}|~{3,})(.*)$")
+	inlineCodeRe = regexp.MustCompile("`[^`\n]*`")
+	tagRe        = regexp.MustCompile(`(?:^|\s)#(\p{L}[\p{L}\d_/-]*)`)
+	wikilinkRe   = regexp.MustCompile(`(!?)\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
+	linkRe       = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
+	embedRe      = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
+	// A block may be empty (`---\n---`): record pages without properties
+	// are written that way, and failing to see such a block made every
+	// re-mirror prepend another one. The empty form is tried first so a
+	// body's later horizontal rule cannot be mistaken for the closing fence.
+	frontmatterRe = regexp.MustCompile(`(?s)\A---\r?\n(?:---(?:\r?\n|\z)|(.*?)\r?\n---\r?\n?)`)
 	headingRe     = regexp.MustCompile(`(?m)^#{1,6}\s+`)
 	imageMdRe     = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
 	mdLinkRe      = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
@@ -80,7 +84,10 @@ func Frontmatter(body string) (block string, rest string, ok bool) {
 	if m == nil {
 		return "", body, false
 	}
-	return body[m[2]:m[3]], body[m[1]:], true
+	if m[2] >= 0 {
+		block = body[m[2]:m[3]]
+	}
+	return block, body[m[1]:], true
 }
 
 // ParseFrontmatterFields parses a frontmatter block into flat fields:
