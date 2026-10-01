@@ -39,6 +39,11 @@ type Workspaces struct {
 	Default string            `toml:"default"`
 	Vaults  []LocalWorkspace  `toml:"vault"`
 	Servers []ServerWorkspace `toml:"server"`
+	// loadErr remembers that the file on disk exists but could not be read
+	// or parsed. The list is then empty, and SaveWorkspaces refuses to
+	// replace the file with it: a stray edit must not cost the user every
+	// saved vault and server on the next `zn connect`.
+	loadErr error
 }
 
 // WorkspacesPath is where zn's vault and server list lives.
@@ -47,19 +52,37 @@ func WorkspacesPath() string { return filepath.Join(PortableConfigDir(), "worksp
 // CredentialsPath is where server tokens live (mode 0600).
 func CredentialsPath() string { return filepath.Join(PortableConfigDir(), "credentials.toml") }
 
-// LoadWorkspaces reads the list; a missing file is an empty list.
+// LoadWorkspaces reads the list; a missing or unreadable file is an empty
+// list. LoadWorkspacesFile also reports the latter.
 func LoadWorkspaces() Workspaces {
-	var ws Workspaces
-	raw, err := os.ReadFile(WorkspacesPath())
-	if err != nil {
-		return ws
-	}
-	_, _ = toml.Decode(string(raw), &ws)
+	ws, _ := LoadWorkspacesFile()
 	return ws
 }
 
-// SaveWorkspaces writes the list atomically.
+// LoadWorkspacesFile reads the list and says when the file exists but
+// could not be read or parsed; a missing file is simply an empty list.
+func LoadWorkspacesFile() (Workspaces, error) {
+	var ws Workspaces
+	raw, err := os.ReadFile(WorkspacesPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return ws, nil
+	}
+	if err == nil {
+		_, err = toml.Decode(string(raw), &ws)
+	}
+	if err != nil {
+		ws = Workspaces{loadErr: fmt.Errorf("%s: %w", WorkspacesPath(), err)}
+		return ws, ws.loadErr
+	}
+	return ws, nil
+}
+
+// SaveWorkspaces writes the list atomically. A list that stands in for a
+// file zn could not read is never written back over it.
 func SaveWorkspaces(ws Workspaces) error {
+	if ws.loadErr != nil {
+		return fmt.Errorf("not saving: %v. Overwriting the file would lose the vaults and servers it lists; fix or move it, then retry.", ws.loadErr)
+	}
 	var buf bytes.Buffer
 	buf.WriteString("# Vaults and servers zn knows. `zn connect`, `zn vault add` and `zn use` edit it.\n")
 	if err := toml.NewEncoder(&buf).Encode(ws); err != nil {
@@ -70,22 +93,45 @@ func SaveWorkspaces(ws Workspaces) error {
 
 type credentials struct {
 	Tokens map[string]string `toml:"tokens"`
+	// loadErr: see Workspaces.loadErr; a token store zn could not read is
+	// never overwritten with a fresh one holding a single token.
+	loadErr error
 }
 
 func loadCredentials() credentials {
-	c := credentials{Tokens: map[string]string{}}
-	raw, err := os.ReadFile(CredentialsPath())
-	if err != nil {
-		return c
-	}
-	_, _ = toml.Decode(string(raw), &c)
-	if c.Tokens == nil {
-		c.Tokens = map[string]string{}
-	}
+	c, _ := loadCredentialsFile()
 	return c
 }
 
+func loadCredentialsFile() (credentials, error) {
+	c := credentials{Tokens: map[string]string{}}
+	raw, err := os.ReadFile(CredentialsPath())
+	if errors.Is(err, os.ErrNotExist) {
+		return c, nil
+	}
+	if err == nil {
+		_, err = toml.Decode(string(raw), &c)
+	}
+	if err != nil {
+		c = credentials{Tokens: map[string]string{}, loadErr: fmt.Errorf("%s: %w", CredentialsPath(), err)}
+		return c, c.loadErr
+	}
+	if c.Tokens == nil {
+		c.Tokens = map[string]string{}
+	}
+	return c, nil
+}
+
+// CredentialsProblem says when the token store exists but cannot be read.
+func CredentialsProblem() error {
+	_, err := loadCredentialsFile()
+	return err
+}
+
 func saveCredentials(c credentials) error {
+	if c.loadErr != nil {
+		return fmt.Errorf("not saving: %v. Overwriting the file would lose the other saved tokens; fix or move it, then retry.", c.loadErr)
+	}
 	var buf bytes.Buffer
 	buf.WriteString("# Server tokens for zn, keyed by URL. Keep this file private.\n")
 	if err := toml.NewEncoder(&buf).Encode(c); err != nil {

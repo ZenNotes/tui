@@ -105,7 +105,10 @@ func cmdVaultList(args Args) error {
 	// source, and a desktop-managed zn never resolves zn's own names.
 	ws := config.Workspaces{}
 	if source == "terminal" {
-		ws = config.LoadWorkspaces()
+		var loadErr error
+		if ws, loadErr = config.LoadWorkspacesFile(); loadErr != nil {
+			emitError(fmt.Sprintf("%v; zn's own vaults and servers are not shown. `zn doctor` has details.", loadErr))
+		}
 	}
 	defaultTarget, err := ResolveTargetFromArgs(args)
 	if err != nil && !errors.Is(err, config.ErrNoVault) {

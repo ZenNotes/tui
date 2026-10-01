@@ -141,3 +141,60 @@ func TestVaultRemoveCompletesZnsOwnNames(t *testing.T) {
 		}
 	}
 }
+
+// With an unparseable workspaces.toml, every command that would save must
+// refuse rather than write an empty list over the user's saved entries.
+func TestCommandsRefuseToOverwriteABrokenWorkspacesFile(t *testing.T) {
+	dir := isolatedCLI(t)
+	ws := config.LoadWorkspaces()
+	ws.AddVault("alpha", filepath.Join(dir, "alpha"))
+	if err := config.SaveWorkspaces(ws); err != nil {
+		t.Fatal(err)
+	}
+	broken := []byte("default = \"alpha\"\n[[vault]]\nname = \"alpha\"\nroot = \"/a\"\n[vault]\nname = \"oops\"\n")
+	if err := os.WriteFile(config.WorkspacesPath(), broken, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "beta"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code := 0
+	out := captureOutput(t, func() { code = Main([]string{"vault", "add", filepath.Join(dir, "beta"), "--name", "beta"}) })
+	if code == 0 || !strings.Contains(out, "not saving") || !strings.Contains(out, "workspaces.toml") {
+		t.Fatalf("vault add: exit %d %s", code, out)
+	}
+	out = captureOutput(t, func() { code = Main([]string{"init", filepath.Join(dir, "gamma")}) })
+	if code == 0 || !strings.Contains(out, "not saving") {
+		t.Fatalf("init: exit %d %s", code, out)
+	}
+	if raw, _ := os.ReadFile(config.WorkspacesPath()); string(raw) != string(broken) {
+		t.Fatal("workspaces.toml was overwritten")
+	}
+	out = captureOutput(t, func() { code = Main([]string{"doctor", "--json"}) })
+	var report struct {
+		Checks []diagnosticCheck `json:"checks"`
+	}
+	if err := json.Unmarshal([]byte(strings.SplitN(out, "\n{\"error\"", 2)[0]), &report); err != nil {
+		t.Fatalf("doctor json: %v %s", err, out)
+	}
+	found := false
+	for _, c := range report.Checks {
+		if c.Name == "saved vaults" {
+			found = true
+			if c.OK || !strings.Contains(c.Message, "workspaces.toml") {
+				t.Fatalf("saved vaults check: %+v", c)
+			}
+		}
+	}
+	if !found || code == 0 {
+		t.Fatalf("doctor must fail on a broken workspaces file: exit %d %s", code, out)
+	}
+	out = captureOutput(t, func() { code = Main([]string{"status"}) })
+	if !strings.Contains(out, "Warning: saved vaults and servers are unavailable") {
+		t.Fatalf("status warning: %s", out)
+	}
+	out = captureOutput(t, func() { _ = Main([]string{"vault", "list"}) })
+	if !strings.Contains(out, "zn's own vaults and servers are not shown") {
+		t.Fatalf("vault list warning: %s", out)
+	}
+}
