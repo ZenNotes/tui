@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/termbg"
 	"github.com/ZenNotes/tui/internal/themes"
 )
 
@@ -70,7 +71,7 @@ type Theme struct {
 // run before Bubble Tea takes over the terminal, so Run calls it once and
 // the answer is reused for `:theme system` later.
 func DetectDarkBackground() bool {
-	return lipgloss.HasDarkBackground()
+	return termbg.Detect()
 }
 
 // themeSelection is the theme the preferences ask for: the desktop's

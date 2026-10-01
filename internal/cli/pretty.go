@@ -7,8 +7,9 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
-	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
+
+	"github.com/ZenNotes/tui/internal/termbg"
 )
 
 // renderPretty formats a note through Glamour for the terminal: the
@@ -28,7 +29,7 @@ func renderPretty(body, style string) (string, error) {
 	case !isTTY && (style == "" || style == "auto"):
 		opts = append(opts, glamour.WithStandardStyle(styles.NoTTYStyle))
 	case style == "" || style == "auto":
-		if lipgloss.HasDarkBackground() {
+		if termbg.Detect() {
 			opts = append(opts, glamour.WithStandardStyle(styles.DarkStyle))
 		} else {
 			opts = append(opts, glamour.WithStandardStyle(styles.LightStyle))
