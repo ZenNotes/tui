@@ -28,7 +28,7 @@ var (
 	wsCollapseRe  = regexp.MustCompile(`\s+`)
 	schemeRe      = regexp.MustCompile(`^[a-zA-Z][a-zA-Z\d+.\-]*:`)
 	atxHeadingRe  = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*#*\s*$`)
-	setextRe      = regexp.MustCompile(`^(=+|-+)\s*$`)
+	setextRe      = regexp.MustCompile(`^(=+|-{2,})\s*$`) // a lone `-` starts a list, not a heading (desktop #898)
 	h1LineRe      = regexp.MustCompile(`^( {0,3})#(?:[ \t].*)?$`)
 )
 

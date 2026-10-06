@@ -411,6 +411,16 @@ func TestOutline(t *testing.T) {
 	}
 }
 
+// A lone dash under a line starts a list; two dashes still underline a heading.
+func TestOutlineSingleDashIsNotAHeading(t *testing.T) {
+	if items := Outline("Some text\n-\n\nMore text\n- \n"); len(items) != 0 {
+		t.Fatalf("lone dash outline = %+v", items)
+	}
+	if items := Outline("Some text\n--\n"); len(items) != 1 || items[0].Level != 2 || items[0].Text != "Some text" {
+		t.Fatalf("two dash outline = %+v", items)
+	}
+}
+
 func TestCLIDialect(t *testing.T) {
 	body := "- [ ] one @project:x\n1. [ ] numbered\n> - [ ] quoted\n- [x] two\n"
 	app := ParseTasks("a.md", "a", FolderInbox, body, ParseTasksOptions{})
