@@ -321,7 +321,9 @@ func styleInline(row string, re *regexp.Regexp, group int, style lipgloss.Style,
 			// Drop the token brackets, keep the inner text.
 			text = row[m[2*group+2]:m[2*group+3]]
 		}
-		out.WriteString("\x1b[0m" + style.Render(text) + activeSGR(row[:s]))
+		// Glamour styles word by word, so a multi-word token carries escape
+		// codes; the style renders rune by rune and would split them.
+		out.WriteString("\x1b[0m" + style.Render(xansi.Strip(text)) + activeSGR(row[:s]))
 		last = e
 	}
 	out.WriteString(row[last:])

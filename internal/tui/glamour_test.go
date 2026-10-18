@@ -4,6 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+
 	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/search"
 )
@@ -115,5 +119,27 @@ func TestKeysHintFollowsRebinding(t *testing.T) {
 	}
 	if fitHint("a b · c d · e f", 9) != "a b …" {
 		t.Fatalf("fit: %q", fitHint("a b · c d · e f", 9))
+	}
+}
+
+// Glamour styles each word, so a multi-word wikilink token carries escape
+// codes; styling the token must not split them into visible text that
+// widens the row and makes the terminal wrap it.
+func TestGlamourMultiWordWikilinkKeepsRowWidth(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	a.prefs.PreviewStyle = "dark"
+	lines, err := a.renderGlamourLines("- jump between notes with [[double brackets]]\n", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := lines[0].text
+	if w := ansi.StringWidth(row); w > 60 {
+		t.Fatalf("row is %d cells wide, want <= 60: %q", w, row)
+	}
+	if plain := ansi.Strip(row); !strings.Contains(plain, "double brackets") || strings.Contains(plain, "[0m") {
+		t.Fatalf("link text mangled: %q", plain)
 	}
 }
