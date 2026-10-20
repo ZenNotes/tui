@@ -487,7 +487,7 @@ chrome.
 ### Moving around
 
 `Space` is the leader. The which-key panel appears immediately. Timed hints
-expire after `vim.which_key_hint_timeout_ms`; `vim.which_key_hint_mode = "sticky"`
+expire after `helix.which_key_hint_timeout_ms`; `helix.which_key_hint_mode = "sticky"`
 keeps them open until you choose an action, press Space again, or cancel.
 
 | Keys | What |
@@ -553,13 +553,31 @@ Modal editing follows `[helix] enabled` in `config.toml`. With it off, the edito
 is a plain editor. Use arrows and Enter in lists, F2 for context actions,
 and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
 
+All editor engine settings live under `[helix]` (the legacy `[vim]` section
+is still read; a `[helix]` key wins):
+
+```toml
+[helix]
+enabled = true                       # modal editing; false = plain editor
+motions = "vim"                      # ...set per engine: see [editor] motions
+insert_escape = "jk"                 # two-key escape from insert mode
+yank_to_clipboard = false            # yanks mirror the system clipboard
+which_key_hints = true               # leader hints
+which_key_hint_mode = "timed"        # timed, sticky or instant
+which_key_hint_timeout_ms = 2500
+wrapped_line_motions = "display"     # $, I, A follow the wrapped row
+```
+
+`[editor] motions = "vim" | "helix"` picks the engine for new buffers;
+individual keys are overridden under `[keymaps]` and listed by `:keymaps`.
+
 `Ctrl+Space` in insert mode (or `:complete`) completes tags, frontmatter
 tag values, callouts and code-fence languages. With `markdown_snippets`
 enabled, Space after an opening Markdown delimiter adds its closer;
 Enter after a code fence creates its closing fence. `:table` adds/removes
 rows or columns and sets alignment; `:formatting` opens formatting actions.
 These edits participate in undo. `:format` still formats the whole note.
-`vim.wrapped_line_motions = "display"` makes `$`, `I` and `A` use the
+`helix.wrapped_line_motions = "display"` makes `$`, `I` and `A` use the
 visible wrapped row; `"logical"` uses the source line.
 
 `Space l e` opens the note in `$VISUAL` or `$EDITOR` at the cursor line and
@@ -714,8 +732,8 @@ layout choices do not change these terminal layouts.
 
 | Section | Examples |
 | --- | --- |
-| `[vim]` | `enabled`, `which_key_hints`, `insert_escape` |
-| `[editor]` | `line_number_mode`, `word_wrap`, `completed_task_style` |
+| `[helix]` | `enabled`, `insert_escape`, `yank_to_clipboard`, `which_key_hints`, `which_key_hint_mode`, `wrapped_line_motions` (legacy `[vim]` still read) |
+| `[editor]` | `motions` (`vim` or `helix`), `line_number_mode`, `word_wrap`, `completed_task_style` |
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
