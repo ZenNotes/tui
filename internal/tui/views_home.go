@@ -61,7 +61,11 @@ type homeHit struct {
 func (v *homeView) title() string { return "Home" }
 
 func (v *homeView) hintPairs(a *App) []hintPair {
-	return []hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"key:Enter", "open"}, {"nav.toggleTask", "toggle task"}, {"key:h/l", "week day"}, {"global.newNoteHere", "new note"}, {"global.searchNotes", "search"}, {"key:r", "refresh"}, {"helix.gotoTabNext|helix.gotoTabPrevious", "next/previous tab"}}
+	pairs := []hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"key:Enter", "open"}, {"nav.toggleTask", "toggle task"}, {"key:h/l", "week day"}, {"global.newNoteHere", "new note"}, {"global.searchNotes", "search"}, {"key:r", "refresh"}}
+	if a.prefs.Motions == "helix" {
+		pairs = append(pairs, hintPair{"helix.gotoTabNext|helix.gotoTabPrevious", "next/previous tab"})
+	}
+	return pairs
 }
 
 func (v *homeView) refresh(a *App) {

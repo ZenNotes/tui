@@ -224,8 +224,12 @@ func (a *App) openKeyHelp() {
 			}
 		} else {
 			title = "Editor keys"
+			tabs := "helix.bufferNext|helix.bufferPrevious"
+			if a.prefs.Motions == "helix" {
+				tabs += "|helix.gotoTabNext|helix.gotoTabPrevious"
+			}
 			pairs = append(editorHints, hintPair{"key:gx", "open URL"}, hintPair{"key:gy", "copy link"}, hintPair{"key:zc/zo/zM/zR", "folds"},
-				hintPair{"helix.bufferNext|helix.bufferPrevious|helix.gotoTabNext|helix.gotoTabPrevious", "next/previous tab"}, hintPair{"key::w :q :qa", "save, close, quit"})
+				hintPair{tabs, "next/previous tab"}, hintPair{"key::w :q :qa", "save, close, quit"})
 		}
 	}
 	a.overlay = &keyHelpOverlay{title: title, pairs: pairs, extra: global}

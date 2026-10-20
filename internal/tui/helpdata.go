@@ -107,7 +107,7 @@ func helpLines(a *App, filter string) []string {
 		":q :bd\tClose the current tab; closing the last tab quits",
 		":w :wa :wq :x\tSave, save all, or save and close the current tab",
 		":e <note> :new <title> :vs :sp :only\tOpen, create, split",
-		":bn :bp ]b [b gt gT gn gp\tNext and previous tab",
+		":bn :bp ]b [b gt gT\tNext and previous tab (gn gp with helix motions)",
 		":pin :tabmove -1|+1|first|last\tPin or unpin the tab (pinned tabs sit first and survive :tabonly); reorder tabs",
 		":link, or [[ in insert mode\tPick a note and insert a wikilink to it",
 		"# and a letter in insert mode\tOffers the vault's tags under the cursor, most used first, as the desktop app does; inside a frontmatter tags: value it completes bare tags. Ctrl+N / Ctrl+P or ↑↓ move, Enter / Tab / Ctrl+Y accept, Ctrl+E dismisses, typing narrows",

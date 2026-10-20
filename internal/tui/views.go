@@ -175,8 +175,12 @@ func (a *App) listNav(c *listCursor, k helix.Key, n, pageRows int) bool {
 	if !a.listKeyAllowed(k) {
 		return false
 	}
-	id, pending := a.resolveAction(k, "nav.moveDown", "nav.moveUp", "nav.jumpTop", "nav.jumpBottom", "nav.halfPageDown", "nav.halfPageUp",
-		"helix.gotoTabPrevious", "helix.gotoTabNext")
+	ids := []string{"nav.moveDown", "nav.moveUp", "nav.jumpTop", "nav.jumpBottom", "nav.halfPageDown", "nav.halfPageUp"}
+	if a.prefs.Motions == "helix" {
+		// gn/gp are helix-motion keys; the vim engine leaves them alone.
+		ids = append(ids, "helix.gotoTabPrevious", "helix.gotoTabNext")
+	}
+	id, pending := a.resolveAction(k, ids...)
 	if pending {
 		return true
 	}

@@ -362,8 +362,11 @@ func (a *App) editorKey(buf *noteBuffer, k helix.Key) {
 		a.jumpForward()
 		return
 	}
-	seqIDs := []string{"helix.bufferPrevious", "helix.bufferNext", "helix.tabPrevious", "helix.tabNext",
-		"helix.gotoTabPrevious", "helix.gotoTabNext"}
+	// gn/gp are helix-motion keys: the vim engine leaves them alone.
+	seqIDs := []string{"helix.bufferPrevious", "helix.bufferNext", "helix.tabPrevious", "helix.tabNext"}
+	if a.prefs.Motions == "helix" {
+		seqIDs = append(seqIDs, "helix.gotoTabPrevious", "helix.gotoTabNext")
+	}
 	if len(a.navKeys) > 0 {
 		seq := append(append([]helix.Key{}, a.navKeys...), k)
 		a.navKeys = nil

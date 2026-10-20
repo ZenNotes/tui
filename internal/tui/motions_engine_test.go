@@ -54,10 +54,12 @@ func TestVimMotionsKeepAppKeys(t *testing.T) {
 	}
 	a.openNote("a.md", true)
 	a.openNote("b.md", true)
+	// gn is a helix-motion key: with the vim engine it stays with the engine
+	// (a no-op here) and must not switch tabs.
 	a.handleKey(helix.R('g'))
 	a.handleKey(helix.R('n'))
-	if got := a.activeBuffer().path; got != "a.md" {
-		t.Fatalf("gn did not switch tabs with the vim engine, active %q", got)
+	if got := a.activeBuffer().path; got != "b.md" {
+		t.Fatalf("gn switched tabs with the vim engine, active %q", got)
 	}
 	// vim visual mode keeps its label through the interface
 	a.activeBuffer().ed.Feed("v")

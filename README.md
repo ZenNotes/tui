@@ -530,8 +530,9 @@ engine keeps classic operator-pending editing — `dw` `cw` `yiw`, visual,
 visual line and visual block, and the rest of the Vim toolkit. The Helix
 engine is selection-first — motions like `w` select as they travel, so `wd`
 deletes a word and `n` selects the next match; `miw` picks a word precisely.
-Tab switching (`gn` `gp`, `gt` `gT`, `]b` `[b`), the leader, registers and
-macros work in either engine.
+Tab switching works in either engine: `gt` `gT` and `]b` `[b` everywhere,
+plus `gn` `gp` with the Helix engine. The leader, registers and macros work
+in both.
 
 The editor also has counts, registers, marks, macros, dot-repeat, undo and
 redo, text objects, search, `:s` `:g` `:sort` `:norm` with ranges, `gq`, and
