@@ -5,23 +5,23 @@ class Zn < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/ZenNotes/tui/releases/download/v0.9.0/zn_0.9.0_darwin_arm64.tar.gz"
-      sha256 "1f97fcbf307ccfba03496311bdc04e9708c10e822ac2abdf03ffa7131197f92e"
+      url "https://github.com/ZenNotes/tui/releases/download/v0.9.1/zn_0.9.1_darwin_arm64.tar.gz"
+      sha256 "6ee4b0d9ed60417453bae5aed10c1cb92cd2d1504be79afb5e6b8fb31caed99a"
     end
     on_intel do
-      url "https://github.com/ZenNotes/tui/releases/download/v0.9.0/zn_0.9.0_darwin_amd64.tar.gz"
-      sha256 "2f95711520fda368cff318d744b87b3afa98cccefcb34b35d86cce967c4c0bb8"
+      url "https://github.com/ZenNotes/tui/releases/download/v0.9.1/zn_0.9.1_darwin_amd64.tar.gz"
+      sha256 "58c990a91900df44684f942d11907fec79c2712ca1a513278f957328779478c6"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/ZenNotes/tui/releases/download/v0.9.0/zn_0.9.0_linux_arm64.tar.gz"
-      sha256 "b0a08f2575fec89e87f76fcb5dc9a7410c9b8e3327922e587605ccdd3588f2dc"
+      url "https://github.com/ZenNotes/tui/releases/download/v0.9.1/zn_0.9.1_linux_arm64.tar.gz"
+      sha256 "b8a3dd4a3f160c2d5d9184a0a4ca941822d410623ef3c609aa841638dc866a54"
     end
     on_intel do
-      url "https://github.com/ZenNotes/tui/releases/download/v0.9.0/zn_0.9.0_linux_amd64.tar.gz"
-      sha256 "6ca45da7e8adcbed0037888961239fe4dbb6b960ec87844a8b6fb2439484f523"
+      url "https://github.com/ZenNotes/tui/releases/download/v0.9.1/zn_0.9.1_linux_amd64.tar.gz"
+      sha256 "8064c1282f63ce520ba252c09be4d867c8b8b4417d88c547cd5ea4e74a2a84da"
     end
   end
 
