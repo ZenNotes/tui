@@ -11,11 +11,11 @@ import (
 
 	"github.com/atotto/clipboard"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // createNote makes a note and opens it.

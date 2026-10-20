@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // sidebarRow is one visible line of the sidebar tree.

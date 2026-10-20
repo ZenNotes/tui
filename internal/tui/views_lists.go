@@ -10,8 +10,8 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // --- note list views: Quick Notes, Archive, Trash ---

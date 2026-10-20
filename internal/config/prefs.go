@@ -15,7 +15,7 @@ type Prefs struct {
 	IgnoredKeys             []string
 	HelixMode               bool
 	// Motions picks the modal engine: "vim" (default) or "helix". It is
-	// [editor] motions in config.toml.
+	// [vim] motions in config.toml.
 	Motions               string
 	HelixInsertEscape     string
 	HelixYankToClipboard  bool
@@ -155,18 +155,16 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		m, _ := doc[name].(map[string]any)
 		return m
 	}
-	// The editor section was [vim] before Helix: a key set in [helix] wins,
-	// otherwise the legacy table still applies.
+	// The modal engine section stays [vim], the name it has always had; the
+	// motions key picks which engine (vim or helix) runs behind it. A
+	// [helix] section written by older helix-branch builds is still honored
+	// when [vim] is absent.
 	modal := section("vim")
-	if helix := section("helix"); helix != nil {
-		if modal == nil {
-			modal = map[string]any{}
-		}
-		for k, v := range helix {
-			modal[k] = v
-		}
+	if modal == nil {
+		modal = section("helix")
 	}
 	setBool(modal, "enabled", &p.HelixMode)
+	setString(modal, "motions", &p.Motions)
 	setString(modal, "wrapped_line_motions", &p.HelixWrappedLineMotions)
 	setString(modal, "insert_escape", &p.HelixInsertEscape)
 	setBool(modal, "yank_to_clipboard", &p.HelixYankToClipboard)
@@ -175,7 +173,6 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setInt(modal, "which_key_hint_timeout_ms", &p.WhichKeyHintTimeoutMs)
 
 	editor := section("editor")
-	setString(editor, "motions", &p.Motions)
 	setBool(editor, "sync_title_heading_on_rename", &p.SyncTitleHeadingOnRename)
 	setInt(editor, "tab_size", &p.EditorTabSize)
 	setInt(editor, "scroll_off", &p.EditorScrollOff)
@@ -300,8 +297,9 @@ func setInt(m map[string]any, key string, dst *int) {
 // no config.toml exists yet. Every key matches the desktop app's names.
 const DefaultConfigTOML = `# ZenNotes portable preferences. Shared by the desktop app and zn.
 
-[helix]
+[vim]
 enabled = true
+motions = "vim" # or "helix": the selection-first engine
 insert_escape = "jk"
 yank_to_clipboard = true
 which_key_hints = true

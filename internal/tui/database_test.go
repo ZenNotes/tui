@@ -10,8 +10,8 @@ import (
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/database"
-	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/keymaps"
 )
 
 func enterKey() helix.Key { return helix.Key{Name: "enter"} }

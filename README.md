@@ -525,7 +525,7 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 ### Editing
 
 The editor ships two motion engines: Vim (default) and Helix. Pick one with
-`[editor] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
+`[vim] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
 engine keeps classic operator-pending editing — `dw` `cw` `yiw`, visual,
 visual line and visual block, and the rest of the Vim toolkit. The Helix
 engine is selection-first — motions like `w` select as they travel, so `wd`
@@ -549,17 +549,16 @@ linewise and blockwise selections, and delete history work across notes too.
 Closing the source note does not discard its yank. Each note keeps its own
 cursor and undo history; system-clipboard integration remains a separate preference.
 
-Modal editing follows `[helix] enabled` in `config.toml`. With it off, the editor
+Modal editing follows `[vim] enabled` in `config.toml`. With it off, the editor
 is a plain editor. Use arrows and Enter in lists, F2 for context actions,
 and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
 
-All editor engine settings live under `[helix]` (the legacy `[vim]` section
-is still read; a `[helix]` key wins):
+All editor engine settings live under `[vim]`:
 
 ```toml
-[helix]
+[vim]
 enabled = true                       # modal editing; false = plain editor
-motions = "vim"                      # ...set per engine: see [editor] motions
+motions = "vim"                      # or "helix": the selection-first engine
 insert_escape = "jk"                 # two-key escape from insert mode
 yank_to_clipboard = false            # yanks mirror the system clipboard
 which_key_hints = true               # leader hints
@@ -568,8 +567,9 @@ which_key_hint_timeout_ms = 2500
 wrapped_line_motions = "display"     # $, I, A follow the wrapped row
 ```
 
-`[editor] motions = "vim" | "helix"` picks the engine for new buffers;
-individual keys are overridden under `[keymaps]` and listed by `:keymaps`.
+`motions` picks the engine for new buffers; individual keys are overridden
+under `[keymaps]` and listed by `:keymaps`. A `[helix]` section from earlier
+helix-branch builds is still honored when `[vim]` is absent.
 
 `Ctrl+Space` in insert mode (or `:complete`) completes tags, frontmatter
 tag values, callouts and code-fence languages. With `markdown_snippets`
@@ -732,7 +732,7 @@ layout choices do not change these terminal layouts.
 
 | Section | Examples |
 | --- | --- |
-| `[helix]` | `enabled`, `insert_escape`, `yank_to_clipboard`, `which_key_hints`, `which_key_hint_mode`, `wrapped_line_motions` (legacy `[vim]` still read) |
+| `[vim]` | `enabled`, `motions` (`vim` or `helix`), `insert_escape`, `yank_to_clipboard`, `which_key_hints`, `which_key_hint_mode`, `wrapped_line_motions` (a `[helix]` section is still honored when `[vim]` is absent) |
 | `[editor]` | `motions` (`vim` or `helix`), `line_number_mode`, `word_wrap`, `completed_task_style` |
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |

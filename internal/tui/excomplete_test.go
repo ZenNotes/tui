@@ -3,9 +3,9 @@ package tui
 import (
 	"testing"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/helix"
 )
 
 func testAppWithNotes() *App {

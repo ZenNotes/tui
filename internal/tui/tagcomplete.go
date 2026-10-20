@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // Tag completion. Typing `#` and a letter in a note offers the vault's

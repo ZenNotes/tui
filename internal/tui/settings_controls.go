@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"github.com/ZenNotes/tui/internal/config"
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,7 +40,7 @@ func (v *settingsView) refresh(a *App) {
 		}
 	}
 	tables := config.ValueTables(a.prefs.Prefs)
-	for _, section := range []string{"helix", "editor", "appearance", "view", "terminal"} {
+	for _, section := range []string{"vim", "editor", "appearance", "view", "terminal"} {
 		keys := []string{}
 		for k := range tables[section] {
 			keys = append(keys, k)

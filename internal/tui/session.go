@@ -58,7 +58,7 @@ type sessionPane struct {
 
 type sessionPosition struct {
 	Cursor helix.Pos `json:"cursor"`
-	Scroll int     `json:"scroll"`
+	Scroll int       `json:"scroll"`
 }
 
 func sessionPath() string {

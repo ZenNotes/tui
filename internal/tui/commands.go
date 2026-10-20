@@ -11,11 +11,11 @@ import (
 
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // command is one ex command the host owns, also listed in the palette.
@@ -537,7 +537,9 @@ func (a *App) commandTable() []command {
 		}},
 		{names: []string{"config"}, title: "Edit config.toml", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return a.editConfig() }},
 		{names: []string{"reloadconfig"}, title: "Reload preferences", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return a.reloadPreferences() }},
-		{names: []string{"unbind"}, title: "Unbind a keymap action", run: func(a *App, _ *noteBuffer, c helix.ExCommand) error { return a.saveKeymap(strings.TrimSpace(c.Args), "") }},
+		{names: []string{"unbind"}, title: "Unbind a keymap action", run: func(a *App, _ *noteBuffer, c helix.ExCommand) error {
+			return a.saveKeymap(strings.TrimSpace(c.Args), "")
+		}},
 		{names: []string{"bind", "map"}, title: "Bind a keymap action", run: func(a *App, _ *noteBuffer, c helix.ExCommand) error {
 			p := strings.Fields(c.Args)
 			if len(p) < 2 {

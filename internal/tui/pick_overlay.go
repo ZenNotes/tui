@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/search"
 )
 
 // pickItem is one checkable entry of a pickOverlay.

@@ -20,8 +20,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/selfupdate"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/selfupdate"
 )
 
 type versionView struct {

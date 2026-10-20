@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 type slowIOBackend struct {

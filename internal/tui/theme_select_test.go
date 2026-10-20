@@ -10,8 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/config"
-	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/themes"
 )
 
 func themedApp(t *testing.T, prefs config.Prefs) *App {

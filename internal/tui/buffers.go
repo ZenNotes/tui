@@ -10,8 +10,8 @@ import (
 	"github.com/atotto/clipboard"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // noteBuffer is an open note: its Vim editor plus save state. One buffer

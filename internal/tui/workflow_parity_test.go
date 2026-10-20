@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 func TestInitialRemoteFailureStillRetriesPolling(t *testing.T) {
