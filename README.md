@@ -525,7 +525,7 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 ### Editing
 
 The editor ships two motion engines: Vim (default) and Helix. Pick one with
-`[helix] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
+`[editor] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
 engine keeps classic operator-pending editing — `dw` `cw` `yiw`, visual,
 visual line and visual block, and the rest of the Vim toolkit. The Helix
 engine is selection-first — motions like `w` select as they travel, so `wd`

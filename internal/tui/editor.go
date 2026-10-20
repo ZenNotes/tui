@@ -5,7 +5,7 @@ import (
 	"github.com/ZenNotes/tui/internal/vim"
 )
 
-// modalEditor is the editing engine behind buffers. The [helix] motions
+// modalEditor is the editing engine behind buffers. The [editor] motions
 // option picks the implementation: "vim" (default) or "helix". Both engines
 // share the helix key, position, register and hook types, so the host drives
 // either one the same way; the vim adapter converts its engine-local Mode.

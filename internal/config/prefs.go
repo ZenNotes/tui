@@ -14,12 +14,14 @@ type Prefs struct {
 	HelixWrappedLineMotions string
 	IgnoredKeys             []string
 	HelixMode               bool
-	Motions                 string
-	HelixInsertEscape       string
-	HelixYankToClipboard    bool
-	WhichKeyHints           bool
-	WhichKeyHintMode        string
-	WhichKeyHintTimeoutMs   int
+	// Motions picks the modal engine: "vim" (default) or "helix". It is
+	// [editor] motions in config.toml.
+	Motions               string
+	HelixInsertEscape     string
+	HelixYankToClipboard  bool
+	WhichKeyHints         bool
+	WhichKeyHintMode      string
+	WhichKeyHintTimeoutMs int
 
 	SyncTitleHeadingOnRename bool
 	EditorTabSize            int
@@ -165,7 +167,6 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		}
 	}
 	setBool(modal, "enabled", &p.HelixMode)
-	setString(modal, "motions", &p.Motions)
 	setString(modal, "wrapped_line_motions", &p.HelixWrappedLineMotions)
 	setString(modal, "insert_escape", &p.HelixInsertEscape)
 	setBool(modal, "yank_to_clipboard", &p.HelixYankToClipboard)
@@ -174,6 +175,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setInt(modal, "which_key_hint_timeout_ms", &p.WhichKeyHintTimeoutMs)
 
 	editor := section("editor")
+	setString(editor, "motions", &p.Motions)
 	setBool(editor, "sync_title_heading_on_rename", &p.SyncTitleHeadingOnRename)
 	setInt(editor, "tab_size", &p.EditorTabSize)
 	setInt(editor, "scroll_off", &p.EditorScrollOff)
