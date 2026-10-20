@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"regexp"
@@ -100,21 +100,29 @@ func (e *Editor) compilePattern(pattern string) (*regexp.Regexp, error) {
 // searchNext finds the nth match of the last search from `from` in
 // direction dir, wrapping when wrapscan is on.
 func (e *Editor) searchNext(from Pos, dir, n int, report bool) (Pos, bool) {
+	p, _, ok := e.searchNextRange(from, dir, n, report)
+	return p, ok
+}
+
+// searchNextRange is searchNext and also returns the exclusive end of the
+// match, so `n` can select the whole match the way Helix does.
+func (e *Editor) searchNextRange(from Pos, dir, n int, report bool) (Pos, Pos, bool) {
 	if e.lastSearch == "" {
 		e.setError("E35: No previous regular expression")
-		return from, false
+		return from, from, false
 	}
 	re, err := e.compilePattern(e.lastSearch)
 	if err != nil {
 		e.setError("E486: Pattern not found: " + e.lastSearch)
-		return from, false
+		return from, from, false
 	}
 	p := from
+	end := from
 	for i := 0; i < n; i++ {
-		next, wrapped, ok := e.findMatch(re, p, dir)
+		next, e2, wrapped, ok := e.findMatch(re, p, dir)
 		if !ok {
 			e.setError("E486: Pattern not found: " + e.lastSearch)
-			return from, false
+			return from, from, false
 		}
 		if wrapped && report {
 			if dir > 0 {
@@ -123,14 +131,16 @@ func (e *Editor) searchNext(from Pos, dir, n int, report bool) (Pos, bool) {
 				e.setMsg("search hit TOP, continuing at BOTTOM")
 			}
 		}
-		p = next
+		p, end = next, e2
 	}
 	e.highlight = true
-	return p, true
+	return p, end, true
 }
 
-// findMatch is the next match strictly after (or before) from.
-func (e *Editor) findMatch(re *regexp.Regexp, from Pos, dir int) (Pos, bool, bool) {
+// findMatch is the next match strictly after (or before) from. It returns
+// the match start, its exclusive end, whether it wrapped, and whether one
+// was found.
+func (e *Editor) findMatch(re *regexp.Regexp, from Pos, dir int) (Pos, Pos, bool, bool) {
 	lineCount := e.buf.LineCount()
 	matchesOn := func(line int) [][2]int {
 		return runeMatches(re, e.buf.LineString(line))
@@ -140,7 +150,7 @@ func (e *Editor) findMatch(re *regexp.Regexp, from Pos, dir int) (Pos, bool, boo
 			line := (from.Line + offset) % lineCount
 			wrapped := from.Line+offset >= lineCount
 			if wrapped && !e.opts.WrapScan {
-				return from, false, false
+				return from, from, false, false
 			}
 			for _, m := range matchesOn(line) {
 				if offset == 0 && !wrapped && m[0] <= from.Col {
@@ -149,16 +159,16 @@ func (e *Editor) findMatch(re *regexp.Regexp, from Pos, dir int) (Pos, bool, boo
 				if offset == lineCount && m[0] > from.Col {
 					continue
 				}
-				return Pos{line, m[0]}, wrapped, true
+				return Pos{line, m[0]}, Pos{line, m[1]}, wrapped, true
 			}
 		}
-		return from, false, false
+		return from, from, false, false
 	}
 	for offset := 0; offset <= lineCount; offset++ {
 		line := ((from.Line-offset)%lineCount + lineCount) % lineCount
 		wrapped := from.Line-offset < 0
 		if wrapped && !e.opts.WrapScan {
-			return from, false, false
+			return from, from, false, false
 		}
 		ms := matchesOn(line)
 		for i := len(ms) - 1; i >= 0; i-- {
@@ -169,10 +179,10 @@ func (e *Editor) findMatch(re *regexp.Regexp, from Pos, dir int) (Pos, bool, boo
 			if offset == lineCount && m[0] < from.Col {
 				continue
 			}
-			return Pos{line, m[0]}, wrapped, true
+			return Pos{line, m[0]}, Pos{line, m[1]}, wrapped, true
 		}
 	}
-	return from, false, false
+	return from, from, false, false
 }
 
 // runeMatches lists match spans on a line in rune columns.

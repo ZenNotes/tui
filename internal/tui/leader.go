@@ -26,18 +26,18 @@ func (a *App) leaderTree() *leaderNode {
 		parent.children = append(parent.children, n)
 		return n
 	}
-	add(root, "vim.leaderOpenBuffers", "Open buffers", func(a *App) { a.openBufferPicker() })
-	add(root, "vim.leaderSearchNotes", "Search notes", func(a *App) { a.openNoteSearch("") })
-	if s := add(root, "vim.leaderSearchGroup", "Search", nil); s != nil {
-		add(s, "vim.leaderSearchVaultText", "Vault text", func(a *App) { a.openTextSearch("") })
+	add(root, "helix.leaderOpenBuffers", "Open buffers", func(a *App) { a.openBufferPicker() })
+	add(root, "helix.leaderSearchNotes", "Search notes", func(a *App) { a.openNoteSearch("") })
+	if s := add(root, "helix.leaderSearchGroup", "Search", nil); s != nil {
+		add(s, "helix.leaderSearchVaultText", "Vault text", func(a *App) { a.openTextSearch("") })
 		s.children = append(s.children, &leaderNode{key: "n", title: "Notes", run: func(a *App) { a.openNoteSearch("") }})
 	}
-	add(root, "vim.leaderToggleSidebar", "Toggle sidebar", func(a *App) { a.toggleSidebar() })
-	add(root, "vim.leaderNoteOutline", "Note outline", func(a *App) { a.toggleSidePanel(&a.outlineOpen, focusOutline) })
+	add(root, "helix.leaderToggleSidebar", "Toggle sidebar", func(a *App) { a.toggleSidebar() })
+	add(root, "helix.leaderNoteOutline", "Note outline", func(a *App) { a.toggleSidePanel(&a.outlineOpen, focusOutline) })
 	// Space v is the desktop's "switch vault"; the view group lives on its
 	// own key so nothing about vaults hides under "view".
-	add(root, "vim.leaderSwitchVault", "Switch vault", func(a *App) { a.openVaultSwitcher() })
-	if v := add(root, "vim.leaderViewGroup", "View", nil); v != nil {
+	add(root, "helix.leaderSwitchVault", "Switch vault", func(a *App) { a.openVaultSwitcher() })
+	if v := add(root, "helix.leaderViewGroup", "View", nil); v != nil {
 		v.children = append(v.children,
 			&leaderNode{key: "p", title: "Preview mode", run: func(a *App) { a.setPaneMode(modePreview) }},
 			&leaderNode{key: "s", title: "Split mode", run: func(a *App) { a.setPaneMode(modeSplit) }},
@@ -49,10 +49,10 @@ func (a *App) leaderTree() *leaderNode {
 			&leaderNode{key: "t", title: "Theme", run: func(a *App) { a.runCommandLine("theme") }},
 		)
 	}
-	if l := add(root, "vim.leaderNoteActions", "Note actions", nil); l != nil {
-		add(l, "vim.leaderFormatNote", "Format note", func(a *App) { a.formatActiveNote() })
-		add(l, "vim.leaderCopyMarkdown", "Copy note as Markdown", func(a *App) { a.copyActiveNote() })
-		add(l, "vim.leaderToggleFavorite", "Toggle favorite", func(a *App) { a.toggleActiveFavorite() })
+	if l := add(root, "helix.leaderNoteActions", "Note actions", nil); l != nil {
+		add(l, "helix.leaderFormatNote", "Format note", func(a *App) { a.formatActiveNote() })
+		add(l, "helix.leaderCopyMarkdown", "Copy note as Markdown", func(a *App) { a.copyActiveNote() })
+		add(l, "helix.leaderToggleFavorite", "Toggle favorite", func(a *App) { a.toggleActiveFavorite() })
 		l.children = append(l.children,
 			&leaderNode{key: "r", title: "Rename note", run: func(a *App) { a.renameActiveNote() }},
 			&leaderNode{key: "m", title: "Move note", run: func(a *App) { a.moveActiveNotePrompt() }},
@@ -63,15 +63,15 @@ func (a *App) leaderTree() *leaderNode {
 			&leaderNode{key: "e", title: "Edit in $EDITOR", run: func(a *App) { a.editActiveInEditor() }},
 		)
 	}
-	add(root, "vim.leaderQuickCapture", "Quick capture", func(a *App) { a.openQuickCapture() })
-	add(root, "vim.leaderTemplatePicker", "New from template", func(a *App) { a.openTemplatePicker(false) })
-	add(root, "vim.leaderInsertTemplate", "Insert template", func(a *App) { a.openTemplatePicker(true) })
-	add(root, "vim.leaderDailyNote", "Daily note", func(a *App) { a.openPeriodic(periodic.Daily, 0) })
-	add(root, "vim.leaderWeeklyNote", "Weekly note", func(a *App) { a.openPeriodic(periodic.Weekly, 0) })
-	add(root, "vim.leaderMonthlyNote", "Monthly note", func(a *App) { a.openPeriodic(periodic.Monthly, 0) })
-	add(root, "vim.leaderCalendar", "Calendar", func(a *App) { a.toggleSidePanel(&a.calendarOpen, focusCalendar) })
-	add(root, "vim.hintMode", "Hint mode", func(a *App) { a.startHintMode() })
-	add(root, "vim.leaderKanban", "Kanban board", func(a *App) { _ = a.openTasksMode("kanban") })
+	add(root, "helix.leaderQuickCapture", "Quick capture", func(a *App) { a.openQuickCapture() })
+	add(root, "helix.leaderTemplatePicker", "New from template", func(a *App) { a.openTemplatePicker(false) })
+	add(root, "helix.leaderInsertTemplate", "Insert template", func(a *App) { a.openTemplatePicker(true) })
+	add(root, "helix.leaderDailyNote", "Daily note", func(a *App) { a.openPeriodic(periodic.Daily, 0) })
+	add(root, "helix.leaderWeeklyNote", "Weekly note", func(a *App) { a.openPeriodic(periodic.Weekly, 0) })
+	add(root, "helix.leaderMonthlyNote", "Monthly note", func(a *App) { a.openPeriodic(periodic.Monthly, 0) })
+	add(root, "helix.leaderCalendar", "Calendar", func(a *App) { a.toggleSidePanel(&a.calendarOpen, focusCalendar) })
+	add(root, "helix.hintMode", "Hint mode", func(a *App) { a.startHintMode() })
+	add(root, "helix.leaderKanban", "Kanban board", func(a *App) { _ = a.openTasksMode("kanban") })
 	root.children = append(root.children,
 		&leaderNode{key: ";", title: "Command palette", run: func(a *App) { a.openCommandPalette() }},
 		&leaderNode{key: "x", title: "Tasks", run: func(a *App) { _ = a.openTasksMode("") }},

@@ -11,7 +11,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 func TestDesktopLauncherDoesNotChangeTUIVaultSwitches(t *testing.T) {
@@ -52,7 +52,7 @@ func TestDesktopLauncherDoesNotChangeTUIVaultSwitches(t *testing.T) {
 			})
 			for _, cmd := range a.parityCommands() {
 				if cmd.names[0] == tc.command {
-					if err := cmd.run(a, nil, vim.ExCommand{Args: "work"}); err != nil {
+					if err := cmd.run(a, nil, helix.ExCommand{Args: "work"}); err != nil {
 						t.Fatal(err)
 					}
 					break
@@ -102,7 +102,7 @@ func TestTUIServerSwitchHonorsExplicitAppWorkspaceSource(t *testing.T) {
 			if action == "server command" {
 				for _, cmd := range a.parityCommands() {
 					if cmd.names[0] == "server" {
-						if err := cmd.run(a, nil, vim.ExCommand{Args: "home"}); err != nil {
+						if err := cmd.run(a, nil, helix.ExCommand{Args: "home"}); err != nil {
 							t.Fatal(err)
 						}
 						break
@@ -149,7 +149,7 @@ func TestNewServerURLStillPromptsForToken(t *testing.T) {
 			a := newApp(context.Background(), Options{Backend: b, Target: target, WorkspaceSource: source}, config.Prefs{}, true)
 			for _, cmd := range a.parityCommands() {
 				if cmd.names[0] == "server" {
-					if err := cmd.run(a, nil, vim.ExCommand{Args: server.URL}); err != nil {
+					if err := cmd.run(a, nil, helix.ExCommand{Args: server.URL}); err != nil {
 						t.Fatal(err)
 					}
 					break

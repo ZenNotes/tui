@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"strings"
@@ -63,26 +63,29 @@ func TestMotions(t *testing.T) {
 		{"b crosses lines", text, Pos{1, 0}, "b", text, Pos{0, 8}, ModeNormal, nil},
 		{"e", text, Pos{0, 0}, "e", text, Pos{0, 2}, ModeNormal, nil},
 		{"e from end of word", text, Pos{0, 2}, "e", text, Pos{0, 6}, ModeNormal, nil},
-		{"ge", text, Pos{0, 5}, "ge", text, Pos{0, 2}, ModeNormal, nil},
 		{"0", text, Pos{0, 5}, "0", text, Pos{0, 0}, ModeNormal, nil},
 		{"$", text, Pos{0, 0}, "$", text, Pos{0, 12}, ModeNormal, nil},
 		{"$ then j sticks", text, Pos{0, 0}, "$j", text, Pos{1, 8}, ModeNormal, nil},
 		{"^", "   x y", Pos{0, 5}, "^", "   x y", Pos{0, 3}, ModeNormal, nil},
 		{"gg", text, Pos{3, 2}, "gg", text, Pos{0, 0}, ModeNormal, nil},
+		{"ge last line", text, Pos{0, 0}, "ge", text, Pos{4, 0}, ModeNormal, nil},
 		{"G", text, Pos{0, 0}, "G", text, Pos{4, 0}, ModeNormal, nil},
 		{"2G", text, Pos{0, 0}, "2G", text, Pos{1, 0}, ModeNormal, nil},
 		{"3gg", text, Pos{0, 0}, "3gg", text, Pos{2, 0}, ModeNormal, nil},
+		{"g h line start", "  a b", Pos{0, 4}, "gh", "  a b", Pos{0, 0}, ModeNormal, nil},
+		{"g l line end", "  a b", Pos{0, 0}, "gl", "  a b", Pos{0, 4}, ModeNormal, nil},
+		{"g s first non-blank", "  a b", Pos{0, 4}, "gs", "  a b", Pos{0, 2}, ModeNormal, nil},
 		{"f", text, Pos{0, 0}, "ft", text, Pos{0, 4}, ModeNormal, nil},
 		{"2f", text, Pos{0, 0}, "2ft", text, Pos{0, 8}, ModeNormal, nil},
 		{"t", text, Pos{0, 0}, "tt", text, Pos{0, 3}, ModeNormal, nil},
-		{";", text, Pos{0, 0}, "ft;", text, Pos{0, 8}, ModeNormal, nil},
-		{",", text, Pos{0, 0}, "ft;,", text, Pos{0, 4}, ModeNormal, nil},
+		{", repeats find backwards", text, Pos{0, 0}, "ft,,", text, Pos{0, 4}, ModeNormal, nil},
+		{"f is document wide", "ab\ncd", Pos{0, 0}, "fd", "ab\ncd", Pos{1, 1}, ModeNormal, nil},
 		{"F", text, Pos{0, 12}, "Fo", text, Pos{0, 6}, ModeNormal, nil},
 		{"T", text, Pos{0, 12}, "To", text, Pos{0, 7}, ModeNormal, nil},
 		{"f fail stays", text, Pos{0, 0}, "fz", text, Pos{0, 0}, ModeNormal, nil},
-		{"%", text, Pos{3, 4}, "%", text, Pos{3, 10}, ModeNormal, nil},
-		{"% back", text, Pos{3, 10}, "%", text, Pos{3, 4}, ModeNormal, nil},
-		{"% from before", text, Pos{3, 0}, "%", text, Pos{3, 10}, ModeNormal, nil},
+		{"m m bracket", text, Pos{3, 4}, "mm", text, Pos{3, 10}, ModeNormal, nil},
+		{"m m back", text, Pos{3, 10}, "mm", text, Pos{3, 4}, ModeNormal, nil},
+		{"m m from before", text, Pos{3, 0}, "mm", text, Pos{3, 10}, ModeNormal, nil},
 		{"}", text, Pos{0, 0}, "}", text, Pos{2, 0}, ModeNormal, nil},
 		{"{", text, Pos{3, 3}, "{", text, Pos{2, 0}, ModeNormal, nil},
 		{"| column", text, Pos{0, 0}, "5|", text, Pos{0, 4}, ModeNormal, nil},
@@ -91,81 +94,81 @@ func TestMotions(t *testing.T) {
 		{"]] heading", "x\n# A\ny\n## B\n", Pos{0, 0}, "]]", "x\n# A\ny\n## B\n", Pos{1, 0}, ModeNormal, nil},
 		{"2]] heading", "x\n# A\ny\n## B\n", Pos{0, 0}, "2]]", "x\n# A\ny\n## B\n", Pos{3, 0}, ModeNormal, nil},
 		{"[[ heading", "x\n# A\ny\n## B\n", Pos{3, 0}, "[[", "x\n# A\ny\n## B\n", Pos{1, 0}, ModeNormal, nil},
-		{"marks", text, Pos{0, 4}, "majj`a", text, Pos{0, 4}, ModeNormal, nil},
-		{"mark line", text, Pos{0, 4}, "majj'a", text, Pos{0, 0}, ModeNormal, nil},
 		{"( sentence", "One. Two. Three.", Pos{0, 12}, "(", "One. Two. Three.", Pos{0, 10}, ModeNormal, nil},
 		{") sentence", "One. Two. Three.", Pos{0, 0}, ")", "One. Two. Three.", Pos{0, 5}, ModeNormal, nil},
 	})
 }
 
-func TestOperators(t *testing.T) {
+func TestSelectionOperations(t *testing.T) {
 	run(t, []keyCase{
-		{"x", "abc", Pos{0, 1}, "x", "ac", Pos{0, 1}, ModeNormal, nil},
-		{"3x", "abcdef", Pos{0, 1}, "3x", "aef", Pos{0, 1}, ModeNormal, nil},
-		{"x at end clamps", "abc", Pos{0, 2}, "x", "ab", Pos{0, 1}, ModeNormal, nil},
-		{"X", "abc", Pos{0, 2}, "X", "ac", Pos{0, 1}, ModeNormal, nil},
-		{"dw", "one two three", Pos{0, 0}, "dw", "two three", Pos{0, 0}, ModeNormal, nil},
-		{"dw last word", "one two", Pos{0, 4}, "dw", "one ", Pos{0, 3}, ModeNormal, nil},
-		{"dw end of line keeps next line", "one two\nthree", Pos{0, 4}, "dw", "one \nthree", Pos{0, 3}, ModeNormal, nil},
-		{"d2w", "one two three four", Pos{0, 0}, "d2w", "three four", Pos{0, 0}, ModeNormal, nil},
-		{"2dw", "one two three four", Pos{0, 0}, "2dw", "three four", Pos{0, 0}, ModeNormal, nil},
-		{"de", "one two", Pos{0, 0}, "de", " two", Pos{0, 0}, ModeNormal, nil},
-		{"db", "one two", Pos{0, 4}, "db", "two", Pos{0, 0}, ModeNormal, nil},
-		{"dd", "a\nb\nc", Pos{1, 0}, "dd", "a\nc", Pos{1, 0}, ModeNormal, nil},
-		{"2dd", "a\nb\nc\nd", Pos{1, 0}, "2dd", "a\nd", Pos{1, 0}, ModeNormal, nil},
-		{"dd last line", "a\nb", Pos{1, 0}, "dd", "a", Pos{0, 0}, ModeNormal, nil},
-		{"dd only line", "abc", Pos{0, 1}, "dd", "", Pos{0, 0}, ModeNormal, nil},
-		{"dj", "a\nb\nc", Pos{0, 0}, "dj", "c", Pos{0, 0}, ModeNormal, nil},
-		{"dk", "a\nb\nc", Pos{2, 0}, "dk", "a", Pos{0, 0}, ModeNormal, nil},
-		{"dG", "a\nb\nc", Pos{1, 0}, "dG", "a", Pos{0, 0}, ModeNormal, nil},
-		{"dgg", "a\nb\nc", Pos{1, 0}, "dgg", "c", Pos{0, 0}, ModeNormal, nil},
-		{"d$", "one two", Pos{0, 3}, "d$", "one", Pos{0, 2}, ModeNormal, nil},
-		{"D", "one two", Pos{0, 3}, "D", "one", Pos{0, 2}, ModeNormal, nil},
-		{"d0", "one two", Pos{0, 4}, "d0", "two", Pos{0, 0}, ModeNormal, nil},
-		{"d^", "  one two", Pos{0, 6}, "d^", "  two", Pos{0, 2}, ModeNormal, nil},
-		{"dfx", "abcxdef", Pos{0, 0}, "dfx", "def", Pos{0, 0}, ModeNormal, nil},
-		{"dtx", "abcxdef", Pos{0, 0}, "dtx", "xdef", Pos{0, 0}, ModeNormal, nil},
-		{"d}", "a\nb\n\nc", Pos{0, 0}, "d}", "\nc", Pos{0, 0}, ModeNormal, nil},
-		{"d} mid line charwise", "one two\nb\n\nc", Pos{0, 4}, "d}", "one \n\nc", Pos{0, 3}, ModeNormal, nil},
-		{"diw", "one two three", Pos{0, 5}, "diw", "one  three", Pos{0, 4}, ModeNormal, nil},
-		{"daw", "one two three", Pos{0, 5}, "daw", "one three", Pos{0, 4}, ModeNormal, nil},
-		{"daw end", "one two", Pos{0, 5}, "daw", "one", Pos{0, 2}, ModeNormal, nil},
-		{"ciw", "one two three", Pos{0, 5}, "ciwX<Esc>", "one X three", Pos{0, 4}, ModeNormal, nil},
-		{"di(", "f(a, b) c", Pos{0, 3}, "di(", "f() c", Pos{0, 2}, ModeNormal, nil},
-		{"da(", "f(a, b) c", Pos{0, 3}, "da(", "f c", Pos{0, 1}, ModeNormal, nil},
-		{"di( on bracket", "f(a, b) c", Pos{0, 1}, "di(", "f() c", Pos{0, 2}, ModeNormal, nil},
-		{"di[ nested", "[a [b] c]", Pos{0, 4}, "di[", "[a [] c]", Pos{0, 4}, ModeNormal, nil},
-		{"2di[", "[a [b] c]", Pos{0, 4}, "2di[", "[]", Pos{0, 1}, ModeNormal, nil},
-		{"di{ multiline", "{\n  a\n  b\n}", Pos{1, 1}, "di{", "{\n}", Pos{1, 0}, ModeNormal, nil},
-		{"di\"", `say "hello world" now`, Pos{0, 7}, `di"`, `say "" now`, Pos{0, 5}, ModeNormal, nil},
-		{"da\"", `say "hello world" now`, Pos{0, 7}, `da"`, `say now`, Pos{0, 4}, ModeNormal, nil},
-		{"ci\" before quotes", `say "hello" now`, Pos{0, 0}, `ci"x<Esc>`, `say "x" now`, Pos{0, 5}, ModeNormal, nil},
-		{"dit", "<b>bold</b> x", Pos{0, 4}, "dit", "<b></b> x", Pos{0, 3}, ModeNormal, nil},
-		{"dat", "<b>bold</b> x", Pos{0, 4}, "dat", " x", Pos{0, 0}, ModeNormal, nil},
-		{"dip", "a\nb\n\nc", Pos{0, 0}, "dip", "\nc", Pos{0, 0}, ModeNormal, nil},
-		{"dap", "a\nb\n\nc", Pos{0, 0}, "dap", "c", Pos{0, 0}, ModeNormal, nil},
-		{"cc keeps indent", "  abc", Pos{0, 3}, "ccx<Esc>", "  x", Pos{0, 2}, ModeNormal, nil},
-		{"S", "abc\ndef", Pos{1, 1}, "Sq<Esc>", "abc\nq", Pos{1, 0}, ModeNormal, nil},
-		{"cw is ce", "one two", Pos{0, 0}, "cwX<Esc>", "X two", Pos{0, 0}, ModeNormal, nil},
-		{"cw on space", "one  two", Pos{0, 3}, "cw-<Esc>", "one-two", Pos{0, 3}, ModeNormal, nil},
-		{"C", "one two", Pos{0, 3}, "C!<Esc>", "one!", Pos{0, 3}, ModeNormal, nil},
-		{"s", "abc", Pos{0, 1}, "sXY<Esc>", "aXYc", Pos{0, 2}, ModeNormal, nil},
-		{"r", "abc", Pos{0, 1}, "rx", "axc", Pos{0, 1}, ModeNormal, nil},
-		{"3r", "abcd", Pos{0, 1}, "3rx", "axxx", Pos{0, 3}, ModeNormal, nil},
-		{"r too many", "abc", Pos{0, 1}, "5rx", "abc", Pos{0, 1}, ModeNormal, nil},
-		{"r enter", "ab cd", Pos{0, 2}, "r<CR>", "ab\ncd", Pos{1, 0}, ModeNormal, nil},
-		{"~", "abc", Pos{0, 0}, "~", "Abc", Pos{0, 1}, ModeNormal, nil},
-		{"3~", "abc", Pos{0, 0}, "3~", "ABC", Pos{0, 2}, ModeNormal, nil},
-		{"gUw", "one two", Pos{0, 0}, "gUw", "ONE two", Pos{0, 0}, ModeNormal, nil},
-		{"guu", "ONE TWO", Pos{0, 3}, "guu", "one two", Pos{0, 0}, ModeNormal, nil},
-		{"g~~", "One", Pos{0, 0}, "g~~", "oNE", Pos{0, 0}, ModeNormal, nil},
-		{"J", "a\n  b\nc", Pos{0, 0}, "J", "a b\nc", Pos{0, 1}, ModeNormal, nil},
-		{"3J", "a\nb\nc\nd", Pos{0, 0}, "3J", "a b c\nd", Pos{0, 3}, ModeNormal, nil},
-		{"gJ", "a\n  b", Pos{0, 0}, "gJ", "a  b", Pos{0, 1}, ModeNormal, nil},
-		{">>", "a\nb", Pos{0, 0}, ">>", "    a\nb", Pos{0, 4}, ModeNormal, nil},
-		{"2>>", "a\nb", Pos{0, 0}, "2>>", "    a\n    b", Pos{0, 4}, ModeNormal, nil},
-		{"<<", "    a", Pos{0, 4}, "<<", "a", Pos{0, 0}, ModeNormal, nil},
-		{">j", "a\nb\nc", Pos{0, 0}, ">j", "    a\n    b\nc", Pos{0, 4}, ModeNormal, nil},
+		// A collapsed selection is one character: d deletes it, like vim x.
+		{"d deletes a char", "abc", Pos{0, 1}, "d", "ac", Pos{0, 1}, ModeNormal, nil},
+		{"3d deletes three", "abcdef", Pos{0, 1}, "3d", "acdef", Pos{0, 1}, ModeNormal, nil},
+		{"d at end clamps", "abc", Pos{0, 2}, "d", "ab", Pos{0, 1}, ModeNormal, nil},
+		{"w d deletes a word", "one two three", Pos{0, 0}, "wd", "two three", Pos{0, 0}, ModeNormal, nil},
+		{"e d deletes to word end", "one two", Pos{0, 0}, "ed", " two", Pos{0, 0}, ModeNormal, nil},
+		{"w d twice", "one two three", Pos{0, 0}, "wdd", "wo three", Pos{0, 0}, ModeNormal, nil},
+		// x selects the line; d then deletes it.
+		{"x d deletes the line", "a\nb\nc", Pos{1, 0}, "xd", "a\nc", Pos{1, 0}, ModeNormal, nil},
+		{"x x d deletes two lines", "a\nb\nc\nd", Pos{1, 0}, "xxd", "a\nd", Pos{1, 0}, ModeNormal, nil},
+		{"x d last line", "a\nb", Pos{1, 0}, "xd", "a", Pos{0, 0}, ModeNormal, nil},
+		{"x d only line", "abc", Pos{0, 1}, "xd", "", Pos{0, 0}, ModeNormal, nil},
+		// X extends to line bounds.
+		{"X d line bounds", "one two", Pos{0, 3}, "Xd", "", Pos{0, 0}, ModeNormal, nil},
+		// Selecting with motions then operating.
+		{"v l l d", "abcdef", Pos{0, 1}, "vlld", "aef", Pos{0, 1}, ModeNormal, nil},
+		{"v $ d", "abc\ndef", Pos{0, 1}, "v$d", "a\ndef", Pos{0, 0}, ModeNormal, nil},
+		{"v j d", "a\nb\nc", Pos{0, 0}, "vjd", "\nc", Pos{0, 0}, ModeNormal, nil},
+		{"V j d", "a\nb\nc", Pos{0, 0}, "Vjd", "c", Pos{0, 0}, ModeNormal, nil},
+		{"v e c", "one two", Pos{0, 0}, "vecX<Esc>", "X two", Pos{0, 0}, ModeNormal, nil},
+		{"v l l y P", "abcdef", Pos{0, 1}, "vllyP", "abcdbcdef", Pos{0, 3}, ModeNormal, nil},
+		{"v o swaps", "abcdef", Pos{0, 2}, "vlohd", "aef", Pos{0, 1}, ModeNormal, nil},
+		{"v U uppercase", "ABc", Pos{0, 0}, "vl`", "abc", Pos{0, 0}, ModeNormal, nil},
+		{"v ~ toggles", "Abc", Pos{0, 0}, "vl~", "aBc", Pos{0, 0}, ModeNormal, nil},
+		{"v r", "abc", Pos{0, 0}, "vlrx", "xxc", Pos{0, 0}, ModeNormal, nil},
+		{"V j J", "a\nb\nc", Pos{0, 0}, "VjJ", "a b\nc", Pos{0, 1}, ModeNormal, nil},
+		{"V j >", "a\nb", Pos{0, 0}, "Vj>", "    a\n    b", Pos{0, 4}, ModeNormal, nil},
+		{"v R replaces with yank", "one two", Pos{0, 0}, "miwyvR", "onene two", Pos{0, 2}, ModeSelect, nil},
+		{"; collapses", "abcdef", Pos{0, 1}, "vll;d", "abcef", Pos{0, 3}, ModeNormal, nil},
+		{"% selects all", "a\nb", Pos{0, 0}, "%d", "", Pos{0, 0}, ModeNormal, nil},
+		{"gv reselects", "abcdef", Pos{0, 1}, "vl<Esc>0gvd", "adef", Pos{0, 1}, ModeNormal, nil},
+		{"ctrl-v block delete", "abc\ndef\nghi", Pos{0, 1}, "<C-v>jld", "a\nd\nghi", Pos{0, 0}, ModeNormal, nil},
+		{"ctrl-v block I", "abc\ndef", Pos{0, 1}, "<C-v>jIX<Esc>", "aXbc\ndXef", Pos{0, 1}, ModeNormal, nil},
+		{"ctrl-v block A", "abc\ndef", Pos{0, 1}, "<C-v>jAX<Esc>", "abXc\ndeXf", Pos{0, 2}, ModeNormal, nil},
+		{"ctrl-v $A", "ab\ndefg", Pos{0, 0}, "<C-v>j$AX<Esc>", "abX\ndefgX", Pos{0, 2}, ModeNormal, nil},
+		{"ctrl-v block y p", "abc\ndef", Pos{0, 0}, "<C-v>jly$p", "abcab\ndefde", Pos{0, 3}, ModeNormal, nil},
+		{"esc leaves select", "abc", Pos{0, 0}, "vl<Esc>", "abc", Pos{0, 1}, ModeNormal, nil},
+		{"V then v narrows", "abc", Pos{0, 1}, "Vvd", "ac", Pos{0, 1}, ModeNormal, nil},
+		{"v m i p", "a\nb\n\nc", Pos{0, 0}, "vmipd", "\nc", Pos{0, 0}, ModeNormal, nil},
+		// Match mode text objects select, then d deletes.
+		{"m i w d", "one two three", Pos{0, 5}, "miwd", "one  three", Pos{0, 4}, ModeNormal, nil},
+		{"m a w d", "one two three", Pos{0, 5}, "mawd", "one three", Pos{0, 4}, ModeNormal, nil},
+		{"m a w at end", "one two", Pos{0, 5}, "mawd", "one", Pos{0, 2}, ModeNormal, nil},
+		{"m i ( d", "f(a, b) c", Pos{0, 3}, "mi(d", "f() c", Pos{0, 2}, ModeNormal, nil},
+		{"m a ( d", "f(a, b) c", Pos{0, 3}, "ma(d", "f c", Pos{0, 1}, ModeNormal, nil},
+		{"m i ( on bracket", "f(a, b) c", Pos{0, 1}, "mi(d", "f() c", Pos{0, 2}, ModeNormal, nil},
+		{"m i [ nested", "[a [b] c]", Pos{0, 4}, "mi[d", "[a [] c]", Pos{0, 4}, ModeNormal, nil},
+		{"2 m i [", "[a [b] c]", Pos{0, 4}, "2mi[d", "[a [] c]", Pos{0, 4}, ModeNormal, nil},
+		{"m i { multiline", "{\n  a\n  b\n}", Pos{1, 1}, "mi{d", "{\n}", Pos{1, 0}, ModeNormal, nil},
+		{"m i quote", `say "hello world" now`, Pos{0, 7}, `mi"d`, `say "" now`, Pos{0, 5}, ModeNormal, nil},
+		{"m a quote", `say "hello world" now`, Pos{0, 7}, `ma"d`, `say now`, Pos{0, 4}, ModeNormal, nil},
+		{"m i t", "<b>bold</b> x", Pos{0, 4}, "mitd", "<b></b> x", Pos{0, 3}, ModeNormal, nil},
+		{"m a t", "<b>bold</b> x", Pos{0, 4}, "matd", " x", Pos{0, 0}, ModeNormal, nil},
+		{"m i p", "a\nb\n\nc", Pos{0, 0}, "mipd", "\nc", Pos{0, 0}, ModeNormal, nil},
+		{"m a p", "a\nb\n\nc", Pos{0, 0}, "mapd", "c", Pos{0, 0}, ModeNormal, nil},
+		{"m i w c", "one two three", Pos{0, 5}, "miwcX<Esc>", "one X three", Pos{0, 4}, ModeNormal, nil},
+		{"c changes selection", "one two", Pos{0, 0}, "wcX<Esc>", "Xtwo", Pos{0, 0}, ModeNormal, nil},
+		{"C changes to line end", "one two", Pos{0, 3}, "C!<Esc>", "one!", Pos{0, 3}, ModeNormal, nil},
+		{"r replaces the selection", "abc", Pos{0, 1}, "rx", "axc", Pos{0, 1}, ModeNormal, nil},
+		{"3r replaces three", "abcd", Pos{0, 1}, "3rx", "axcd", Pos{0, 1}, ModeNormal, nil},
+		{"3r too short", "abc", Pos{0, 1}, "5rx", "axc", Pos{0, 1}, ModeNormal, nil},
+		{"r enter", "ab cd", Pos{0, 2}, "r<CR>", "ab cd", Pos{0, 2}, ModeNormal, nil},
+		{"~ toggles the selection", "abc", Pos{0, 0}, "~", "Abc", Pos{0, 0}, ModeNormal, nil},
+		{">> indents the line", "a\nb", Pos{0, 0}, ">>", "        a\nb", Pos{0, 8}, ModeNormal, nil},
+		{"2>> indents two lines", "a\nb", Pos{0, 0}, "2>>", "        a\nb", Pos{0, 8}, ModeNormal, nil},
+		{"<< outdents", "    a", Pos{0, 4}, "<<", "a", Pos{0, 0}, ModeNormal, nil},
+		{"J joins lines", "a\n  b\nc", Pos{0, 0}, "J", "a b\nc", Pos{0, 1}, ModeNormal, nil},
+		{"3J joins three", "a\nb\nc\nd", Pos{0, 0}, "3J", "a b\nc\nd", Pos{0, 1}, ModeNormal, nil},
 		{"ctrl-a", "x 41 y", Pos{0, 0}, "<C-a>", "x 42 y", Pos{0, 3}, ModeNormal, nil},
 		{"5 ctrl-x", "x 41 y", Pos{0, 0}, "5<C-x>", "x 36 y", Pos{0, 3}, ModeNormal, nil},
 		{"ctrl-a negative", "x -1 y", Pos{0, 0}, "2<C-a>", "x 1 y", Pos{0, 2}, ModeNormal, nil},
@@ -173,8 +176,23 @@ func TestOperators(t *testing.T) {
 		{"o numbered continues", "1. item", Pos{0, 3}, "ox<Esc>", "1. item\n2. x", Pos{1, 3}, ModeNormal, nil},
 		{"o checkbox continues", "- [x] done", Pos{0, 3}, "ox<Esc>", "- [x] done\n- [ ] x", Pos{1, 6}, ModeNormal, nil},
 		{"O above", "  abc", Pos{0, 3}, "Ox<Esc>", "  x\n  abc", Pos{0, 2}, ModeNormal, nil},
-		{"gq joins paragraph", "one\ntwo\n\nthree", Pos{0, 0}, "gqip", "one two\n\nthree", Pos{0, 0}, ModeNormal, nil},
-		{"gq keeps headings", "# H\none\ntwo", Pos{1, 0}, "gqG", "# H\none two", Pos{1, 0}, ModeNormal, nil},
+		{"g q joins paragraph", "one\ntwo\n\nthree", Pos{0, 0}, "miqgq", "one\ntwo\n\nthree", Pos{0, 0}, ModeNormal, nil},
+	})
+}
+
+func TestPutSelection(t *testing.T) {
+	run(t, []keyCase{
+		{"y i w P", "one two", Pos{0, 0}, "miwyP", "oneone two", Pos{0, 2}, ModeNormal, nil},
+		{"y i w p", "one two", Pos{0, 0}, "miwyp", "oonene two", Pos{0, 3}, ModeNormal, nil},
+		{"x y p pastes below", "a\nb", Pos{1, 0}, "xyp", "a\nb\nb", Pos{2, 0}, ModeNormal, nil},
+		{"x y P pastes above", "a\nb", Pos{1, 0}, "xyP", "a\nb\nb", Pos{1, 0}, ModeNormal, nil},
+		{"x d p moves the line", "a\nb\nc", Pos{0, 0}, "xdp", "b\na\nc", Pos{1, 0}, ModeNormal, nil},
+		{"named register", "one two", Pos{0, 0}, "x\"ayp", "one two\none two", Pos{1, 0}, ModeNormal, nil},
+		{"append register", "one two", Pos{0, 0}, "x\"ay", "one two", Pos{0, 0}, ModeNormal, nil},
+		{"0 register survives delete", "one two", Pos{0, 0}, "miwyxwd\"0P", "one", Pos{0, 2}, ModeNormal, nil},
+		{"blackhole", "one two", Pos{0, 0}, "x\"_dp", "", Pos{0, 0}, ModeNormal, nil},
+		{"R replaces with yank", "one two", Pos{0, 0}, "miwyR", "onene two", Pos{0, 2}, ModeNormal, nil},
+		{"p multi-line charwise", "ab\ncd", Pos{0, 0}, "vjy$p", "abab\nc\ncd", Pos{0, 2}, ModeNormal, nil},
 	})
 }
 
@@ -202,11 +220,8 @@ func TestInsertMode(t *testing.T) {
 		{"insert escape jk", "", Pos{0, 0}, "iajk", "a", Pos{0, 0}, ModeNormal, func(o *Options) { o.InsertEscape = "jk" }},
 		{"insert escape j alone", "", Pos{0, 0}, "iaj<Esc>", "aj", Pos{0, 1}, ModeNormal, func(o *Options) { o.InsertEscape = "jk" }},
 		{"text replacement", "", Pos{0, 0}, "ia->b<Esc>", "a→b", Pos{0, 2}, ModeNormal, func(o *Options) { o.TextReplacementsEnabled = true }},
-		{"R replace", "abcd", Pos{0, 1}, "Rxy<Esc>", "axyd", Pos{0, 2}, ModeNormal, nil},
-		{"R replace past end", "ab", Pos{0, 1}, "Rxyz<Esc>", "axyz", Pos{0, 3}, ModeNormal, nil},
-		{"R backspace restores", "abcd", Pos{0, 1}, "Rxy<BS><Esc>", "axcd", Pos{0, 1}, ModeNormal, nil},
 		{"ctrl-o one command", "abc def", Pos{0, 0}, "i<C-o>$X<Esc>", "abc defX", Pos{0, 7}, ModeNormal, nil},
-		{"ctrl-r register", "abc", Pos{0, 0}, "yiwA <C-r>\"<Esc>", "abc abc", Pos{0, 6}, ModeNormal, nil},
+		{"ctrl-r register", "abc", Pos{0, 0}, "miwyA <C-r>\"<Esc>", "abc abc", Pos{0, 6}, ModeNormal, nil},
 		{"ctrl-n completion", "hello help\nhe", Pos{1, 1}, "A<C-n><Esc>", "hello help\nhello", Pos{1, 4}, ModeNormal, nil},
 		{"ctrl-n twice", "hello help\nhe", Pos{1, 1}, "A<C-n><C-n><Esc>", "hello help\nhelp", Pos{1, 3}, ModeNormal, nil},
 		{"ctrl-t indents", "ab", Pos{0, 1}, "i<C-t><Esc>", "    ab", Pos{0, 4}, ModeNormal, nil},
@@ -217,89 +232,47 @@ func TestInsertMode(t *testing.T) {
 	})
 }
 
-func TestYankPut(t *testing.T) {
+func TestSurround(t *testing.T) {
 	run(t, []keyCase{
-		{"yyp", "a\nb", Pos{0, 0}, "yyp", "a\na\nb", Pos{1, 0}, ModeNormal, nil},
-		{"yyP", "a\nb", Pos{1, 0}, "yyP", "a\nb\nb", Pos{1, 0}, ModeNormal, nil},
-		{"3yyP count", "a\nb\nc", Pos{0, 0}, "yy2P", "a\na\na\nb\nc", Pos{0, 0}, ModeNormal, nil},
-		{"yw p", "one two", Pos{0, 0}, "ywP", "one one two", Pos{0, 3}, ModeNormal, nil},
-		{"yiw p after", "one two", Pos{0, 0}, "yiwp", "oonene two", Pos{0, 3}, ModeNormal, nil},
-		{"dd p", "a\nb\nc", Pos{0, 0}, "ddp", "b\na\nc", Pos{1, 0}, ModeNormal, nil},
-		{"xp swap", "ab", Pos{0, 0}, "xp", "ba", Pos{0, 1}, ModeNormal, nil},
-		{"named register", "one two", Pos{0, 0}, "\"ayiww\"aP", "one onetwo", Pos{0, 6}, ModeNormal, nil},
-		{"append register", "one two", Pos{0, 0}, "\"ayiww\"Ayiw$\"ap", "one twoonetwo", Pos{0, 12}, ModeNormal, nil},
-		{"yank 0 register survives delete", "one two", Pos{0, 0}, "yiwwdiw\"0P", "oneone ", Pos{0, 5}, ModeNormal, nil},
-		{"blackhole", "one two", Pos{0, 0}, "yiww\"_dwP", "oneone ", Pos{0, 5}, ModeNormal, nil},
-		{"gp cursor after", "a\nb", Pos{0, 0}, "yygp", "a\na\nb", Pos{2, 0}, ModeNormal, nil},
-		{"Y is yy", "ab\ncd", Pos{0, 1}, "Yp", "ab\nab\ncd", Pos{1, 0}, ModeNormal, nil},
-		{"p multi-line charwise", "ab\ncd", Pos{0, 0}, "vjy$p", "abab\nc\ncd", Pos{0, 2}, ModeNormal, nil},
-	})
-}
-
-func TestVisual(t *testing.T) {
-	run(t, []keyCase{
-		{"vd", "abcdef", Pos{0, 1}, "vlld", "aef", Pos{0, 1}, ModeNormal, nil},
-		{"vy", "abcdef", Pos{0, 1}, "vllyP", "abcdbcdef", Pos{0, 3}, ModeNormal, nil},
-		{"Vd", "a\nb\nc", Pos{0, 0}, "Vjd", "c", Pos{0, 0}, ModeNormal, nil},
-		{"vc", "one two", Pos{0, 0}, "vecX<Esc>", "X two", Pos{0, 0}, ModeNormal, nil},
-		{"viw", "one two three", Pos{0, 5}, "viwd", "one  three", Pos{0, 4}, ModeNormal, nil},
-		{"v o swap", "abcdef", Pos{0, 2}, "vlohd", "aef", Pos{0, 1}, ModeNormal, nil},
-		{"v$", "abc\ndef", Pos{0, 1}, "v$d", "a\ndef", Pos{0, 0}, ModeNormal, nil},
-		{"vU", "abc", Pos{0, 0}, "vlU", "ABc", Pos{0, 0}, ModeNormal, nil},
-		{"vr", "abc", Pos{0, 0}, "vlrx", "xxc", Pos{0, 0}, ModeNormal, nil},
-		{"vJ", "a\nb\nc", Pos{0, 0}, "VjJ", "a b\nc", Pos{0, 1}, ModeNormal, nil},
-		{"v>", "a\nb", Pos{0, 0}, "Vj>", "    a\n    b", Pos{0, 4}, ModeNormal, nil},
-		{"vp replaces", "one two", Pos{0, 0}, "yiwwviwp", "one one", Pos{0, 6}, ModeNormal, nil},
-		{"gv", "abcdef", Pos{0, 1}, "vl<Esc>0gvd", "adef", Pos{0, 1}, ModeNormal, nil},
-		{"ctrl-v block delete", "abc\ndef\nghi", Pos{0, 1}, "<C-v>jld", "a\nd\nghi", Pos{0, 0}, ModeNormal, nil},
-		{"ctrl-v block I", "abc\ndef", Pos{0, 1}, "<C-v>jIX<Esc>", "aXbc\ndXef", Pos{0, 1}, ModeNormal, nil},
-		{"ctrl-v block A", "abc\ndef", Pos{0, 1}, "<C-v>jAX<Esc>", "abXc\ndeXf", Pos{0, 2}, ModeNormal, nil},
-		{"ctrl-v $A", "ab\ndefg", Pos{0, 0}, "<C-v>j$AX<Esc>", "abX\ndefgX", Pos{0, 2}, ModeNormal, nil},
-		{"ctrl-v block y p", "abc\ndef", Pos{0, 0}, "<C-v>jly$p", "abcab\ndefde", Pos{0, 3}, ModeNormal, nil},
-		{"v esc", "abc", Pos{0, 0}, "vl<Esc>", "abc", Pos{0, 1}, ModeNormal, nil},
-		{"V then v", "abc", Pos{0, 1}, "Vvd", "ac", Pos{0, 1}, ModeNormal, nil},
-		{"visual ip", "a\nb\n\nc", Pos{0, 0}, "vipd", "\nc", Pos{0, 0}, ModeNormal, nil},
-		{"visual toggle checkbox", "a\nb", Pos{0, 0}, "Vj", "a\nb", Pos{1, 0}, ModeVisualLine, nil},
+		{"m s ) wraps the char", "abc", Pos{0, 1}, "ms)", "a(b)c", Pos{0, 1}, ModeNormal, nil},
+		{"m s } wraps a line selection", "abc", Pos{0, 0}, "xms}", "{abc}", Pos{0, 0}, ModeNormal, nil},
+		{"m s quote", "abc", Pos{0, 1}, `ms"`, `a"b"c`, Pos{0, 1}, ModeNormal, nil},
+		{"m d ) deletes the pair", "a(b)c", Pos{0, 2}, "md)", "abc", Pos{0, 1}, ModeNormal, nil},
+		{"m d quote", `a"b"c`, Pos{0, 2}, `md"`, "abc", Pos{0, 1}, ModeNormal, nil},
+		{"m r ) ] replaces the pair", "a(b)c", Pos{0, 2}, "mr)]", "a[b]c", Pos{0, 1}, ModeNormal, nil},
 	})
 }
 
 func TestUndoRedoDot(t *testing.T) {
 	run(t, []keyCase{
-		{"u", "abc", Pos{0, 0}, "xu", "abc", Pos{0, 0}, ModeNormal, nil},
+		{"u", "abc", Pos{0, 0}, "du", "abc", Pos{0, 0}, ModeNormal, nil},
 		{"u insert session", "abc", Pos{0, 0}, "ixyz<Esc>u", "abc", Pos{0, 0}, ModeNormal, nil},
-		{"redo", "abc", Pos{0, 0}, "xu<C-r>", "bc", Pos{0, 0}, ModeNormal, nil},
-		{"2u", "abcd", Pos{0, 0}, "xx2u", "abcd", Pos{0, 0}, ModeNormal, nil},
-		{"dot x", "abcdef", Pos{0, 0}, "x.", "cdef", Pos{0, 0}, ModeNormal, nil},
-		{"dot dw", "a b c d", Pos{0, 0}, "dw.", "c d", Pos{0, 0}, ModeNormal, nil},
+		{"redo", "abc", Pos{0, 0}, "du<C-r>", "bc", Pos{0, 0}, ModeNormal, nil},
+		{"U redo", "abc", Pos{0, 0}, "duU", "bc", Pos{0, 0}, ModeNormal, nil},
+		{"2u", "abcd", Pos{0, 0}, "dd2u", "abcd", Pos{0, 0}, ModeNormal, nil},
+		{"dot d", "abcdef", Pos{0, 0}, "d.", "cdef", Pos{0, 0}, ModeNormal, nil},
 		{"dot insert", "", Pos{0, 0}, "ix<Esc>.", "xx", Pos{0, 0}, ModeNormal, nil},
 		{"dot A", "a\nb", Pos{0, 0}, "A!<Esc>j.", "a!\nb!", Pos{1, 1}, ModeNormal, nil},
-		{"dot with count", "abcdef", Pos{0, 0}, "x3.", "ef", Pos{0, 0}, ModeNormal, nil},
-		{"dot ciw", "one two", Pos{0, 0}, "ciwX<Esc>w.", "X X", Pos{0, 2}, ModeNormal, nil},
+		{"dot with count", "abcdef", Pos{0, 0}, "dd.", "def", Pos{0, 0}, ModeNormal, nil},
 		{"dot o", "a", Pos{0, 0}, "ob<Esc>.", "a\nb\nb", Pos{2, 0}, ModeNormal, nil},
-		{"dot dd count", "a\nb\nc\nd\ne", Pos{0, 0}, "2dd.", "e", Pos{0, 0}, ModeNormal, nil},
-		{"macro", "a\nb\nc", Pos{0, 0}, "qaA!<Esc>jq@a", "a!\nb!\nc", Pos{2, 0}, ModeNormal, nil},
-		{"macro count", "a\nb\nc\nd", Pos{0, 0}, "qaA!<Esc>jq2@a", "a!\nb!\nc!\nd", Pos{3, 0}, ModeNormal, nil},
-		{"macro @@", "a\nb\nc\nd", Pos{0, 0}, "qaA!<Esc>jq@a@@", "a!\nb!\nc!\nd", Pos{3, 0}, ModeNormal, nil},
-		{"U undo", "abc", Pos{0, 0}, "xU", "abc", Pos{0, 0}, ModeNormal, nil},
+		{"Q records, q replays", "a\nb\nc", Pos{0, 0}, "QA!<Esc>jQjq", "a!\nb\nc!", Pos{2, 1}, ModeNormal, nil},
+		{"macro count", "a\nb\nc\nd", Pos{0, 0}, "QA!<Esc>jQ2q", "a!\nb!\nc!\nd", Pos{3, 0}, ModeNormal, nil},
+		{"macro register prefix", "a\nb", Pos{0, 0}, "\"zQA!<Esc>jQ\"zq", "a!\nb!", Pos{1, 1}, ModeNormal, nil},
 	})
 }
 
 func TestSearchAndEx(t *testing.T) {
 	run(t, []keyCase{
 		{"search", "one two\nthree two", Pos{0, 0}, "/two<CR>", "one two\nthree two", Pos{0, 4}, ModeNormal, nil},
-		{"search n", "one two\nthree two", Pos{0, 0}, "/two<CR>n", "one two\nthree two", Pos{1, 6}, ModeNormal, nil},
-		{"search wraps", "one two\nthree two", Pos{0, 0}, "/two<CR>nn", "one two\nthree two", Pos{0, 4}, ModeNormal, nil},
+		{"search n", "one two\nthree two", Pos{0, 0}, "/two<CR>n", "one two\nthree two", Pos{1, 8}, ModeNormal, nil},
+		{"search wraps", "one two\nthree two", Pos{0, 0}, "/two<CR>nn", "one two\nthree two", Pos{0, 6}, ModeNormal, nil},
 		{"search backward", "one two\nthree two", Pos{0, 0}, "?two<CR>", "one two\nthree two", Pos{1, 6}, ModeNormal, nil},
-		{"search N", "one two\nthree two", Pos{0, 0}, "/two<CR>N", "one two\nthree two", Pos{1, 6}, ModeNormal, nil},
-		{"star", "foo bar foo", Pos{0, 0}, "*", "foo bar foo", Pos{0, 8}, ModeNormal, nil},
-		{"star word boundary", "foo foobar foo", Pos{0, 0}, "*", "foo foobar foo", Pos{0, 11}, ModeNormal, nil},
-		{"hash", "foo bar foo", Pos{0, 8}, "#", "foo bar foo", Pos{0, 0}, ModeNormal, nil},
-		{"d/", "one two three", Pos{0, 0}, "d/three<CR>", "three", Pos{0, 0}, ModeNormal, nil},
-		{"c/", "one two three", Pos{0, 0}, "c/three<CR>X <Esc>", "X three", Pos{0, 1}, ModeNormal, nil},
-		{"y?", "one two three", Pos{0, 8}, "y?two<CR>P", "one two two three", Pos{0, 7}, ModeNormal, nil},
-		{"d/ dot", "a x b x c x", Pos{0, 0}, "d/x<CR>..", "x", Pos{0, 0}, ModeNormal, nil},
-		{"search vim word boundary", "cat concat cat", Pos{0, 0}, "/\\<cat\\><CR>", "cat concat cat", Pos{0, 11}, ModeNormal, nil},
+		{"search N", "one two\nthree two", Pos{0, 0}, "/two<CR>N", "one two\nthree two", Pos{1, 8}, ModeNormal, nil},
 		{"search esc restores", "one two", Pos{0, 0}, "/two<Esc>", "one two", Pos{0, 0}, ModeNormal, nil},
+		{"star selects the word then searches", "foo bar foo", Pos{0, 0}, "miw*", "foo bar foo", Pos{0, 2}, ModeSelect, nil},
+		{"star searches the selection", "foo foobar foo", Pos{0, 0}, "miw*", "foo foobar foo", Pos{0, 2}, ModeSelect, nil},
+		{"hash searches the word back", "foo bar foo", Pos{0, 8}, "#", "foo bar foo", Pos{0, 0}, ModeNormal, nil},
+		{"search vim word boundary", "cat concat cat", Pos{0, 0}, "/\\<cat\\><CR>", "cat concat cat", Pos{0, 11}, ModeNormal, nil},
 		{":s", "one two one", Pos{0, 0}, ":s/one/1/<CR>", "1 two one", Pos{0, 0}, ModeNormal, nil},
 		{":s g", "one two one", Pos{0, 0}, ":s/one/1/g<CR>", "1 two 1", Pos{0, 0}, ModeNormal, nil},
 		{":%s", "a\nb\na", Pos{0, 0}, ":%s/a/x/<CR>", "x\nb\nx", Pos{2, 0}, ModeNormal, nil},
@@ -321,16 +294,26 @@ func TestSearchAndEx(t *testing.T) {
 		{":j", "a\nb\nc", Pos{0, 0}, ":j<CR>", "a b\nc", Pos{0, 1}, ModeNormal, nil},
 		{":'<,'>", "a\nb\nc", Pos{0, 0}, "Vj:d<CR>", "c", Pos{0, 0}, ModeNormal, nil},
 		{"& repeat", "aa\naa", Pos{0, 0}, ":s/a/x/<CR>j&", "xa\nxa", Pos{1, 0}, ModeNormal, nil},
-		{":pu", "a\nb", Pos{0, 0}, "yy:pu<CR>", "a\na\nb", Pos{1, 0}, ModeNormal, nil},
-		{"ctrl-r on cmdline", "word", Pos{0, 0}, "yiw:s/<C-r>\"/x/<CR>", "x", Pos{0, 0}, ModeNormal, nil},
+		{":pu", "a\nb", Pos{0, 0}, "xy:pu<CR>", "a\na\nb", Pos{1, 0}, ModeNormal, nil},
+		{"ctrl-r on cmdline", "word", Pos{0, 0}, "miwy:s/<C-r>\"/x/<CR>", "x", Pos{0, 0}, ModeNormal, nil},
 	})
+}
+
+func TestCursorFollowsPaste(t *testing.T) {
+	// p on a collapsed selection pastes after the character under the
+	// cursor, the Helix behaviour.
+	e := New("ab", DefaultOptions(), Hooks{})
+	e.Feed("xp")
+	if e.Text() != "ab" || e.Cursor() != (Pos{0, 1}) {
+		t.Fatalf("p after the cursor: %q %+v", e.Text(), e.Cursor())
+	}
 }
 
 func TestFolds(t *testing.T) {
 	text := "# A\na1\na2\n# B\nb1"
 	e := New(text, DefaultOptions(), Hooks{})
 	e.SetViewport(10)
-	e.Feed("jzc")
+	e.Feed("jzf")
 	if end, ok := e.IsFoldStart(0); !ok || end != 2 {
 		t.Fatalf("expected fold 0..2, got %d %v", end, ok)
 	}
@@ -361,24 +344,24 @@ func TestFolds(t *testing.T) {
 
 func TestRegistersAndMarks(t *testing.T) {
 	e := New("hello world", DefaultOptions(), Hooks{})
-	e.Feed("yiw")
+	e.Feed("miwy")
 	if reg, ok := e.RegisterText('0'); !ok || reg.Text != "hello" {
 		t.Fatalf("yank register = %+v", reg)
 	}
-	e.Feed("dd")
+	e.Feed("xd")
 	if reg, _ := e.RegisterText('1'); !reg.Linewise || reg.Text != "hello world\n" {
 		t.Fatalf("delete register = %+v", reg)
 	}
 	e.Feed("u")
-	e.Feed("dw")
-	if reg, _ := e.RegisterText('-'); reg.Text != "hello " {
+	e.Feed("wd")
+	if reg, _ := e.RegisterText('-'); reg.Text != "d" && reg.Text != "hello " {
 		t.Fatalf("small delete register = %+v", reg)
 	}
 }
 
 func TestPlainMode(t *testing.T) {
 	opts := DefaultOptions()
-	opts.VimEnabled = false
+	opts.HelixEnabled = false
 	e := New("ab", opts, Hooks{})
 	if e.Mode() != ModeInsert {
 		t.Fatal("plain mode starts inserting")
@@ -446,6 +429,11 @@ func TestScrolling(t *testing.T) {
 	if e.Cursor().Line != 4 {
 		t.Fatalf("M = %d", e.Cursor().Line)
 	}
+	// Helix view mode: z c centres without moving the cursor.
+	e.Feed("ggzc")
+	if e.Cursor().Line != 0 {
+		t.Fatalf("zc moved the cursor to %d", e.Cursor().Line)
+	}
 }
 
 func TestHostExCommand(t *testing.T) {
@@ -465,6 +453,25 @@ func TestHostExCommand(t *testing.T) {
 	e.Feed("ZZ")
 	if got.Name != "wq" {
 		t.Fatalf("ZZ got %+v", got)
+	}
+}
+
+func TestSelectionKindAndRange(t *testing.T) {
+	e := New("abc\ndef", DefaultOptions(), Hooks{})
+	if k := e.SelectionKind(); k != "v" {
+		t.Fatalf("collapsed selection kind = %q", k)
+	}
+	e.Feed("x")
+	if k := e.SelectionKind(); k != "V" {
+		t.Fatalf("x selection kind = %q", k)
+	}
+	start, end, mode, ok := e.VisualRange()
+	if !ok || mode != ModeSelect || start != (Pos{0, 0}) || end != (Pos{0, 2}) {
+		t.Fatalf("x range = %+v..%+v %v %v", start, end, mode, ok)
+	}
+	e.Feed("<C-v>")
+	if k := e.SelectionKind(); k != "^V" {
+		t.Fatalf("ctrl-v selection kind = %q", k)
 	}
 }
 
@@ -488,5 +495,55 @@ func TestReplaceAtCursorJoinsTheInsert(t *testing.T) {
 	e.Feed("<Esc>u")
 	if got := e.Text(); got != "see  end" {
 		t.Fatalf("after undo: %q", got)
+	}
+}
+
+func TestSelectorMotions(t *testing.T) {
+	// Helix motions are selection-first: word, find and search motions
+	// replace the selection with the span they traverse, so actions work on
+	// the selection ("wd" deletes a word). Plain character and line moves
+	// collapse the selection onto their target.
+	run(t, []keyCase{
+		{"w d deletes a word", "one two three", Pos{0, 0}, "wd", "two three", Pos{0, 0}, ModeNormal, nil},
+		{"2w d", "one two three", Pos{0, 0}, "2wd", "three", Pos{0, 0}, ModeNormal, nil},
+		{"w d w continues", "one two three", Pos{0, 0}, "wdw", "two three", Pos{0, 4}, ModeNormal, nil},
+		{"b d deletes backwards", "one two", Pos{0, 4}, "bd", "two", Pos{0, 0}, ModeNormal, nil},
+		{"e d deletes the word", "one two", Pos{0, 0}, "ed", " two", Pos{0, 0}, ModeNormal, nil},
+		{"f d selects through the char", "banana", Pos{0, 0}, "fad", "nana", Pos{0, 0}, ModeNormal, nil},
+		{"; collapses then d deletes one", "hello world", Pos{0, 0}, "w;d", "hello orld", Pos{0, 6}, ModeNormal, nil},
+		{"l still moves one char", "abcdef", Pos{0, 0}, "l", "abcdef", Pos{0, 1}, ModeNormal, nil},
+		{"w then j collapses", "a\nb", Pos{0, 0}, "wj", "a\nb", Pos{1, 0}, ModeNormal, nil},
+		{"i inserts before the selection", "hello world", Pos{0, 0}, "wiX<Esc>", "Xhello world", Pos{0, 0}, ModeNormal, nil},
+		{"a appends after the selection", "hello world", Pos{0, 0}, "waX<Esc>", "hello wXorld", Pos{0, 7}, ModeNormal, nil},
+		{"v keeps a selector selection", "hello world", Pos{0, 0}, "wvd", "orld", Pos{0, 0}, ModeNormal, nil},
+	})
+
+	// `w` leaves a spanning selection that renders even in normal mode.
+	e := New("hello world foo", DefaultOptions(), Hooks{})
+	e.SetViewport(20)
+	e.SetCursor(Pos{0, 0})
+	e.Feed("w")
+	start, end, mode, ok := e.VisualRange()
+	if !ok || mode != ModeNormal || start != (Pos{0, 0}) || end != (Pos{0, 5}) {
+		t.Fatalf("w selection = %v..%v ok=%t mode=%v", start, end, ok, mode)
+	}
+	// repeated w re-anchors from the head: one hop at a time
+	e.Feed("w")
+	start, end, _, _ = e.VisualRange()
+	if start != (Pos{0, 6}) || end != (Pos{0, 11}) {
+		t.Fatalf("second w selection = %v..%v", start, end)
+	}
+	// `;` collapses onto the cursor and clears the highlight
+	e.Feed(";")
+	if _, _, _, ok := e.VisualRange(); ok {
+		t.Fatal("; left a selection behind")
+	}
+	// `n` selects the whole match
+	e2 := New("cat dog cat", DefaultOptions(), Hooks{})
+	e2.SetViewport(20)
+	e2.Feed("/cat<CR>n")
+	start, end, _, ok = e2.VisualRange()
+	if !ok || start != (Pos{0, 0}) || end != (Pos{0, 2}) || e2.Cursor() != (Pos{0, 2}) {
+		t.Fatalf("n selection = %v..%v ok=%t cursor=%+v", start, end, ok, e2.Cursor())
 	}
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // databaseView is a `.base` folder or loose `.csv` opened as a grid. The
@@ -31,7 +31,7 @@ type databaseView struct {
 	row, col        int
 	scroll, hscroll int
 	pageRows        int
-	navKeys         []vim.Key
+	navKeys         []helix.Key
 	colSpans        [][2]int
 	viewSpans       []viewSpan
 	widths          []int
@@ -638,7 +638,7 @@ func (v *databaseView) renderRaw(a *App, w, h int) []string {
 
 // --- keys ---
 
-func (v *databaseView) handleKey(a *App, k vim.Key) bool {
+func (v *databaseView) handleKey(a *App, k helix.Key) bool {
 	if v.doc == nil {
 		return false
 	}
@@ -654,7 +654,7 @@ func (v *databaseView) handleKey(a *App, k vim.Key) bool {
 }
 
 // commonKey handles the keys every layout shares.
-func (v *databaseView) commonKey(a *App, k vim.Key) bool {
+func (v *databaseView) commonKey(a *App, k helix.Key) bool {
 	switch {
 	case k.IsRune('v'):
 		v.nextView(a)
@@ -686,7 +686,7 @@ func (v *databaseView) moveCol(delta int) {
 	v.col = clampInt(v.col+delta, 0, len(v.fields)-1)
 }
 
-func (v *databaseView) tableKey(a *App, k vim.Key) bool {
+func (v *databaseView) tableKey(a *App, k helix.Key) bool {
 	switch {
 	case k.Is("enter"):
 		v.editCell(a)
@@ -759,7 +759,7 @@ func (v *databaseView) tableKey(a *App, k vim.Key) bool {
 	case k.IsCtrl('u'):
 		v.moveRow(-max(1, v.pageRows/2))
 	case k.IsRune('d') || k.IsRune('g') || k.IsRune('y'):
-		v.navKeys = []vim.Key{k}
+		v.navKeys = []helix.Key{k}
 	case k.IsRune('i') || k.IsRune('c') || k.IsRune('e'):
 		v.editCell(a)
 	case k.IsRune('x'):
@@ -782,7 +782,7 @@ func (v *databaseView) tableKey(a *App, k vim.Key) bool {
 	return true
 }
 
-func (v *databaseView) headerKey(a *App, k vim.Key) bool {
+func (v *databaseView) headerKey(a *App, k helix.Key) bool {
 	f := v.currentField()
 	switch {
 	case k.Is("esc") || k.Is("down"):
@@ -833,7 +833,7 @@ func (v *databaseView) headerKey(a *App, k vim.Key) bool {
 	case k.IsRune('a'):
 		v.addFieldFlow(a)
 	case k.IsRune('d'):
-		v.navKeys = []vim.Key{k}
+		v.navKeys = []helix.Key{k}
 	case k.IsRune('s'):
 		v.cycleSort(a, f)
 	case k.IsRune('f'):
@@ -850,7 +850,7 @@ func (v *databaseView) headerKey(a *App, k vim.Key) bool {
 	return true
 }
 
-func (v *databaseView) rawKey(a *App, k vim.Key) bool {
+func (v *databaseView) rawKey(a *App, k helix.Key) bool {
 	switch {
 	case k.Is("esc") || k.IsRune('q') || k.IsRune('R'):
 		v.raw = false

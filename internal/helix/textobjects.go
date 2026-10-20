@@ -1,4 +1,4 @@
-package vim
+package helix
 
 // textObject is a parsed `iw`, `a(`, `it` ...
 type textObject struct {

@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"strings"
 	"testing"
 )
@@ -31,15 +31,15 @@ func TestSnippetRespectsPreferenceAndExistingPairs(t *testing.T) {
 	a.openNote("note.md", true)
 	buf := a.activeBuffer()
 	buf.ed.ReplaceText("**")
-	buf.ed.HandleKey(vim.R('A'))
-	a.handleKey(vim.R(' '))
+	buf.ed.HandleKey(helix.R('A'))
+	a.handleKey(helix.R(' '))
 	if buf.ed.Text() != "****" {
 		t.Fatalf("snippet: %q", buf.ed.Text())
 	}
 	a.prefs.MarkdownSnippets = false
 	buf.ed.ReplaceText("**")
-	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 2})
-	a.handleKey(vim.R(' '))
+	buf.ed.SetCursor(helix.Pos{Line: 0, Col: 2})
+	a.handleKey(helix.R(' '))
 	if buf.ed.Text() != "** " {
 		t.Fatalf("disabled snippet: %q", buf.ed.Text())
 	}
@@ -52,7 +52,7 @@ func TestFrontmatterTagCompletionPreservesSequenceAndUndo(t *testing.T) {
 	buf := a.activeBuffer()
 	body := "---\ntags: [foo, ba]\n---\nText"
 	buf.ed.ReplaceText(body)
-	buf.ed.SetCursor(vim.Pos{Line: 1, Col: 14})
+	buf.ed.SetCursor(helix.Pos{Line: 1, Col: 14})
 	a.markdownCompletion()
 	p, ok := a.overlay.(*palette)
 	if !ok {
@@ -62,7 +62,7 @@ func TestFrontmatterTagCompletionPreservesSequenceAndUndo(t *testing.T) {
 	if buf.ed.Line(1) != "tags: [foo, bar]" {
 		t.Fatalf("frontmatter damaged: %s", buf.ed.Text())
 	}
-	buf.ed.HandleKey(vim.R('u'))
+	buf.ed.HandleKey(helix.R('u'))
 	if buf.ed.Text() != body {
 		t.Fatalf("completion undo did not restore note: %s", buf.ed.Text())
 	}

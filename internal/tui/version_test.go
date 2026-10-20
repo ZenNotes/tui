@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 func TestVersionOpensPersistentReportForBugReports(t *testing.T) {
 	a, root := newFeatureTestApp(t)
 	a.opts.Version = "0.6.0-test"
 	suppressAsyncTestTimers(a)
-	if handled, err := a.runEx(nil, vim.ExCommand{Name: "version"}); err != nil || !handled {
+	if handled, err := a.runEx(nil, helix.ExCommand{Name: "version"}); err != nil || !handled {
 		t.Fatalf("version command: %t %v", handled, err)
 	}
 	if a.overlay == nil {
@@ -37,7 +37,7 @@ func TestVersionOpensPersistentReportForBugReports(t *testing.T) {
 	if strings.Contains(report, root) {
 		t.Fatal("copyable report includes the user's private vault path")
 	}
-	a.overlay.handleKey(a, vim.KeyEsc)
+	a.overlay.handleKey(a, helix.KeyEsc)
 	if a.overlay != nil {
 		t.Fatal("Esc did not dismiss the report")
 	}
@@ -57,7 +57,7 @@ func TestVersionReportsConnectedServerWithoutCredentials(t *testing.T) {
 	u.User = url.UserPassword("private-user", "password-secret")
 	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: u.String(), AuthToken: token}
 	suppressAsyncTestTimers(a)
-	a.runEx(nil, vim.ExCommand{Name: "version"})
+	a.runEx(nil, helix.ExCommand{Name: "version"})
 	if a.overlay == nil {
 		t.Fatal(":version did not open a report")
 	}
@@ -76,7 +76,7 @@ func TestVersionReportsConnectedServerWithoutCredentials(t *testing.T) {
 }
 
 func TestVersionCopyVariantsAndKeyboardCopy(t *testing.T) {
-	for _, command := range []vim.ExCommand{{Name: "version", Args: "copy"}, {Name: "version", Bang: true}, {Name: "ve", Args: "copy"}} {
+	for _, command := range []helix.ExCommand{{Name: "version", Args: "copy"}, {Name: "version", Bang: true}, {Name: "ve", Args: "copy"}} {
 		t.Run(command.Name+command.Args+map[bool]string{true: "!"}[command.Bang], func(t *testing.T) {
 			a, _ := newFeatureTestApp(t)
 			suppressAsyncTestTimers(a)
@@ -101,7 +101,7 @@ func TestVersionCopyVariantsAndKeyboardCopy(t *testing.T) {
 			if len(copied) != 1 || copied[0] != view.body || strings.Contains(copied[0], "\x1b") {
 				t.Fatalf("copy did not use the completed plain-text report: %v", copied)
 			}
-			view.handleKey(a, vim.R('c'))
+			view.handleKey(a, helix.R('c'))
 			if len(copied) != 2 || copied[1] != copied[0] {
 				t.Fatal("c did not copy the report")
 			}
@@ -112,11 +112,11 @@ func TestVersionCopyVariantsAndKeyboardCopy(t *testing.T) {
 func TestClosingVersionCancelsCollectionAndDoesNotStealFocusOrClipboard(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
 	suppressAsyncTestTimers(a)
-	a.runEx(nil, vim.ExCommand{Name: "version", Args: "copy"})
+	a.runEx(nil, helix.ExCommand{Name: "version", Args: "copy"})
 	view := a.overlay.(*versionView)
 	view.writeClipboard = func(string) error { t.Error("closed report wrote to clipboard"); return nil }
 	commands := a.pendingCmds
-	view.handleKey(a, vim.KeyEsc)
+	view.handleKey(a, helix.KeyEsc)
 	next := &textReader{title: "Another operation"}
 	a.overlay = next
 	for _, cmd := range commands {
@@ -129,17 +129,17 @@ func TestClosingVersionCancelsCollectionAndDoesNotStealFocusOrClipboard(t *testi
 
 func TestSettingsOffersVersionDetailsWithoutVim(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
-	a.prefs.VimMode = false
+	a.prefs.HelixMode = false
 	suppressAsyncTestTimers(a)
 	v := &settingsView{}
-	if !v.handleKey(a, vim.R('v')) {
+	if !v.handleKey(a, helix.R('v')) {
 		t.Fatal("settings did not handle v")
 	}
 	report, ok := a.overlay.(*versionView)
 	if !ok {
 		t.Fatal("settings did not expose version details")
 	}
-	report.handleKey(a, vim.KeyEsc)
+	report.handleKey(a, helix.KeyEsc)
 }
 
 func TestConnectedServerVersionTimeoutAndErrorBodiesAreSafe(t *testing.T) {

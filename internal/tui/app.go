@@ -20,7 +20,7 @@ import (
 	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // Options configure a terminal session.
@@ -85,7 +85,7 @@ type App struct {
 	markedMoveDirs map[string]string
 	boardOrder     map[string][]string
 	buffers        map[string]*noteBuffer
-	registers      vim.RegisterStore
+	registers      helix.RegisterStore
 	noteModes      map[string]paneMode
 	panes          *paneNode
 	activePane     *pane
@@ -106,7 +106,7 @@ type App struct {
 
 	overlay  overlay
 	leader   *leaderState
-	navKeys  []vim.Key
+	navKeys  []helix.Key
 	paneKeys bool
 
 	// tagMenu is the tag completion under the cursor; tagDismissed the token
@@ -160,7 +160,7 @@ type App struct {
 
 type jumpEntry struct {
 	path string
-	pos  vim.Pos
+	pos  helix.Pos
 }
 
 type toast struct {
@@ -488,7 +488,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Type == tea.KeyRunes && len(m.Runes) > 1 && !m.Alt {
 			var cmds []tea.Cmd
 			for _, r := range m.Runes {
-				if cmd := a.handleKey(vim.Key{Rune: r}); cmd != nil {
+				if cmd := a.handleKey(helix.Key{Rune: r}); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			}
@@ -794,9 +794,9 @@ func (a *App) renderEmptyPane(w, h int) string {
 		"",
 		th.KeyHint.Render(padRight(a.keyOf("global.searchNotes"), 10)) + th.Base.Render("search notes"),
 		th.KeyHint.Render(padRight(a.keyOf("global.newNoteHere"), 10)) + th.Base.Render("new note"),
-		th.KeyHint.Render(padRight(a.keyOf("vim.leaderPrefix")+" d", 10)) + th.Base.Render("today's daily note"),
-		th.KeyHint.Render(padRight(a.keyOf("vim.leaderPrefix")+" q", 10)) + th.Base.Render("quick capture"),
-		th.KeyHint.Render(padRight(a.keyOf("vim.leaderPrefix")+" x", 10)) + th.Base.Render("tasks"),
+		th.KeyHint.Render(padRight(a.keyOf("helix.leaderPrefix")+" d", 10)) + th.Base.Render("today's daily note"),
+		th.KeyHint.Render(padRight(a.keyOf("helix.leaderPrefix")+" q", 10)) + th.Base.Render("quick capture"),
+		th.KeyHint.Render(padRight(a.keyOf("helix.leaderPrefix")+" x", 10)) + th.Base.Render("tasks"),
 		th.KeyHint.Render(padRight(":help", 10)) + th.Base.Render("the manual"),
 	}
 	if len(a.recent) > 0 {
@@ -854,7 +854,7 @@ func (a *App) renderStatusBar() string {
 	suffix := ""
 	modeStyle := t.StatusMode
 	if buf := a.activeBuffer(); buf != nil && a.focus == focusPane {
-		if a.prefs.VimMode {
+		if a.prefs.HelixMode {
 			mode = buf.ed.Mode().Label()
 		} else {
 			mode = "EDIT"
@@ -901,7 +901,7 @@ func (a *App) renderStatusBar() string {
 	if a.leader != nil {
 		suffix = "SPC " + a.leader.pendingLabel()
 	} else if len(a.navKeys) > 0 {
-		suffix = vim.KeysString(a.navKeys)
+		suffix = helix.KeysString(a.navKeys)
 	} else if a.paneKeys {
 		suffix = "^W"
 	}

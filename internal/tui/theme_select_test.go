@@ -11,12 +11,12 @@ import (
 
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/themes"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 func themedApp(t *testing.T, prefs config.Prefs) *App {
 	t.Helper()
-	prefs.VimMode = true
+	prefs.HelixMode = true
 	return newApp(context.Background(), Options{}, prefs, true)
 }
 
@@ -25,7 +25,7 @@ func runEx(t *testing.T, a *App, name, args string) error {
 	for _, c := range a.commandTable() {
 		for _, n := range c.names {
 			if n == name {
-				return c.run(a, nil, vim.ExCommand{Name: name, Args: args})
+				return c.run(a, nil, helix.ExCommand{Name: name, Args: args})
 			}
 		}
 	}
@@ -119,11 +119,11 @@ func TestThemePickerPreviewsAndRestores(t *testing.T) {
 	if !ok || p.currentID() != "dark-hard" {
 		t.Fatalf("the picker should open on the current theme: %v", a.overlay)
 	}
-	a.overlay.handleKey(a, vim.KeyDown)
+	a.overlay.handleKey(a, helix.KeyDown)
 	if a.theme.ID != "dark-medium" {
 		t.Fatalf("moving should preview: %s", a.theme.ID)
 	}
-	a.overlay.handleKey(a, vim.KeyEsc)
+	a.overlay.handleKey(a, helix.KeyEsc)
 	if a.theme.ID != "dark-hard" || a.overlay != nil {
 		t.Fatalf("Esc should restore: %s", a.theme.ID)
 	}

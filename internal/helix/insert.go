@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"strings"
@@ -170,6 +170,8 @@ func (e *Editor) finishInsert() {
 		e.cursor.Col--
 	}
 	e.mode = ModeNormal
+	e.anchor = e.cursor
+	e.selExcl = false
 	e.cursor = e.buf.clampNormal(e.cursor)
 	e.ins = insertState{}
 	e.commitChange()
@@ -207,19 +209,6 @@ func (e *Editor) deleteBefore(n int) {
 }
 
 func (e *Editor) insertPrintable(r rune) {
-	if e.mode == ModeReplace {
-		line := cloneRunes(e.buf.Line(e.cursor.Line))
-		if e.cursor.Col < len(line) {
-			e.ins.replaced = append(e.ins.replaced, line[e.cursor.Col])
-			line[e.cursor.Col] = r
-			e.buf.ReplaceLine(e.cursor.Line, line)
-		} else {
-			e.ins.replaced = append(e.ins.replaced, -1)
-			e.buf.ReplaceLine(e.cursor.Line, append(line, r))
-		}
-		e.cursor.Col++
-		return
-	}
 	line := e.buf.Line(e.cursor.Line)
 	next := rune(0)
 	if e.cursor.Col < len(line) {
@@ -278,10 +267,6 @@ func (e *Editor) applyTextReplacement() {
 
 func (e *Editor) insertNewline() {
 	line := e.buf.Line(e.cursor.Line)
-	if e.mode == ModeReplace {
-		e.insertRaw("\n")
-		return
-	}
 	if e.opts.MarkdownLists && e.cursor.Col >= len(line) && isEmptyListItem(line) {
 		// Enter on an empty item ends the list.
 		e.buf.ReplaceLine(e.cursor.Line, leadingWhitespace(line))
@@ -311,26 +296,6 @@ func (e *Editor) insertNewline() {
 }
 
 func (e *Editor) insertBackspace() {
-	if e.mode == ModeReplace {
-		if e.cursor.Col == 0 {
-			return
-		}
-		if n := len(e.ins.replaced); n > 0 {
-			orig := e.ins.replaced[n-1]
-			e.ins.replaced = e.ins.replaced[:n-1]
-			line := cloneRunes(e.buf.Line(e.cursor.Line))
-			e.cursor.Col--
-			if orig < 0 {
-				line = line[:e.cursor.Col]
-			} else if e.cursor.Col < len(line) {
-				line[e.cursor.Col] = orig
-			}
-			e.buf.ReplaceLine(e.cursor.Line, line)
-			return
-		}
-		e.cursor.Col--
-		return
-	}
 	if e.cursor.Col == 0 {
 		if e.cursor.Line == 0 {
 			return

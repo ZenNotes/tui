@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"strings"
 )
 
@@ -64,7 +64,7 @@ func (v *templatesView) render(a *App, w, h int, focused bool) string {
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
-func (v *templatesView) handleKey(a *App, k vim.Key) bool {
+func (v *templatesView) handleKey(a *App, k helix.Key) bool {
 	if a.listNav(&v.list, k, len(v.templates), v.rows) {
 		return true
 	}
@@ -222,7 +222,7 @@ func (a *App) openTemplateFile(file vault.CustomTemplateFile) {
 	if buf := a.buffers[file.SourcePath]; buf == nil {
 		t := templates.ParseCustom(file)
 		buf = &noteBuffer{path: file.SourcePath, meta: vault.NoteMeta{Path: file.SourcePath, Title: t.Name}, savedText: file.Raw}
-		buf.ed = vim.NewWithRegisters(file.Raw, a.editorOptions(), a.editorHooks(buf), &a.registers)
+		buf.ed = helix.NewWithRegisters(file.Raw, a.editorOptions(), a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[file.SourcePath] = buf
 	}

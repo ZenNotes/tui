@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"math"
@@ -21,13 +21,17 @@ type motionResult struct {
 	keepCol   bool
 	stickyEnd bool
 	jump      bool
+	// matchEnd is the exclusive end of the search match for `n`/`N`, so the
+	// motion can select the whole match the way Helix does.
+	matchEnd Pos
+	matched  bool
 	// exclusiveLinewise applies Vim's rule: an exclusive motion ending in
 	// column 0 pulls back to the end of the previous line, and becomes
 	// linewise when it also started at or before the first non-blank.
 	failed bool
 }
 
-var charArgMotions = map[rune]bool{'f': true, 'F': true, 't': true, 'T': true, '`': true, '\'': true}
+var charArgMotions = map[rune]bool{'f': true, 'F': true, 't': true, 'T': true}
 
 // parseMotion reads a motion off the front of keys.
 func parseMotion(keys []Key) (motion, parseStatus) {
@@ -56,16 +60,13 @@ func parseMotion(keys []Key) (motion, parseStatus) {
 	}
 	switch k.Rune {
 	case 'h', 'l', 'j', 'k', '0', '^', '$', '|', 'w', 'W', 'b', 'B', 'e', 'E', 'G', 'H', 'M', 'L',
-		'{', '}', '(', ')', ';', ',', '%', 'n', 'N', '*', '#', '_', '-', '+':
+		'{', '}', '(', ')', 'n', 'N', '_', '-', '+':
 		return motion{kind: string(k.Rune)}, parseComplete
-	case 'f', 'F', 't', 'T', '`', '\'':
+	case 'f', 'F', 't', 'T':
 		if len(keys) < 2 {
 			return motion{}, parseIncomplete
 		}
 		if !keys[1].Printable() {
-			if keys[1].Is("esc") {
-				return motion{}, parseInvalid
-			}
 			return motion{}, parseInvalid
 		}
 		return motion{kind: string(k.Rune), arg: keys[1].Rune}, parseComplete
@@ -77,7 +78,7 @@ func parseMotion(keys []Key) (motion, parseStatus) {
 			return motion{}, parseInvalid
 		}
 		switch keys[1].Rune {
-		case 'g', 'e', 'E', 'j', 'k', '0', '^', '$', 'm', '_', '*', '#':
+		case 'g', 'j', 'k':
 			return motion{kind: "g" + string(keys[1].Rune)}, parseComplete
 		}
 		return motion{}, parseInvalid
@@ -130,7 +131,7 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 		res.pos.Col = max(0, from.Col-n)
 	case "l":
 		limit := len(line) - 1
-		if forOperator || e.inVisual() {
+		if forOperator || e.inSelect() {
 			limit = len(line)
 		}
 		if from.Col >= limit && !(forOperator && from.Col < len(line)) {
@@ -139,7 +140,7 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 			}
 		}
 		res.pos.Col = min(from.Col+n, max(0, limit))
-		if !forOperator && !e.inVisual() && res.pos.Col == from.Col {
+		if !forOperator && !e.inSelect() && res.pos.Col == from.Col {
 			return res, false
 		}
 	case "j":
@@ -344,71 +345,16 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 		res.pos = p
 		res.inclusive = m.kind == "f" || m.kind == "t"
 		e.lastFind.ch, e.lastFind.kind, e.lastFind.set = m.arg, rune(m.kind[0]), true
-	case ";", ",":
-		if !e.lastFind.set {
-			return res, false
-		}
-		kind := e.lastFind.kind
-		if m.kind == "," {
-			kind = map[rune]rune{'f': 'F', 'F': 'f', 't': 'T', 'T': 't'}[kind]
-		}
-		p, ok := e.findChar(from, byte(kind), e.lastFind.ch, n)
-		if !ok {
-			return res, false
-		}
-		res.pos = p
-		res.inclusive = kind == 'f' || kind == 't'
-	case "%":
-		p, ok := e.matchPair(from)
-		if !ok {
-			return res, false
-		}
-		res.pos = p
-		res.inclusive, res.jump = true, true
 	case "n", "N":
 		dir := e.searchDir
 		if m.kind == "N" {
 			dir = -dir
 		}
-		p, ok := e.searchNext(from, dir, n, true)
+		p, end, ok := e.searchNextRange(from, dir, n, true)
 		if !ok {
 			return res, false
 		}
-		res.pos, res.jump = p, true
-	case "*", "#", "g*", "g#":
-		word := e.WordUnderCursor()
-		if word == "" {
-			e.setError("E348: No string under cursor")
-			return res, false
-		}
-		pattern := regexp.QuoteMeta(word)
-		if !strings.HasPrefix(m.kind, "g") {
-			pattern = `\b` + pattern + `\b`
-		}
-		e.lastSearch = pattern
-		e.highlight = true
-		dir := 1
-		if strings.HasSuffix(m.kind, "#") {
-			dir = -1
-		}
-		e.searchDir = dir
-		p, ok := e.searchNext(from, dir, n, true)
-		if !ok {
-			return res, false
-		}
-		res.pos, res.jump = p, true
-	case "`", "'":
-		p, ok := e.markPos(m.arg)
-		if !ok {
-			e.setError("E20: Mark not set")
-			return res, false
-		}
-		res.pos = e.buf.clampNormal(p)
-		if m.kind == "'" {
-			res.pos.Col = firstNonBlank(e.buf.Line(res.pos.Line))
-			res.linewise = true
-		}
-		res.jump = true
+		res.pos, res.matchEnd, res.matched, res.jump = p, end, true, true
 	case "]]", "[[":
 		dir := 1
 		if m.kind == "[[" {
@@ -441,8 +387,8 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 	return res, true
 }
 
-func (e *Editor) inVisual() bool {
-	return e.mode == ModeVisual || e.mode == ModeVisualLine || e.mode == ModeVisualBlock
+func (e *Editor) inSelect() bool {
+	return e.mode == ModeSelect
 }
 
 func (e *Editor) colForDesired(line int) int {
@@ -451,7 +397,7 @@ func (e *Editor) colForDesired(line int) int {
 	if want < 0 {
 		want = e.cursor.Col
 	}
-	if e.mode == ModeInsert || e.mode == ModeReplace {
+	if e.mode == ModeInsert {
 		return min(want, len(l))
 	}
 	if want == math.MaxInt32 {
@@ -755,104 +701,98 @@ func (e *Editor) headingMove(from Pos, dir, n int) Pos {
 
 // --- find char ---
 
+// findChar searches for the n-th occurrence of ch. Helix searches the whole
+// document, continuing onto following lines (and backwards onto earlier
+// ones); the result stays on the found character.
 func (e *Editor) findChar(from Pos, kind byte, ch rune, n int) (Pos, bool) {
-	line := e.buf.Line(from.Line)
-	col := from.Col
-	switch kind {
-	case 'f', 't':
-		for i := 0; i < n; i++ {
-			start := col + 1
-			if kind == 't' && i == 0 && start < len(line) && line[start] == ch && n == 1 {
-				// `t` on an adjacent char still needs to find the NEXT one
-				// when repeated with ; in Vim; plain t stays put. Vim's cpo
-				// default: t does not move. Match that by searching from
-				// col+2 only for repeats.
-			}
-			found := -1
-			for c := start; c < len(line); c++ {
-				if line[c] == ch {
-					found = c
-					break
-				}
-			}
-			if found < 0 {
-				return from, false
-			}
-			col = found
-		}
-		if kind == 't' {
-			col--
-			if col <= from.Col && n == 1 {
-				if col < from.Col {
-					return from, false
-				}
-			}
-		}
-		return Pos{from.Line, col}, true
-	default:
-		for i := 0; i < n; i++ {
-			found := -1
-			for c := col - 1; c >= 0; c-- {
-				if line[c] == ch {
-					found = c
-					break
-				}
-			}
-			if found < 0 {
-				return from, false
-			}
-			col = found
-		}
-		if kind == 'T' {
-			col++
-		}
-		return Pos{from.Line, col}, true
-	}
-}
-
-// --- brackets ---
-
-var pairs = map[rune]rune{'(': ')', '[': ']', '{': '}', ')': '(', ']': '[', '}': '{'}
-
-func (e *Editor) matchPair(from Pos) (Pos, bool) {
-	line := e.buf.Line(from.Line)
-	col := from.Col
-	for col < len(line) {
-		if _, ok := pairs[line[col]]; ok {
-			break
-		}
-		col++
-	}
-	if col >= len(line) {
-		return from, false
-	}
-	open := line[col]
-	close := pairs[open]
-	dir := 1
-	if open == ')' || open == ']' || open == '}' {
-		dir = -1
-	}
-	depth := 0
-	p := Pos{from.Line, col}
-	for {
-		r, ok := e.runeAt(p)
-		if ok {
-			if r == open {
-				depth++
-			} else if r == close {
-				depth--
-				if depth == 0 {
-					return p, true
-				}
-			}
-		}
-		next, ok := e.step(p, dir)
+	p := from
+	for i := 0; i < n; i++ {
+		next, ok := e.findCharStep(p, kind, ch, i == 0)
 		if !ok {
 			return from, false
 		}
 		p = next
 	}
+	return p, true
 }
+
+// findCharStep finds the next occurrence after (or before) p in the search
+// direction for kind. first skips the "stay put" case for t/T on the very
+// first step only when the adjacent char matches.
+func (e *Editor) findCharStep(from Pos, kind byte, ch rune, first bool) (Pos, bool) {
+	forward := kind == 'f' || kind == 't'
+	p := from
+	if forward {
+		p.Col++
+	} else {
+		p.Col--
+	}
+	for p.Line >= 0 && p.Line < e.buf.LineCount() {
+		line := e.buf.Line(p.Line)
+		if forward {
+			for c := p.Col; c < len(line); c++ {
+				if line[c] == ch {
+					if kind == 't' {
+						if c == from.Col+1 && first && len(line) > c {
+							// `t` onto an adjacent char: Helix lands just
+							// before it, i.e. stays. Step past it for
+							// repeats.
+							continue
+						}
+						return Pos{p.Line, c - 1}, true
+					}
+					return Pos{p.Line, c}, true
+				}
+			}
+		} else {
+			for c := min(p.Col, len(line)-1); c >= 0; c-- {
+				if line[c] == ch {
+					if kind == 'T' {
+						return Pos{p.Line, c + 1}, true
+					}
+					return Pos{p.Line, c}, true
+				}
+			}
+		}
+		if forward {
+			p.Line++
+		} else {
+			p.Line--
+		}
+		if p.Line >= 0 && p.Line < e.buf.LineCount() {
+			if forward {
+				p.Col = 0
+			} else {
+				p.Col = e.buf.LineLen(p.Line)
+			}
+		}
+	}
+	return Pos{}, false
+}
+
+// repeatFindChar repeats the last f/t/F/T with the given direction (1 for
+// the same way, -1 reversed — Helix's Alt-. and the ZenNotes , key).
+func (e *Editor) repeatFindChar(dir int, n int) {
+	if !e.lastFind.set {
+		return
+	}
+	kind := e.lastFind.kind
+	if dir < 0 {
+		kind = map[rune]rune{'f': 'F', 'F': 'f', 't': 'T', 'T': 't'}[kind]
+	}
+	p, ok := e.findChar(e.cursor, byte(kind), e.lastFind.ch, max(1, n))
+	if !ok {
+		e.setError("E486: Character not found: " + string(e.lastFind.ch))
+		return
+	}
+	e.cursor = e.buf.clampNormal(p)
+	e.desiredCol = -1
+	e.ensureCursorVisible()
+}
+
+// --- brackets ---
+
+var pairs = map[rune]rune{'(': ')', '[': ']', '{': '}', ')': '(', ']': '[', '}': '{'}
 
 // step moves one character forward or backward across lines (an empty line
 // counts as a position).
@@ -939,3 +879,82 @@ func (e *Editor) markPos(r rune) (Pos, bool) {
 }
 
 var _ = unicode.IsLetter
+
+// --- search on selection / word ---
+
+// searchSelection searches forward for the current selection's text (Helix's
+// *). With detectBound it wraps the pattern in word boundaries when the
+// selection looks like a whole word, which is Helix's * versus Alt-*.
+func (e *Editor) searchSelection(detectBound bool) {
+	from, to := e.selRange()
+	at := e.stepInsertPos(to)
+	if e.selExcl {
+		at = to
+	}
+	word := e.buf.Range(from, at)
+	if word == "" {
+		return
+	}
+	if strings.ContainsAny(word, "\n\t ") {
+		return
+	}
+	pattern := regexp.QuoteMeta(word)
+	if detectBound && isWordPattern(word) {
+		pattern = `\b` + pattern + `\b`
+	}
+	e.lastSearch = pattern
+	e.highlight = true
+	e.searchDir = 1
+	p, ok := e.searchNext(e.cursor, 1, 1, true)
+	if !ok {
+		return
+	}
+	e.pushJump()
+	e.cursor = e.buf.clampNormal(p)
+	e.selExcl = false
+	if e.mode == ModeSelect {
+		e.anchor = e.cursor
+	}
+	e.desiredCol = -1
+	e.ensureCursorVisible()
+}
+
+// searchWordUnderCursor searches for the word under the cursor in dir (1 or
+// -1); the ZenNotes # key uses it backwards.
+func (e *Editor) searchWordUnderCursor(dir int) {
+	word := e.WordUnderCursor()
+	if word == "" {
+		e.setError("E348: No string under cursor")
+		return
+	}
+	pattern := `\b` + regexp.QuoteMeta(word) + `\b`
+	e.lastSearch = pattern
+	e.highlight = true
+	e.searchDir = dir
+	p, ok := e.searchNext(e.cursor, dir, 1, true)
+	if !ok {
+		return
+	}
+	e.pushJump()
+	e.cursor = e.buf.clampNormal(p)
+	e.selExcl = false
+	if e.mode == ModeSelect {
+		e.anchor = e.cursor
+	}
+	e.desiredCol = -1
+	e.ensureCursorVisible()
+}
+
+// isWordPattern reports whether the text is a single run of word characters,
+// the case where Helix adds word boundaries automatically.
+func isWordPattern(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return false
+		}
+	}
+	return true
+}

@@ -12,7 +12,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 func newSessionParityVault(t *testing.T, paths ...string) string {
@@ -232,11 +232,11 @@ func TestSessionRestoresEachOpenNotesCursorAndScroll(t *testing.T) {
 	}
 	a := newSessionParityApp(t, root)
 	a.openNote("Alpha.md", true)
-	a.activeBuffer().ed.SetCursor(vim.Pos{Line: 25, Col: 9})
+	a.activeBuffer().ed.SetCursor(helix.Pos{Line: 25, Col: 9})
 	a.activeBuffer().ed.SetScrollTop(20)
 	a.activePane = a.panes.split(a.activePane, true)
 	a.openNote("Beta.md", true)
-	a.activeBuffer().ed.SetCursor(vim.Pos{Line: 54, Col: 15})
+	a.activeBuffer().ed.SetCursor(helix.Pos{Line: 54, Col: 15})
 	a.activeBuffer().ed.SetScrollTop(48)
 	a.saveSession()
 
@@ -268,7 +268,7 @@ func TestSessionClampsSavedPositionAfterNoteIsShortened(t *testing.T) {
 	}
 	a := newSessionParityApp(t, root)
 	a.openNote("Alpha.md", true)
-	a.activeBuffer().ed.SetCursor(vim.Pos{Line: 50, Col: 20})
+	a.activeBuffer().ed.SetCursor(helix.Pos{Line: 50, Col: 20})
 	a.activeBuffer().ed.SetScrollTop(45)
 	a.saveSession()
 	if err := os.WriteFile(filepath.Join(root, "Alpha.md"), []byte("Short"), 0o644); err != nil {

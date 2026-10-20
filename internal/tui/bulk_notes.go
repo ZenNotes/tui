@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"path"
 	"sort"
 	"strings"
@@ -151,4 +151,4 @@ func (a *App) applyBulkNotes(paths []string, action, sub string) {
 		a.notify(fmt.Sprintf("%s: %d notes", action, done))
 	}
 }
-func isMarkKey(k vim.Key) bool { return k.IsCtrl(' ') || k.IsCtrl('@') || k.Is("ctrl+space") }
+func isMarkKey(k helix.Key) bool { return k.IsCtrl(' ') || k.IsCtrl('@') || k.Is("ctrl+space") }

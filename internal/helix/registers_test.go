@@ -1,11 +1,11 @@
-package vim
+package helix
 
 import "testing"
 
 func TestSharedRegistersPreservePasteShape(t *testing.T) {
 	for _, tc := range []struct{ name, source, yank, target, want string }{
-		{"characters", "alpha beta", "yiw", "123", "1alpha23"},
-		{"lines", "alpha\nsecond", "yy", "target", "target\nalpha"},
+		{"characters", "alpha beta", "miwy", "123", "1alpha23"},
+		{"lines", "alpha\nsecond", "xy", "target", "target\nalpha"},
 		{"block", "abXY\ncdZW", "<C-v>ljy", "12\n34", "1ab2\n3cd4"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -25,15 +25,19 @@ func TestSharedNamedAppendAndNumberedDeleteRegisters(t *testing.T) {
 	var store RegisterStore
 	first := NewWithRegisters("alpha\nkeep", DefaultOptions(), Hooks{}, &store)
 	second := NewWithRegisters("beta\nstay", DefaultOptions(), Hooks{}, &store)
-	first.Feed(`"ayy`)
-	second.Feed(`"Ayy`)
+	first.Feed(`x`)
+	first.Feed(`"ay`)
+	second.Feed(`x`)
+	second.Feed(`"Ay`)
 	target := NewWithRegisters("target", DefaultOptions(), Hooks{}, &store)
 	target.Feed(`"ap`)
 	if got := target.Text(); got != "target\nalpha\nbeta" {
 		t.Fatalf("named append across notes: %q", got)
 	}
-	first.Feed("dd")
-	second.Feed("dd")
+	first.Feed("x")
+	first.Feed("d")
+	second.Feed("x")
+	second.Feed("d")
 	target.Feed(`gg"2p`)
 	if got := target.Text(); got != "target\nalpha\nalpha\nbeta" {
 		t.Fatalf("numbered delete history across notes: %q", got)
@@ -44,8 +48,11 @@ func TestSharedRegistersRespectBlackHoleAndLocalUndo(t *testing.T) {
 	var store RegisterStore
 	first := NewWithRegisters("alpha", DefaultOptions(), Hooks{}, &store)
 	second := NewWithRegisters("beta\nstay", DefaultOptions(), Hooks{}, &store)
-	first.Feed("yy")
-	second.Feed(`"_ddp`)
+	first.Feed("x")
+	first.Feed("y")
+	second.Feed("x")
+	second.Feed(`"_d`)
+	second.Feed("p")
 	if got := second.Text(); got != "stay\nalpha" {
 		t.Fatalf("black-hole delete replaced shared yank: %q", got)
 	}

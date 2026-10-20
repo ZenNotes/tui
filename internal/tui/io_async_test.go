@@ -13,7 +13,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 type slowIOBackend struct {
@@ -439,8 +439,8 @@ func TestCtrlSpaceRoutesToSidebarMarkAndInsertCompletion(t *testing.T) {
 		a.openNote("Alpha.md", true)
 		buf := a.activeBuffer()
 		buf.ed.ReplaceText("> [!NO")
-		buf.ed.HandleKey(vim.R('A'))
-		if buf.ed.Mode() != vim.ModeInsert {
+		buf.ed.HandleKey(helix.R('A'))
+		if buf.ed.Mode() != helix.ModeInsert {
 			t.Fatal("fixture did not enter Insert mode")
 		}
 		a.Update(tea.KeyMsg{Type: tea.KeyCtrlAt})

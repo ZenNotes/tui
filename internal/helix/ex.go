@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"fmt"
@@ -24,8 +24,8 @@ func (e *Editor) OpenCmdline(kind rune, initial string) {
 }
 
 func (e *Editor) openCmdline(kind rune, count int, hasCount bool) {
-	if e.inVisual() {
-		e.exitVisual()
+	if e.inSelect() {
+		e.exitSelect()
 	}
 	e.cmd = cmdlineState{kind: kind, histIdx: -1, searchOrg: e.cursor}
 	if kind == ':' && hasCount {
@@ -59,9 +59,6 @@ func (e *Editor) history(kind rune) *[]string {
 
 func (e *Editor) cmdlineKey(k Key) {
 	c := &e.cmd
-	if e.opSearch != nil {
-		e.opSearch.keys = append(e.opSearch.keys, k)
-	}
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsCtrl('['):
 		e.cancelCmdline()
@@ -256,7 +253,7 @@ func (e *Editor) incrementalSearch() {
 	if e.cmd.kind == '?' {
 		dir = -1
 	}
-	p, _, ok := e.findMatch(re, e.cmd.searchOrg, dir)
+	p, _, _, ok := e.findMatch(re, e.cmd.searchOrg, dir)
 	if !ok {
 		e.cursor = e.buf.clampNormal(e.cmd.searchOrg)
 		e.incremental = nil
@@ -280,7 +277,6 @@ func (e *Editor) cancelCmdline() {
 		e.cursor = e.buf.clampNormal(e.cmd.searchOrg)
 	}
 	e.incremental = nil
-	e.opSearch = nil
 	e.mode = ModeNormal
 	e.cmd = cmdlineState{}
 	e.ensureCursorVisible()
@@ -307,11 +303,6 @@ func (e *Editor) submitCmdline() {
 		dir := 1
 		if kind == '?' {
 			dir = -1
-		}
-		if pending := e.opSearch; pending != nil {
-			e.opSearch = nil
-			e.runOperatorSearch(pending, text, dir)
-			break
 		}
 		e.runSearch(text, dir, count)
 	default:
@@ -431,7 +422,7 @@ func (e *Editor) parseAddress(s string) (int, string, bool, error) {
 		if dir > 0 {
 			from = Pos{e.cursor.Line, e.buf.LineLen(e.cursor.Line)}
 		}
-		p, _, ok := e.findMatch(re, from, dir)
+		p, _, _, ok := e.findMatch(re, from, dir)
 		if !ok {
 			return 0, s, false, fmt.Errorf("E486: Pattern not found: %s", pattern)
 		}
@@ -467,6 +458,12 @@ func (e *Editor) executeExLine(line string) {
 	if line == "" {
 		return
 	}
+	defer func() {
+		if e.mode == ModeNormal {
+			e.anchor = e.cursor
+			e.selExcl = false
+		}
+	}()
 	rng, rest, err := e.parseRange(line)
 	if err != nil {
 		e.setError(err.Error())
@@ -630,11 +627,11 @@ func (e *Editor) builtinEx(cmd ExCommand) bool {
 			for _, k := range keys {
 				e.HandleKey(k)
 			}
-			if e.mode == ModeInsert || e.mode == ModeReplace {
+			if e.mode == ModeInsert {
 				e.HandleKey(KeyEsc)
 			}
-			if e.inVisual() {
-				e.exitVisual()
+			if e.inSelect() {
+				e.exitSelect()
 			}
 			if e.mode == ModeCmdline {
 				e.cancelCmdline()
@@ -965,40 +962,4 @@ func (e *Editor) ExecuteEx(line string) {
 	e.executeExLine(strings.TrimPrefix(line, ":"))
 	e.cursor = e.buf.clampNormal(e.cursor)
 	e.ensureCursorVisible()
-}
-
-// runOperatorSearch finishes `d/pat<CR>`: the search target is the motion.
-func (e *Editor) runOperatorSearch(pending *pendingOpSearch, pattern string, dir int) {
-	if pattern == "" {
-		pattern = e.lastSearch
-	}
-	if pattern == "" {
-		e.setError("E35: No previous regular expression")
-		return
-	}
-	if _, err := e.compilePattern(pattern); err != nil {
-		e.setError("E486: Pattern not found: " + pattern)
-		return
-	}
-	e.lastSearch = pattern
-	e.searchDir = dir
-	e.cursor = e.buf.clampNormal(pending.from)
-	target, ok := e.searchNext(pending.from, dir, max(1, pending.count), false)
-	if !ok {
-		return
-	}
-	versionBefore := e.version
-	e.beginChange()
-	entered := e.applyOperatorResult(pending.op, pending.from, motionResult{pos: target, jump: true}, pending.register, false)
-	if entered {
-		if !e.replaying {
-			e.recordingIns = true
-			e.changeKeys = append([]Key(nil), pending.keys...)
-		}
-		return
-	}
-	e.commitChange()
-	if e.version != versionBefore && !e.replaying {
-		e.last = lastChange{keys: stripCount(pending.keys), register: pending.register}
-	}
 }

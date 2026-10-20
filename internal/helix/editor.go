@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"fmt"
@@ -15,10 +15,7 @@ type Mode int
 const (
 	ModeNormal Mode = iota
 	ModeInsert
-	ModeReplace
-	ModeVisual
-	ModeVisualLine
-	ModeVisualBlock
+	ModeSelect
 	ModeCmdline
 )
 
@@ -27,19 +24,23 @@ func (m Mode) Label() string {
 	switch m {
 	case ModeInsert:
 		return "INSERT"
-	case ModeReplace:
-		return "REPLACE"
-	case ModeVisual:
-		return "VISUAL"
-	case ModeVisualLine:
-		return "V-LINE"
-	case ModeVisualBlock:
-		return "V-BLOCK"
+	case ModeSelect:
+		return "SELECT"
 	case ModeCmdline:
 		return "COMMAND"
 	}
 	return "NORMAL"
 }
+
+// selKind is what a selection covers: single characters, whole lines, or a
+// rectangular block (a ZenNotes extension; Helix has no block mode).
+type selKind int
+
+const (
+	selChar selKind = iota
+	selLine
+	selBlock
+)
 
 // Options tune the engine. Zero values are filled by New.
 type Options struct {
@@ -56,9 +57,9 @@ type Options struct {
 	TextReplacementsEnabled bool
 	MarkdownLists           bool
 	YankToClipboard         bool
-	// VimEnabled false runs the buffer as a plain editor: always inserting,
+	// HelixEnabled false runs the buffer as a plain editor: always inserting,
 	// arrows and the usual editing keys only.
-	VimEnabled bool
+	HelixEnabled bool
 }
 
 // DefaultOptions are the shipped defaults.
@@ -70,7 +71,7 @@ func DefaultOptions() Options {
 		TextReplacements:        map[string]string{"->": "→"},
 		TextReplacementsEnabled: true,
 		MarkdownLists:           true,
-		VimEnabled:              true,
+		HelixEnabled:            true,
 	}
 }
 
@@ -162,17 +163,9 @@ type cmdlineState struct {
 
 // pendingOpSearch is an operator waiting on a `/` or `?` motion typed on
 // the command line, like `d/foo<CR>`.
-type pendingOpSearch struct {
-	op       string
-	count    int
-	register rune
-	from     Pos
-	keys     []Key
-}
 
 type insertState struct {
 	start        Pos
-	replaced     []rune
 	escPending   bool
 	ctrlO        bool
 	ctrlR        bool
@@ -198,10 +191,15 @@ type Editor struct {
 	cursor     Pos
 	desiredCol int
 
-	visualAnchor Pos
-	lastVisual   struct {
+	// anchor is the selection tail and kind what it covers; both are only
+	// meaningful in ModeSelect, where the selection runs from anchor to
+	// cursor (either order). Normal mode is a collapsed selection on the
+	// cursor character, the way Helix models cursors.
+	anchor     Pos
+	kind       selKind
+	lastSelect struct {
 		start, end Pos
-		mode       Mode
+		kind       selKind
 		set        bool
 	}
 
@@ -237,12 +235,24 @@ type Editor struct {
 		kind rune
 		set  bool
 	}
+	lastMotion motion
+	// motionSelected marks a command that deliberately leaves a selection
+	// behind (the selector motions); finishNormal collapses stale anchors
+	// after every other normal-mode command.
+	motionSelected bool
+	// selExcl marks a selection whose upper-bound character is not part of
+	// it: word-start motions select up to the next word's first character
+	// without including it (Helix keeps that char as the exclusive head).
+	selExcl        bool
+	lastMotionArgs struct {
+		count    int
+		hasCount bool
+	}
 	cmd         cmdlineState
 	ins         insertState
 	histories   map[rune]*[]string
 	incremental *regexp.Regexp
 	blockInsert *blockInsertState
-	opSearch    *pendingOpSearch
 
 	rows      int
 	scrollTop int
@@ -283,7 +293,7 @@ func NewWithRegisters(text string, opts Options, hooks Hooks, store *RegisterSto
 		rows:       24,
 		folds:      map[int]int{},
 	}
-	if !opts.VimEnabled {
+	if !opts.HelixEnabled {
 		e.mode = ModeInsert
 	}
 	return e
@@ -308,12 +318,12 @@ func (e *Editor) SetOptions(opts Options) {
 	if opts.TabSize <= 0 {
 		opts.TabSize = 4
 	}
-	wasEnabled := e.opts.VimEnabled
+	wasEnabled := e.opts.HelixEnabled
 	e.opts = opts
-	if wasEnabled && !opts.VimEnabled {
+	if wasEnabled && !opts.HelixEnabled {
 		e.leaveToInsertOnly()
 	}
-	if !wasEnabled && opts.VimEnabled && e.mode == ModeInsert {
+	if !wasEnabled && opts.HelixEnabled && e.mode == ModeInsert {
 		e.mode = ModeNormal
 		e.cursor = e.buf.clampNormal(e.cursor)
 	}
@@ -346,7 +356,7 @@ func (e *Editor) setError(s string) { e.msg, e.msgErr = s, true }
 
 // Pending is the keys of an unfinished command, for a showcmd area.
 func (e *Editor) Pending() string {
-	if e.mode == ModeNormal || e.mode == ModeVisual || e.mode == ModeVisualLine || e.mode == ModeVisualBlock {
+	if e.mode == ModeNormal || e.mode == ModeSelect {
 		return KeysString(e.pending)
 	}
 	return ""
@@ -370,10 +380,14 @@ func (e *Editor) SetScrollTop(line int) {
 
 // SetCursor moves the cursor, clamped for the current mode.
 func (e *Editor) SetCursor(p Pos) {
-	if e.mode == ModeInsert || e.mode == ModeReplace {
+	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(p)
 	} else {
 		e.cursor = e.buf.clampNormal(p)
+	}
+	if e.mode != ModeSelect {
+		e.anchor = e.cursor
+		e.selExcl = false
 	}
 	e.desiredCol = -1
 	e.openFoldAt(e.cursor.Line)
@@ -387,7 +401,7 @@ func (e *Editor) SetText(text string) {
 	e.cursor = e.buf.clampNormal(Pos{})
 	e.scrollTop = 0
 	e.folds = map[int]int{}
-	if e.mode == ModeInsert || e.mode == ModeReplace {
+	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(e.cursor)
 	}
 }
@@ -398,7 +412,7 @@ func (e *Editor) ReplaceText(text string) {
 	e.beginChange()
 	e.buf.SetText(text)
 	e.cursor = e.buf.clampNormal(e.cursor)
-	if e.mode == ModeInsert || e.mode == ModeReplace {
+	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(e.cursor)
 	}
 	e.commitChange()
@@ -527,8 +541,8 @@ func (e *Editor) HandleKey(k Key) bool {
 		e.changeKeys = append(e.changeKeys, k)
 	}
 	switch e.mode {
-	case ModeInsert, ModeReplace:
-		if !e.opts.VimEnabled {
+	case ModeInsert:
+		if !e.opts.HelixEnabled {
 			return e.plainKey(k)
 		}
 		e.insertKey(k)
@@ -536,8 +550,8 @@ func (e *Editor) HandleKey(k Key) bool {
 	case ModeCmdline:
 		e.cmdlineKey(k)
 		return true
-	case ModeVisual, ModeVisualLine, ModeVisualBlock:
-		e.visualKey(k)
+	case ModeSelect:
+		e.selectKey(k)
 		return true
 	default:
 		e.normalKey(k)
@@ -601,36 +615,11 @@ func validRegister(r rune) bool {
 		(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 }
 
-var operatorKeys = map[string]bool{"d": true, "c": true, "y": true, "<": true, ">": true, "=": true,
-	"gu": true, "gU": true, "g~": true, "gq": true, "gw": true, "g?": true}
-
-// readOperator reads an operator off the front of keys.
-func readOperator(keys []Key) (op string, consumed int, status parseStatus) {
-	if len(keys) == 0 {
-		return "", 0, parseIncomplete
-	}
-	k := keys[0]
-	if !k.Printable() {
-		return "", 0, parseInvalid
-	}
-	switch k.Rune {
-	case 'd', 'c', 'y', '<', '>', '=':
-		return string(k.Rune), 1, parseComplete
-	case 'g':
-		if len(keys) < 2 {
-			return "", 0, parseIncomplete
-		}
-		if keys[1].Printable() {
-			switch keys[1].Rune {
-			case 'u', 'U', '~', 'q', 'w', '?':
-				return "g" + string(keys[1].Rune), 2, parseComplete
-			}
-		}
-	}
-	return "", 0, parseInvalid
-}
-
+// runNormal applies a completed normal-mode key sequence. There is no
+// operator-pending state: `d`, `y`, `c` and friends act on the current
+// selection the Helix way, so a sequence is a prefix plus one command key.
 func (e *Editor) runNormal(keys []Key) parseStatus {
+	e.motionSelected = false
 	register, count, hasCount, rest, status := splitPrefix(keys)
 	if status != parseComplete {
 		return status
@@ -638,115 +627,13 @@ func (e *Editor) runNormal(keys []Key) parseStatus {
 	versionBefore := e.version
 	enteredInsert := false
 
-	// Operators.
-	if op, consumed, st := readOperator(rest); st == parseComplete {
-		afterOp := rest[consumed:]
-		_, count2, hasCount2, rest2, st2 := splitPrefix(afterOp)
-		if st2 == parseIncomplete && len(afterOp) > 0 && allDigits(afterOp) {
-			return parseIncomplete
-		}
-		if st2 == parseInvalid {
-			return parseInvalid
-		}
-		if len(afterOp) == 0 {
-			return parseIncomplete
-		}
-		total := effectiveCount(count, hasCount, count2, hasCount2)
-		hasTotal := hasCount || hasCount2
-		opKeys := rest[:consumed]
-		// The doubled operator works on lines: dd, yy, >>, guu, gUgU ...
-		if doubled, n := isDoubledOperator(op, opKeys, rest2); doubled {
-			if n < 0 {
-				return parseIncomplete
-			}
-			e.beginChange()
-			enteredInsert = e.applyLinewiseOperator(op, total, register)
-			e.finishNormal(keys, versionBefore, enteredInsert, register, count, hasCount)
-			return parseComplete
-		}
-		// Text object or motion.
-		if len(rest2) == 0 {
-			return parseIncomplete
-		}
-		if rest2[0].IsRune('/') || rest2[0].IsRune('?') {
-			e.opSearch = &pendingOpSearch{op: op, count: total, register: register, from: e.cursor, keys: append([]Key(nil), keys...)}
-			e.openCmdline(rest2[0].Rune, 0, false)
-			return parseComplete
-		}
-		if obj, st3 := parseTextObject(rest2); st3 != parseInvalid {
-			if st3 == parseIncomplete {
-				return parseIncomplete
-			}
-			e.beginChange()
-			enteredInsert = e.applyOperatorToObject(op, obj, total, register)
-			e.finishNormal(keys, versionBefore, enteredInsert, register, count, hasCount)
-			return parseComplete
-		}
-		m, st3 := parseMotion(rest2)
-		if st3 != parseComplete {
-			return st3
-		}
-		e.beginChange()
-		enteredInsert = e.applyOperatorToMotion(op, m, total, hasTotal, register)
-		e.finishNormal(keys, versionBefore, enteredInsert, register, count, hasCount)
-		return parseComplete
-	}
-
-	// Simple commands.
-	st, entered := e.simpleCommand(rest, count, hasCount, register)
+	st, entered := e.normalCommand(rest, count, hasCount, register)
 	if st != parseComplete {
 		return st
 	}
-	e.finishNormal(keys, versionBefore, entered, register, count, hasCount)
+	enteredInsert = entered
+	e.finishNormal(keys, versionBefore, enteredInsert, register, count, hasCount)
 	return parseComplete
-}
-
-func allDigits(keys []Key) bool {
-	for _, k := range keys {
-		if !k.Printable() || k.Rune < '0' || k.Rune > '9' {
-			return false
-		}
-	}
-	return len(keys) > 0
-}
-
-func effectiveCount(c1 int, has1 bool, c2 int, has2 bool) int {
-	switch {
-	case has1 && has2:
-		return c1 * c2
-	case has1:
-		return c1
-	case has2:
-		return c2
-	}
-	return 1
-}
-
-// isDoubledOperator recognizes `dd`, `guu`, `gUgU`: n is -1 when more keys
-// are needed.
-func isDoubledOperator(op string, opKeys []Key, rest []Key) (bool, int) {
-	if len(rest) == 0 {
-		return false, 0
-	}
-	if len(op) == 1 {
-		if rest[0].Printable() && string(rest[0].Rune) == op {
-			return true, 1
-		}
-		return false, 0
-	}
-	last := rune(op[1])
-	if rest[0].Printable() && rest[0].Rune == last {
-		return true, 1
-	}
-	if rest[0].Printable() && rest[0].Rune == 'g' {
-		if len(rest) < 2 {
-			return true, -1
-		}
-		if rest[1].Printable() && rest[1].Rune == last {
-			return true, 2
-		}
-	}
-	return false, 0
 }
 
 // finishNormal closes the undo transaction and records dot-repeat.
@@ -766,6 +653,13 @@ func (e *Editor) finishNormal(keys []Key, versionBefore int, enteredInsert bool,
 		}
 	}
 	e.recordingIns = false
+	if !e.motionSelected && e.mode != ModeSelect {
+		// Every non-selector normal-mode command leaves a collapsed
+		// selection, so a stale anchor never lingers as a highlight.
+		e.anchor = e.cursor
+		e.selExcl = false
+	}
+	e.motionSelected = false
 	e.cursor = e.buf.clampNormal(e.cursor)
 	e.ensureCursorVisible()
 }
@@ -792,9 +686,14 @@ func stripCount(keys []Key) []Key {
 	return append([]Key(nil), keys[i:]...)
 }
 
-// --- simple commands ---
+// --- normal mode commands ---
 
-func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register rune) (parseStatus, bool) {
+// normalCommand runs one normal-mode command key (after the register and
+// count prefix). Selection operations — delete, yank, change and friends —
+// act on the current selection, which is the single character under the
+// cursor unless a selection is active. Returns the parse status and whether
+// the command entered insert mode.
+func (e *Editor) normalCommand(rest []Key, count int, hasCount bool, register rune) (parseStatus, bool) {
 	if len(rest) == 0 {
 		return parseIncomplete, false
 	}
@@ -802,15 +701,16 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 	n := max(1, count)
 	if k.Printable() {
 		switch k.Rune {
+		// --- entering insert ---
+		// Helix inserts before the selection (`i`) or after it (`a`);
+		// on a collapsed selection that is the usual cursor behaviour.
 		case 'i':
-			e.startInsert(e.cursor)
+			start, _ := e.selRange()
+			e.startInsert(e.buf.clampNormal(start))
 			return parseComplete, true
 		case 'a':
-			p := e.cursor
-			if e.buf.LineLen(p.Line) > 0 {
-				p.Col++
-			}
-			e.startInsert(p)
+			_, end := e.selRange()
+			e.startInsert(e.stepInsertPos(e.buf.clampNormal(end)))
 			return parseComplete, true
 		case 'I':
 			p := Pos{e.cursor.Line, firstNonBlankInsert(e.buf.Line(e.cursor.Line))}
@@ -839,111 +739,85 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 			e.beginChange()
 			e.openLine(true)
 			return parseComplete, true
-		case 'R':
-			e.beginChange()
-			e.mode = ModeReplace
-			e.ins = insertState{start: e.cursor}
-			e.cursor = e.buf.clampInsert(e.cursor)
-			return parseComplete, true
-		case 's':
-			e.beginChange()
-			e.deleteChars(n, register)
-			e.startInsert(e.cursor)
-			return parseComplete, true
-		case 'S':
-			e.beginChange()
-			e.changeLines(n, register)
-			return parseComplete, true
-		case 'C':
-			e.beginChange()
-			e.deleteToEnd(n, register)
-			e.startInsert(Pos{e.cursor.Line, e.buf.LineLen(e.cursor.Line)})
-			return parseComplete, true
+		// --- the selection ---
+		case 'v':
+			e.enterSelect(selChar)
+			return parseComplete, false
+		case 'V':
+			e.enterSelect(selLine)
+			return parseComplete, false
 		case 'x':
-			e.beginChange()
-			e.deleteChars(n, register)
+			e.extendLineBelow()
 			return parseComplete, false
 		case 'X':
+			e.extendToLineBounds()
+			return parseComplete, false
+		case ';':
+			e.collapseToCursor()
+			return parseComplete, false
+		case '%':
+			e.selectAll()
+			return parseComplete, false
+		// --- selection operations ---
+		case 'd':
 			e.beginChange()
-			e.deleteCharsBack(n, register)
+			e.runOperator("d", e.selectionSpan(), register, false)
 			return parseComplete, false
-		case 'D':
+		case 'y':
+			e.runOperator("y", e.selectionSpan(), register, false)
+			return parseComplete, false
+		case 'c':
 			e.beginChange()
-			e.deleteToEnd(n, register)
-			e.cursor = e.buf.clampNormal(e.cursor)
-			return parseComplete, false
-		case 'Y':
-			e.yankLines(e.cursor.Line, min(e.buf.LineCount()-1, e.cursor.Line+n-1), register)
-			return parseComplete, false
+			entered := e.runOperator("c", e.selectionSpan(), register, false)
+			return parseComplete, entered
 		case 'p':
 			e.beginChange()
-			e.put(register, n, true, false)
+			e.putSelection(register, n, true)
 			return parseComplete, false
 		case 'P':
 			e.beginChange()
-			e.put(register, n, false, false)
+			e.putSelection(register, n, false)
 			return parseComplete, false
-		case 'J':
+		case 'R':
 			e.beginChange()
-			e.joinLines(e.cursor.Line, max(2, n), true)
+			e.putOverSpan(e.selectionSpan(), register, n, false)
 			return parseComplete, false
-		case 'u':
-			for i := 0; i < n; i++ {
-				e.Undo()
-			}
+		case '>':
+			e.beginChange()
+			e.indentSelection(1)
 			return parseComplete, false
-		case 'U':
-			e.Undo()
-			return parseComplete, false
-		case '.':
-			e.repeatLastChange(count, hasCount)
+		case '<':
+			e.beginChange()
+			e.indentSelection(-1)
 			return parseComplete, false
 		case '~':
 			e.beginChange()
-			e.toggleCaseChars(n)
+			e.transformSelection("g~")
 			return parseComplete, false
-		case 'v':
-			e.enterVisual(ModeVisual)
-			return parseComplete, false
-		case 'V':
-			e.enterVisual(ModeVisualLine)
+		case '`':
+			e.beginChange()
+			e.transformSelection("gu")
 			return parseComplete, false
 		case 'r':
 			if len(rest) < 2 {
 				return parseIncomplete, false
 			}
+			if !rest[1].Printable() {
+				return parseInvalid, false
+			}
 			e.beginChange()
-			e.replaceChars(rest[1], n)
+			e.replaceSelectionWith(rest[1].Rune)
 			return parseComplete, false
-		case 'm':
-			if len(rest) < 2 {
-				return parseIncomplete, false
-			}
-			if rest[1].Printable() {
-				e.marks[rest[1].Rune] = e.cursor
-			}
+		case 'J':
+			e.beginChange()
+			e.joinSelection(n)
 			return parseComplete, false
-		case 'q':
-			if e.macroReg != 0 {
-				e.stopMacro()
-				return parseComplete, false
-			}
-			if len(rest) < 2 {
-				return parseIncomplete, false
-			}
-			if rest[1].Printable() && validRegister(rest[1].Rune) {
-				e.macroReg = unicode.ToLower(rest[1].Rune)
-				e.macroKeys = nil
-				e.setMsg("recording @" + string(e.macroReg))
-			}
+		// --- search ---
+		case '*':
+			e.searchSelection(false)
 			return parseComplete, false
-		case '@':
-			if len(rest) < 2 {
-				return parseIncomplete, false
-			}
-			if rest[1].Printable() {
-				e.runMacro(rest[1].Rune, n)
-			}
+		case '#':
+			e.searchWordUnderCursor(1)
 			return parseComplete, false
 		case ':':
 			e.openCmdline(':', count, hasCount)
@@ -954,9 +828,68 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 		case '?':
 			e.openCmdline('?', count, hasCount)
 			return parseComplete, false
+		// --- macros ---
+		case 'Q':
+			if e.macroReg != 0 {
+				e.stopMacro()
+				return parseComplete, false
+			}
+			reg := register
+			if reg == 0 {
+				reg = 'q'
+			}
+			if validRegister(reg) {
+				e.macroReg = unicode.ToLower(reg)
+				e.macroKeys = nil
+				e.setMsg("recording @" + string(e.macroReg))
+			}
+			return parseComplete, false
+		case 'q':
+			reg := register
+			if reg == 0 {
+				reg = 'q'
+			}
+			e.runMacro(reg, n)
+			return parseComplete, false
+		case '@':
+			if len(rest) < 2 {
+				return parseIncomplete, false
+			}
+			if rest[1].Printable() {
+				e.runMacro(rest[1].Rune, n)
+			}
+			return parseComplete, false
+		// --- undo, redo, repeat ---
+		case 'u':
+			for i := 0; i < n; i++ {
+				e.Undo()
+			}
+			return parseComplete, false
+		case 'U':
+			for i := 0; i < n; i++ {
+				e.Redo()
+			}
+			return parseComplete, false
+		case '.':
+			e.repeatLastChange(count, hasCount)
+			return parseComplete, false
+		// --- extras kept from ZenNotes (unbound in Helix) ---
+		case 'D':
+			e.beginChange()
+			e.deleteToEnd(n, register)
+			e.cursor = e.buf.clampNormal(e.cursor)
+			return parseComplete, false
+		case 'C':
+			e.beginChange()
+			e.deleteToEnd(n, register)
+			e.startInsert(Pos{e.cursor.Line, e.buf.LineLen(e.cursor.Line)})
+			return parseComplete, true
 		case '&':
 			e.beginChange()
 			e.repeatSubstitute(false)
+			return parseComplete, false
+		case ',':
+			e.repeatFindChar(-1, n)
 			return parseComplete, false
 		case 'Z':
 			if len(rest) < 2 {
@@ -968,10 +901,13 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 				e.hostEx(ExCommand{Name: "q", Bang: true, Raw: "q!"})
 			}
 			return parseComplete, false
+		// --- minor modes ---
 		case 'g':
-			return e.gCommand(rest, n, count, hasCount, register)
+			return e.gotoMode(rest, count, hasCount)
 		case 'z':
-			return e.zCommand(rest, n)
+			return e.viewMode(rest, n)
+		case 'm':
+			return e.matchMode(rest)
 		}
 	}
 	if k.IsCtrl('r') {
@@ -990,7 +926,11 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 		return parseComplete, false
 	}
 	if k.IsCtrl('v') {
-		e.enterVisual(ModeVisualBlock)
+		e.enterSelect(selBlock)
+		return parseComplete, false
+	}
+	if k.IsAlt('.') {
+		e.repeatLastMotion(n)
 		return parseComplete, false
 	}
 	if k.IsCtrl('d') {
@@ -1031,21 +971,33 @@ func (e *Editor) simpleCommand(rest []Key, count int, hasCount bool, register ru
 	}
 	if k.Is("delete") {
 		e.beginChange()
-		e.deleteChars(n, register)
+		e.runOperator("d", e.selectionSpan(), register, false)
 		return parseComplete, false
 	}
-	// Motions move the cursor.
+	// Motions. Helix is selection-first: word, paragraph and find motions
+	// replace the selection with the span they traverse, so `wd` deletes a
+	// word and `n` selects the next match. Character and line moves collapse
+	// the selection onto their target; in select mode they extend it.
 	m, st := parseMotion(rest)
 	if st != parseComplete {
 		return st, false
 	}
-	e.moveByMotion(m, count, hasCount)
+	switch {
+	case m.kind == "n" || m.kind == "N":
+		e.selectMatch(m, count, hasCount)
+	case selectorMotion(m):
+		e.selectByMotion(m, count, hasCount)
+	case e.mode == ModeSelect:
+		e.extendByMotion(m, count, hasCount)
+	default:
+		e.moveByMotion(m, count, hasCount)
+	}
 	return parseComplete, false
 }
 
-func (e *Editor) highlightOffOnEsc() {}
-
-func (e *Editor) gCommand(rest []Key, n, count int, hasCount bool, register rune) (parseStatus, bool) {
+// gotoMode is Helix's goto mode (g): file, line and screen positions plus the
+// ZenNotes link keys.
+func (e *Editor) gotoMode(rest []Key, count int, hasCount bool) (parseStatus, bool) {
 	if len(rest) < 2 {
 		return parseIncomplete, false
 	}
@@ -1054,30 +1006,37 @@ func (e *Editor) gCommand(rest []Key, n, count int, hasCount bool, register rune
 		return parseInvalid, false
 	}
 	switch k.Rune {
-	case 'i':
-		p, ok := e.marks['^']
-		if !ok {
-			p = e.cursor
+	case 'g':
+		// First line, or line N with a count.
+		if hasCount {
+			e.moveByMotion(motion{kind: "G"}, count, true)
+		} else {
+			e.moveByMotion(motion{kind: "gg"}, 1, false)
 		}
-		e.startInsert(p)
-		return parseComplete, true
-	case 'I':
-		e.startInsert(Pos{e.cursor.Line, 0})
-		return parseComplete, true
-	case 'v':
-		e.reselectVisual()
 		return parseComplete, false
-	case 'p':
-		e.beginChange()
-		e.put(register, n, true, true)
+	case 'e':
+		e.moveByMotion(motion{kind: "G"}, 1, false)
 		return parseComplete, false
-	case 'P':
-		e.beginChange()
-		e.put(register, n, false, true)
+	case 'j', 'k':
+		e.moveByMotion(motion{kind: "g" + string(k.Rune)}, 1, false)
 		return parseComplete, false
-	case 'J':
-		e.beginChange()
-		e.joinLines(e.cursor.Line, max(2, n), false)
+	case 'h':
+		e.moveByMotion(motion{kind: "0"}, 1, false)
+		return parseComplete, false
+	case 'l':
+		e.moveByMotion(motion{kind: "$"}, 1, false)
+		return parseComplete, false
+	case 's':
+		e.moveByMotion(motion{kind: "^"}, 1, false)
+		return parseComplete, false
+	case 't':
+		e.moveByMotion(motion{kind: "H"}, 1, false)
+		return parseComplete, false
+	case 'c':
+		e.moveByMotion(motion{kind: "M"}, 1, false)
+		return parseComplete, false
+	case 'b':
+		e.moveByMotion(motion{kind: "L"}, 1, false)
 		return parseComplete, false
 	case 'd':
 		if e.hooks.FollowLink != nil {
@@ -1094,28 +1053,27 @@ func (e *Editor) gCommand(rest []Key, n, count int, hasCount bool, register rune
 			e.hooks.OpenURL()
 		}
 		return parseComplete, false
+	case 'v':
+		e.reselect()
+		return parseComplete, false
 	case '&':
 		e.beginChange()
 		e.repeatSubstitute(true)
 		return parseComplete, false
-	case 'n':
-		return parseComplete, false
 	}
-	m, st := parseMotion(rest)
-	if st != parseComplete {
-		return st, false
-	}
-	e.moveByMotion(m, count, hasCount)
-	return parseComplete, false
+	return parseInvalid, false
 }
 
-func (e *Editor) zCommand(rest []Key, n int) (parseStatus, bool) {
+// viewMode is Helix's view mode (z): where the cursor line sits on screen,
+// plus the ZenNotes fold keys (folds moved off z c and z o, which Helix
+// gives to centre view and the fold motion pair).
+func (e *Editor) viewMode(rest []Key, n int) (parseStatus, bool) {
 	if len(rest) < 2 {
 		return parseIncomplete, false
 	}
 	k := rest[1]
 	switch {
-	case k.IsRune('z') || k.IsRune('.'):
+	case k.IsRune('z') || k.IsRune('c') || k.IsRune('.'):
 		e.scrollCursorTo(0.5)
 		if k.IsRune('.') {
 			e.cursor.Col = firstNonBlank(e.buf.Line(e.cursor.Line))
@@ -1130,7 +1088,11 @@ func (e *Editor) zCommand(rest []Key, n int) (parseStatus, bool) {
 		if k.IsRune('-') {
 			e.cursor.Col = firstNonBlank(e.buf.Line(e.cursor.Line))
 		}
-	case k.IsRune('c'):
+	case k.IsRune('j'):
+		e.scrollLines(n)
+	case k.IsRune('k'):
+		e.scrollLines(-n)
+	case k.IsRune('f'):
 		e.foldAtCursor()
 	case k.IsRune('o'):
 		e.unfoldAtCursor()
@@ -1140,17 +1102,17 @@ func (e *Editor) zCommand(rest []Key, n int) (parseStatus, bool) {
 		e.foldAll()
 	case k.IsRune('R'):
 		e.unfoldAll()
-	case k.IsRune('j'):
+	case k.IsRune('J'):
 		e.moveToFold(1, n)
-	case k.IsRune('k'):
+	case k.IsRune('K'):
 		e.moveToFold(-1, n)
-	case k.IsRune('=') || k.IsRune('g') || k.IsRune('G'):
-		// Harper suggestions are the host's; nothing to do in the buffer.
 	default:
 		return parseInvalid, false
 	}
 	return parseComplete, false
 }
+
+func (e *Editor) highlightOffOnEsc() {}
 
 // --- registers ---
 
@@ -1275,7 +1237,7 @@ func (e *Editor) repeatLastChange(count int, hasCount bool) {
 	for _, k := range append(prefix, keys...) {
 		e.HandleKey(k)
 	}
-	if e.mode == ModeInsert || e.mode == ModeReplace {
+	if e.mode == ModeInsert {
 		e.HandleKey(KeyEsc)
 	}
 	e.replaying = false
@@ -1321,8 +1283,72 @@ func (e *Editor) runMacro(r rune, n int) {
 
 // --- cursor movement helpers ---
 
+// selectorMotion reports whether the motion selects the span it traverses.
+// Helix's word, paragraph and find motions are selectors: `w` selects up to
+// the next word start, so `wd` deletes a word and `fx` selects through x.
+func selectorMotion(m motion) bool {
+	switch m.kind {
+	case "w", "W", "b", "B", "e", "E", "f", "F", "t", "T", "{", "}", "(", ")":
+		return true
+	}
+	return false
+}
+
+// selectByMotion applies a selector motion: the anchor drops at the old
+// cursor and the selection head lands on the motion target.
+func (e *Editor) selectByMotion(m motion, count int, hasCount bool) {
+	from := e.cursor
+	e.lastMotion = m
+	e.lastMotionArgs.count, e.lastMotionArgs.hasCount = count, hasCount
+	res, ok := e.applyMotion(m, count, hasCount, e.cursor, false)
+	if !ok {
+		return
+	}
+	if res.jump && e.cursor != res.pos {
+		e.pushJump()
+	}
+	e.motionSelected = true
+	// Word-start motions stop at the next word's first character without
+	// selecting it; every other selector includes its target.
+	e.selExcl = m.kind == "w" || m.kind == "W" || m.kind == "b" || m.kind == "B"
+	e.anchor = e.buf.clampNormal(from)
+	e.cursor = e.buf.clampNormal(res.pos)
+	e.desiredCol = -1
+	e.openFoldAt(e.cursor.Line)
+	e.ensureCursorVisible()
+}
+
+// selectMatch replaces the selection with the next search match (Helix's
+// `n`/`N` select the match, not just its start).
+func (e *Editor) selectMatch(m motion, count int, hasCount bool) {
+	e.lastMotion = m
+	e.lastMotionArgs.count, e.lastMotionArgs.hasCount = count, hasCount
+	res, ok := e.applyMotion(m, count, hasCount, e.cursor, false)
+	if !ok {
+		return
+	}
+	if res.jump {
+		e.pushJump()
+	}
+	e.motionSelected = true
+	// The selection covers the whole match; the head sits at the end for a
+	// forward search and at the start for a backward one.
+	if e.searchDir >= 0 {
+		e.anchor = e.buf.clampNormal(res.pos)
+		e.cursor = e.buf.clampNormal(Pos{res.matchEnd.Line, max(0, res.matchEnd.Col-1)})
+	} else {
+		e.anchor = e.buf.clampNormal(Pos{res.matchEnd.Line, max(0, res.matchEnd.Col-1)})
+		e.cursor = e.buf.clampNormal(res.pos)
+	}
+	e.desiredCol = -1
+	e.openFoldAt(e.cursor.Line)
+	e.ensureCursorVisible()
+}
+
 func (e *Editor) moveByMotion(m motion, count int, hasCount bool) {
 	from := e.cursor
+	e.lastMotion = m
+	e.lastMotionArgs.count, e.lastMotionArgs.hasCount = count, hasCount
 	res, ok := e.applyMotion(m, count, hasCount, e.cursor, false)
 	if !ok {
 		return
@@ -1342,6 +1368,33 @@ func (e *Editor) moveByMotion(m motion, count int, hasCount bool) {
 	}
 	e.openFoldAt(e.cursor.Line)
 	e.ensureCursorVisible()
+}
+
+// repeatLastMotion replays the last motion (Helix's Alt-.); in select mode
+// it extends the selection instead of collapsing it.
+func (e *Editor) repeatLastMotion(n int) {
+	if e.lastMotion.kind == "" {
+		return
+	}
+	count := e.lastMotionArgs.count
+	hasCount := e.lastMotionArgs.hasCount
+	if n > 1 {
+		count = n * max(1, count)
+		hasCount = true
+	}
+	if e.mode == ModeSelect {
+		if selectorMotion(e.lastMotion) {
+			e.selectByMotion(e.lastMotion, count, hasCount)
+		} else {
+			e.extendByMotion(e.lastMotion, count, hasCount)
+		}
+		return
+	}
+	if selectorMotion(e.lastMotion) {
+		e.selectByMotion(e.lastMotion, count, hasCount)
+		return
+	}
+	e.moveByMotion(e.lastMotion, count, hasCount)
 }
 
 func (e *Editor) pushJump() {
@@ -1613,12 +1666,12 @@ func (e *Editor) WordUnderCursor() string {
 func (e *Editor) InsertAtCursor(text string) {
 	e.beginChange()
 	p := e.cursor
-	if e.mode != ModeInsert && e.mode != ModeReplace && e.buf.LineLen(p.Line) > 0 && p.Col < e.buf.LineLen(p.Line) {
+	if e.mode != ModeInsert && e.buf.LineLen(p.Line) > 0 && p.Col < e.buf.LineLen(p.Line) {
 		p.Col++
 	}
 	end := e.buf.InsertText(p, text)
 	e.cursor = end
-	if e.mode != ModeInsert && e.mode != ModeReplace {
+	if e.mode != ModeInsert {
 		e.cursor = e.buf.clampNormal(e.cursor)
 		e.commitChange()
 	}
@@ -1635,7 +1688,7 @@ func (e *Editor) ReplaceAtCursor(before, after int, text string) {
 	end := Pos{e.cursor.Line, min(n, e.cursor.Col+after)}
 	e.buf.DeleteRange(start, end)
 	e.cursor = e.buf.InsertText(start, text)
-	if e.mode != ModeInsert && e.mode != ModeReplace {
+	if e.mode != ModeInsert {
 		e.cursor = e.buf.clampNormal(e.cursor)
 		e.commitChange()
 	}
@@ -1646,7 +1699,7 @@ func (e *Editor) ReplaceLineText(line int, text string) {
 	e.beginChange()
 	e.buf.ReplaceLine(line, []rune(text))
 	e.cursor = e.buf.clampNormal(e.cursor)
-	if e.mode == ModeInsert || e.mode == ModeReplace {
+	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(e.cursor)
 	} else {
 		e.commitChange()
@@ -1665,6 +1718,8 @@ func (e *Editor) ReplaceLines(from, to int, lines []string) {
 func (e *Editor) GotoLine(line int) {
 	e.pushJump()
 	e.cursor = e.buf.clampNormal(Pos{line - 1, 0})
+	e.anchor = e.cursor
+	e.selExcl = false
 	e.cursor.Col = firstNonBlank(e.buf.Line(e.cursor.Line))
 	e.desiredCol = -1
 	e.openFoldAt(e.cursor.Line)

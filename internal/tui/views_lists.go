@@ -11,7 +11,7 @@ import (
 	"github.com/atotto/clipboard"
 
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // --- note list views: Quick Notes, Archive, Trash ---
@@ -134,7 +134,7 @@ func formatAge(unixMs int64) string {
 	return time.UnixMilli(unixMs).Format("2006-01-02")
 }
 
-func (v *noteListView) handleKey(a *App, k vim.Key) bool {
+func (v *noteListView) handleKey(a *App, k helix.Key) bool {
 	if isMarkKey(k) {
 		if n := v.selected(); n != nil {
 			a.markPath(n.Path)
@@ -378,7 +378,7 @@ func joinColumns(a *App, blocks []string, h int) string {
 	return joinHorizontal(parts...)
 }
 
-func (v *tagsView) handleKey(a *App, k vim.Key) bool {
+func (v *tagsView) handleKey(a *App, k helix.Key) bool {
 	if k.Is("tab") && !k.Shift {
 		if v.tagList.cursor < len(v.tags) {
 			t := v.tags[v.tagList.cursor].tag

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,7 +40,7 @@ func (v *settingsView) refresh(a *App) {
 		}
 	}
 	tables := config.ValueTables(a.prefs.Prefs)
-	for _, section := range []string{"vim", "editor", "appearance", "view", "terminal"} {
+	for _, section := range []string{"helix", "editor", "appearance", "view", "terminal"} {
 		keys := []string{}
 		for k := range tables[section] {
 			keys = append(keys, k)
@@ -87,9 +87,9 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
-func (v *settingsView) handleKey(a *App, k vim.Key) bool {
+func (v *settingsView) handleKey(a *App, k helix.Key) bool {
 	if k.IsRune('v') {
-		_ = a.showVersion(vim.ExCommand{Name: "version"})
+		_ = a.showVersion(helix.ExCommand{Name: "version"})
 		return true
 	}
 	if a.listNav(&v.list, k, len(v.settings), v.rows) {

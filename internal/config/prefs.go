@@ -11,11 +11,11 @@ import (
 // honor. Defaults match the desktop's PORTABLE_DEFAULTS; a missing file or
 // key keeps the default.
 type Prefs struct {
-	VimWrappedLineMotions string
+	HelixWrappedLineMotions string
 	IgnoredKeys           []string
-	VimMode               bool
-	VimInsertEscape       string
-	VimYankToClipboard    bool
+	HelixMode               bool
+	HelixInsertEscape       string
+	HelixYankToClipboard    bool
 	WhichKeyHints         bool
 	WhichKeyHintMode      string
 	WhichKeyHintTimeoutMs int
@@ -81,8 +81,8 @@ type Prefs struct {
 // DefaultPrefs are the shipped defaults.
 func DefaultPrefs() Prefs {
 	return Prefs{
-		VimMode:                  true,
-		VimWrappedLineMotions:    "display",
+		HelixMode:                  true,
+		HelixWrappedLineMotions:    "display",
 		TabsEnabled:              true,
 		SavedTaskFilters:         map[string]string{},
 		WhichKeyHints:            true,
@@ -151,14 +151,24 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		m, _ := doc[name].(map[string]any)
 		return m
 	}
-	vim := section("vim")
-	setBool(vim, "enabled", &p.VimMode)
-	setString(vim, "wrapped_line_motions", &p.VimWrappedLineMotions)
-	setString(vim, "insert_escape", &p.VimInsertEscape)
-	setBool(vim, "yank_to_clipboard", &p.VimYankToClipboard)
-	setBool(vim, "which_key_hints", &p.WhichKeyHints)
-	setString(vim, "which_key_hint_mode", &p.WhichKeyHintMode)
-	setInt(vim, "which_key_hint_timeout_ms", &p.WhichKeyHintTimeoutMs)
+	// The editor section was [vim] before Helix: a key set in [helix] wins,
+	// otherwise the legacy table still applies.
+	modal := section("vim")
+	if helix := section("helix"); helix != nil {
+		if modal == nil {
+			modal = map[string]any{}
+		}
+		for k, v := range helix {
+			modal[k] = v
+		}
+	}
+	setBool(modal, "enabled", &p.HelixMode)
+	setString(modal, "wrapped_line_motions", &p.HelixWrappedLineMotions)
+	setString(modal, "insert_escape", &p.HelixInsertEscape)
+	setBool(modal, "yank_to_clipboard", &p.HelixYankToClipboard)
+	setBool(modal, "which_key_hints", &p.WhichKeyHints)
+	setString(modal, "which_key_hint_mode", &p.WhichKeyHintMode)
+	setInt(modal, "which_key_hint_timeout_ms", &p.WhichKeyHintTimeoutMs)
 
 	editor := section("editor")
 	setBool(editor, "sync_title_heading_on_rename", &p.SyncTitleHeadingOnRename)
@@ -285,7 +295,7 @@ func setInt(m map[string]any, key string, dst *int) {
 // no config.toml exists yet. Every key matches the desktop app's names.
 const DefaultConfigTOML = `# ZenNotes portable preferences. Shared by the desktop app and zn.
 
-[vim]
+[helix]
 enabled = true
 insert_escape = "jk"
 yank_to_clipboard = true

@@ -1,9 +1,9 @@
-// Package vim is a Vim editing engine over a plain text buffer: modes,
-// counts, registers, motions, operators, text objects, visual selections,
-// undo, dot-repeat, macros, marks, search and substitute, an ex command
-// line, and heading folds. It knows nothing about terminals; the terminal
-// UI feeds it keys and draws what it exposes.
-package vim
+// Package helix is a Helix editing engine over a plain text buffer: modes,
+// counts, registers, motions, selections, text objects, undo, dot-repeat,
+// macros, search and substitute, an ex command line, and heading folds. It
+// knows nothing about terminals; the terminal UI feeds it keys and draws
+// what it exposes.
+package helix
 
 import (
 	"strings"
@@ -58,6 +58,11 @@ func (k Key) IsRune(r rune) bool {
 // IsCtrl is true for the control chord Ctrl+r.
 func (k Key) IsCtrl(r rune) bool {
 	return k.Ctrl && !k.Alt && k.Rune == unicode.ToLower(r)
+}
+
+// IsAlt is true for the alt chord Alt+r.
+func (k Key) IsAlt(r rune) bool {
+	return k.Alt && !k.Ctrl && k.Rune == r
 }
 
 // Is is true for a special key by name (shift-insensitive unless the

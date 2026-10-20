@@ -1,4 +1,4 @@
-package vim
+package helix
 
 import (
 	"regexp"
@@ -738,7 +738,7 @@ var bulletOnlyRe = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+)(.*)$`
 func (e *Editor) ToggleCheckboxAtCursor() {
 	e.beginChange()
 	lines := []int{e.cursor.Line}
-	if e.inVisual() {
+	if e.inSelect() {
 		start, end, _, _ := e.VisualRange()
 		lines = nil
 		for l := start.Line; l <= end.Line; l++ {
@@ -766,8 +766,8 @@ func (e *Editor) ToggleCheckboxAtCursor() {
 			e.buf.ReplaceLine(l, []rune(string(indent)+"- [ ] "+strings.TrimLeft(s, " \t")))
 		}
 	}
-	if e.inVisual() {
-		e.exitVisual()
+	if e.inSelect() {
+		e.exitSelect()
 	}
 	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(e.cursor)

@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 type leaderHintMsg struct{ seq int }
@@ -14,7 +14,7 @@ type leaderHintMsg struct{ seq int }
 // leaderState is a leader sequence in progress.
 type leaderState struct {
 	seq       int
-	keys      []vim.Key
+	keys      []helix.Key
 	node      *leaderNode
 	showHints bool
 }
@@ -29,7 +29,7 @@ func (l *leaderState) pendingLabel() string {
 
 // handleKey routes one key: overlay first, then a leader or pane prefix in
 // progress, then the focused surface.
-func (a *App) handleKey(k vim.Key) tea.Cmd {
+func (a *App) handleKey(k helix.Key) tea.Cmd {
 	for _, ignored := range a.prefs.IgnoredKeys {
 		keys := bindingKeys(ignored)
 		if len(keys) == 1 && sameKey(k, keys[0]) {
@@ -59,8 +59,8 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		return a.afterKey()
 	}
 	if k.IsCtrl('c') {
-		if buf := a.activeBuffer(); buf != nil && a.focus == focusPane && buf.ed.Mode() != vim.ModeNormal {
-			buf.ed.HandleKey(vim.KeyEsc)
+		if buf := a.activeBuffer(); buf != nil && a.focus == focusPane && buf.ed.Mode() != helix.ModeNormal {
+			buf.ed.HandleKey(helix.KeyEsc)
 			return a.afterKey()
 		}
 		a.quit()
@@ -70,7 +70,7 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 	editing := false
 	if buf != nil && a.focus == focusPane {
 		m := buf.ed.Mode()
-		editing = m == vim.ModeInsert || m == vim.ModeReplace || m == vim.ModeCmdline || !a.prefs.VimMode
+		editing = m == helix.ModeInsert || m == helix.ModeCmdline || !a.prefs.HelixMode
 	}
 	if editing {
 		if a.completionKey(buf, k) || a.chordKey(k, true) {
@@ -79,7 +79,7 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		if buf.loading {
 			return a.afterKey()
 		}
-		if buf.ed.Mode() == vim.ModeInsert {
+		if buf.ed.Mode() == helix.ModeInsert {
 			if a.markdownSnippet(buf, k) {
 				return a.afterKey()
 			}
@@ -94,7 +94,7 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 	if a.chordKey(k, false) {
 		return a.afterKey()
 	}
-	if a.prefs.VimMode && a.isLeaderKey(k) {
+	if a.prefs.HelixMode && a.isLeaderKey(k) {
 		if buf == nil || a.focus != focusPane || buf.ed.Pending() == "" {
 			a.startLeader()
 			return a.afterKey()
@@ -121,8 +121,8 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 // drive an open tag menu, and Vim's Ctrl-X prefix, under which Ctrl-O (omni)
 // and Ctrl-] (tags) open that menu on demand. Ctrl-Space also completes
 // callout names and fence languages when the cursor is in those contexts.
-func (a *App) completionKey(buf *noteBuffer, k vim.Key) bool {
-	if buf.ed.Mode() != vim.ModeInsert {
+func (a *App) completionKey(buf *noteBuffer, k helix.Key) bool {
+	if buf.ed.Mode() != helix.ModeInsert {
 		a.insertCtrlX = false
 		return false
 	}
@@ -139,7 +139,7 @@ func (a *App) completionKey(buf *noteBuffer, k vim.Key) bool {
 		return true
 	}
 	switch {
-	case k.IsCtrl('x') && a.prefs.VimMode:
+	case k.IsCtrl('x') && a.prefs.HelixMode:
 		a.insertCtrlX = true
 		a.message, a.messageErr = "-- ^X mode (^O tags)", false
 	case k.IsCtrl('@'):
@@ -197,8 +197,8 @@ func (a *App) quit() {
 	a.quitting = true
 }
 
-func (a *App) isLeaderKey(k vim.Key) bool {
-	leader := a.keymap.Binding("vim.leaderPrefix")
+func (a *App) isLeaderKey(k helix.Key) bool {
+	leader := a.keymap.Binding("helix.leaderPrefix")
 	if leader == "" {
 		return false
 	}
@@ -207,14 +207,14 @@ func (a *App) isLeaderKey(k vim.Key) bool {
 }
 
 // bound reports whether k is the (single-chord) binding of an action.
-func (a *App) bound(k vim.Key, id string) bool {
+func (a *App) bound(k helix.Key, id string) bool {
 	keys := bindingKeys(a.keymap.Binding(id))
 	return len(keys) == 1 && sameKey(k, keys[0])
 }
 
 // chordKey handles bindings that hold everywhere: modifier chords. With
 // editing true only the chords safe inside insert mode apply.
-func (a *App) chordKey(k vim.Key, editing bool) bool {
+func (a *App) chordKey(k helix.Key, editing bool) bool {
 	if !k.Ctrl && !k.Alt {
 		return false
 	}
@@ -261,12 +261,12 @@ func (a *App) chordKey(k vim.Key, editing bool) bool {
 	case k.IsCtrl('g'):
 		a.openCommandPalette()
 	case k.IsCtrl('z'):
-		if editing && !a.prefs.VimMode {
+		if editing && !a.prefs.HelixMode {
 			return false
 		}
 		a.queue(tea.Suspend)
 	case a.tabSelectChord(k):
-	case editing && a.prefs.VimMode:
+	case editing && a.prefs.HelixMode:
 		// Insert mode keeps Ctrl+P/N (completion) and the rest for Vim.
 		return false
 	case a.bound(k, "global.searchNotes"):
@@ -283,13 +283,13 @@ func (a *App) chordKey(k vim.Key, editing bool) bool {
 		a.toggleRecentNote()
 	case a.bound(k, "global.reopenClosedTab"):
 		a.reopenClosedTab()
-	case !a.prefs.VimMode && a.bound(k, "global.closeActiveTab"):
+	case !a.prefs.HelixMode && a.bound(k, "global.closeActiveTab"):
 		a.closeTab(a.activePane, a.activePane.active)
-	case a.prefs.VimMode && a.bound(k, "vim.panePrefix"):
+	case a.prefs.HelixMode && a.bound(k, "helix.panePrefix"):
 		a.paneKeys = true
-	case a.prefs.VimMode && a.bound(k, "vim.historyBack"):
+	case a.prefs.HelixMode && a.bound(k, "helix.historyBack"):
 		a.jumpBack()
-	case a.prefs.VimMode && a.bound(k, "vim.historyForward"):
+	case a.prefs.HelixMode && a.bound(k, "helix.historyForward"):
 		a.jumpForward()
 	default:
 		return false
@@ -297,7 +297,7 @@ func (a *App) chordKey(k vim.Key, editing bool) bool {
 	return true
 }
 
-func (a *App) tabSelectChord(k vim.Key) bool {
+func (a *App) tabSelectChord(k helix.Key) bool {
 	ids := []string{"tabs.select1", "tabs.select2", "tabs.select3", "tabs.select4", "tabs.select5", "tabs.select6", "tabs.select7", "tabs.select8", "tabs.select9"}
 	for i, id := range ids {
 		if a.bound(k, id) {
@@ -309,7 +309,7 @@ func (a *App) tabSelectChord(k vim.Key) bool {
 }
 
 // paneKey is a key for the active pane's content.
-func (a *App) paneKey(k vim.Key) {
+func (a *App) paneKey(k helix.Key) {
 	if buf := a.activeBuffer(); buf != nil && buf.loading {
 		if k.IsRune(':') {
 			a.openLocalEx()
@@ -318,7 +318,7 @@ func (a *App) paneKey(k vim.Key) {
 	}
 	t := a.activeTab()
 	if t == nil {
-		if a.prefs.VimMode && k.IsRune('?') {
+		if a.prefs.HelixMode && k.IsRune('?') {
 			a.openHelp()
 			return
 		}
@@ -339,7 +339,7 @@ func (a *App) paneKey(k vim.Key) {
 	if buf == nil {
 		return
 	}
-	if t.mode != modePreview && buf.ed.Mode() == vim.ModeInsert {
+	if t.mode != modePreview && buf.ed.Mode() == helix.ModeInsert {
 		if isMarkKey(k) {
 			a.markdownCompletion()
 			return
@@ -357,14 +357,15 @@ func (a *App) paneKey(k vim.Key) {
 
 // editorKey feeds a normal or visual mode key, first checking the app's own
 // multi-key sequences (`gt`, `]b`) which the engine would otherwise own.
-func (a *App) editorKey(buf *noteBuffer, k vim.Key) {
-	if a.prefs.VimMode && (k.Is("tab") && !k.Shift) && buf.ed.Pending() == "" && a.bound(vim.Key{Rune: 'i', Ctrl: true}, "vim.historyForward") {
+func (a *App) editorKey(buf *noteBuffer, k helix.Key) {
+	if a.prefs.HelixMode && (k.Is("tab") && !k.Shift) && buf.ed.Pending() == "" && a.bound(helix.Key{Rune: 'i', Ctrl: true}, "helix.historyForward") {
 		a.jumpForward()
 		return
 	}
-	seqIDs := []string{"vim.bufferPrevious", "vim.bufferNext", "vim.tabPrevious", "vim.tabNext"}
+	seqIDs := []string{"helix.bufferPrevious", "helix.bufferNext", "helix.tabPrevious", "helix.tabNext",
+		"helix.gotoTabPrevious", "helix.gotoTabNext"}
 	if len(a.navKeys) > 0 {
-		seq := append(append([]vim.Key{}, a.navKeys...), k)
+		seq := append(append([]helix.Key{}, a.navKeys...), k)
 		a.navKeys = nil
 		for _, id := range seqIDs {
 			complete, _ := matchSequence(seq, bindingKeys(a.keymap.Binding(id)))
@@ -384,7 +385,7 @@ func (a *App) editorKey(buf *noteBuffer, k vim.Key) {
 		for _, id := range seqIDs {
 			keys := bindingKeys(a.keymap.Binding(id))
 			if len(keys) > 1 && sameKey(k, keys[0]) {
-				a.navKeys = []vim.Key{k}
+				a.navKeys = []helix.Key{k}
 				return
 			}
 			if len(keys) == 1 && sameKey(k, keys[0]) {
@@ -403,31 +404,39 @@ func (a *App) runSequenceAction(id string, count int, hasCount bool) {
 		count = 1
 	}
 	switch id {
-	case "vim.bufferPrevious":
+	case "helix.bufferPrevious":
 		for i := 0; i < count; i++ {
 			a.cycleTab(-1)
 		}
-	case "vim.bufferNext":
+	case "helix.bufferNext":
 		for i := 0; i < count; i++ {
 			a.cycleTab(1)
 		}
-	case "vim.tabPrevious":
+	case "helix.tabPrevious":
 		for i := 0; i < count; i++ {
 			a.cycleTab(-1)
 		}
-	case "vim.tabNext":
+	case "helix.tabNext":
 		if hasCount {
 			a.selectTab(count)
 			return
 		}
 		a.cycleTab(1)
+	case "helix.gotoTabPrevious":
+		for i := 0; i < count; i++ {
+			a.cycleTab(-1)
+		}
+	case "helix.gotoTabNext":
+		for i := 0; i < count; i++ {
+			a.cycleTab(1)
+		}
 	}
 }
 
 // resolveAction matches the typed keys against list bindings. A prefix
 // match parks the keys and reports pending.
-func (a *App) resolveAction(k vim.Key, ids ...string) (string, bool) {
-	seq := append(append([]vim.Key{}, a.navKeys...), k)
+func (a *App) resolveAction(k helix.Key, ids ...string) (string, bool) {
+	seq := append(append([]helix.Key{}, a.navKeys...), k)
 	anyPrefix := false
 	for _, id := range ids {
 		b := a.keymap.Binding(id)
@@ -453,8 +462,8 @@ func (a *App) resolveAction(k vim.Key, ids ...string) (string, bool) {
 
 // listKeyAllowed gates single-key list shortcuts on Vim mode: with Vim off
 // only arrows, Enter, Escape and modifier chords reach a list.
-func (a *App) listKeyAllowed(k vim.Key) bool {
-	if a.prefs.VimMode {
+func (a *App) listKeyAllowed(k helix.Key) bool {
+	if a.prefs.HelixMode {
 		return true
 	}
 	return !k.Printable()
@@ -623,7 +632,7 @@ func (a *App) saveNow() {
 
 // --- Ctrl+W pane commands ---
 
-func (a *App) paneCommand(k vim.Key) {
+func (a *App) paneCommand(k helix.Key) {
 	switch {
 	case k.IsRune('h') || k.Is("left") || k.IsCtrl('h'):
 		a.focusDirection('h')
@@ -763,7 +772,7 @@ func containsPane(n *paneNode, p *pane) bool {
 
 // --- jump list across notes ---
 
-func (a *App) pushJump(path string, pos vim.Pos) {
+func (a *App) pushJump(path string, pos helix.Pos) {
 	if a.jumpIdx >= 0 && a.jumpIdx < len(a.jumps) {
 		a.jumps = a.jumps[:a.jumpIdx]
 	}
@@ -820,7 +829,7 @@ func (a *App) startLeader() {
 	}
 }
 
-func (a *App) leaderKey(k vim.Key) {
+func (a *App) leaderKey(k helix.Key) {
 	l := a.leader
 	if k.Is("esc") || k.IsCtrl('c') || (a.isLeaderKey(k) && a.prefs.WhichKeyHintMode == "sticky") {
 		a.leader = nil

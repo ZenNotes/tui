@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/search"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // pickItem is one checkable entry of a pickOverlay.
@@ -145,7 +145,7 @@ func (p *pickOverlay) toggleCurrent() {
 	}
 }
 
-func (p *pickOverlay) handleKey(a *App, k vim.Key) {
+func (p *pickOverlay) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsCtrl('['):
 		a.overlay = nil
