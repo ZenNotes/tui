@@ -93,12 +93,12 @@ func (e *Editor) SelectionKind() string {
 
 // VisualRange is the normalized selection: start..end inclusive, the mode,
 // and ok when a selection is active. Selector motions leave spanning
-// selections in normal mode, so any non-collapsed anchor counts as active.
-// A word-start selection's end is exclusive; it is reported one character
-// short so the highlight stops before the next word's first char. For block
-// mode the columns come from BlockColumns.
+// selections in normal mode, so any non-collapsed anchor counts as active —
+// insert mode never renders one. A word-start selection's end is exclusive;
+// it is reported one character short so the highlight stops before the next
+// word's first char. For block mode the columns come from BlockColumns.
 func (e *Editor) VisualRange() (start, end Pos, mode Mode, ok bool) {
-	if e.mode != ModeSelect && e.anchor == e.cursor {
+	if e.mode == ModeInsert || (e.mode != ModeSelect && e.anchor == e.cursor) {
 		return Pos{}, Pos{}, e.mode, false
 	}
 	start, end = e.selRange()
@@ -135,7 +135,7 @@ func (e *Editor) BlockColumns() (left, right int, toEnd bool) {
 // selectionSpan converts the current selection into an operator span; the
 // collapsed selection becomes the single character under the cursor.
 func (e *Editor) selectionSpan() span {
-	if e.mode != ModeSelect && e.anchor == e.cursor {
+	if e.mode != ModeSelect && (e.anchor == e.cursor || e.mode == ModeInsert) {
 		return span{start: e.cursor, end: e.stepInsertPos(e.cursor)}
 	}
 	from, to := e.selRange()

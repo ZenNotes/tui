@@ -563,6 +563,9 @@ func (e *Editor) put(register rune, n int, after bool, cursorAfter bool) {
 func (e *Editor) startInsert(p Pos) {
 	e.beginChange()
 	e.mode = ModeInsert
+	// Typing owns the whole range: a stale anchor must not grow a highlight
+	// or a span while the cursor advances through inserted text.
+	e.anchor = e.cursor
 	e.cursor = e.buf.clampInsert(p)
 	e.ins = insertState{start: e.cursor}
 	e.desiredCol = -1

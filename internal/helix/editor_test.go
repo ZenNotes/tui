@@ -547,3 +547,37 @@ func TestSelectorMotions(t *testing.T) {
 		t.Fatalf("n selection = %v..%v ok=%t cursor=%+v", start, end, ok, e2.Cursor())
 	}
 }
+
+func TestInsertModeNeverShowsASelection(t *testing.T) {
+	// Typing must not grow a selection: the anchor stays where insert began
+	// while the cursor advances, and insert mode renders no highlight.
+	e := New("one two", DefaultOptions(), Hooks{})
+	e.SetViewport(10)
+	e.SetCursor(Pos{0, 0})
+	e.Feed("ihello")
+	_, _, _, ok := e.VisualRange()
+	if ok {
+		t.Fatal("insert mode rendered a selection")
+	}
+	sp := e.selectionSpan()
+	if sp.start != e.cursor {
+		t.Fatalf("insert span started at %+v, want the cursor %+v", sp.start, e.cursor)
+	}
+	// Esc collapses cleanly; the typed text stays.
+	e.Feed("<Esc>")
+	if got := e.Text(); got != "helloone two" || e.Cursor() != (Pos{0, 4}) {
+		t.Fatalf("after insert: %q %+v", got, e.Cursor())
+	}
+	if _, _, _, ok := e.VisualRange(); ok {
+		t.Fatal("esc left a selection behind")
+	}
+	// The same through a selector motion: wiX<Esc> inserts after the hop.
+	e2 := New("hello world", DefaultOptions(), Hooks{})
+	e2.SetViewport(10)
+	e2.SetCursor(Pos{0, 0})
+	e2.Feed("wi")
+	_, _, _, ok = e2.VisualRange()
+	if ok {
+		t.Fatal("insert after a selector motion rendered a selection")
+	}
+}
