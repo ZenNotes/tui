@@ -62,6 +62,7 @@ func helpLines(a *App, filter string) []string {
 		leader + " ;\tCommand palette (every ex command, searchable)",
 		leader + " ?\tThis manual",
 		"Leader hints appear immediately; timed expires the sequence, sticky keeps it open (helix.which_key_hint_mode).",
+		"Motions engine: [helix] motions = vim (operator-pending, default) or helix (selection-first).",
 		"",
 		"## Editor: motions",
 		"h j k l 0 ^ $\tMoves; word and find motions select as they travel",

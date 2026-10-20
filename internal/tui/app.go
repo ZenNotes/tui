@@ -855,7 +855,7 @@ func (a *App) renderStatusBar() string {
 	modeStyle := t.StatusMode
 	if buf := a.activeBuffer(); buf != nil && a.focus == focusPane {
 		if a.prefs.HelixMode {
-			mode = buf.ed.Mode().Label()
+			mode = buf.ed.ModeLabel()
 		} else {
 			mode = "EDIT"
 		}

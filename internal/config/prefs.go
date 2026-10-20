@@ -12,13 +12,14 @@ import (
 // key keeps the default.
 type Prefs struct {
 	HelixWrappedLineMotions string
-	IgnoredKeys           []string
+	IgnoredKeys             []string
 	HelixMode               bool
+	Motions                 string
 	HelixInsertEscape       string
 	HelixYankToClipboard    bool
-	WhichKeyHints         bool
-	WhichKeyHintMode      string
-	WhichKeyHintTimeoutMs int
+	WhichKeyHints           bool
+	WhichKeyHintMode        string
+	WhichKeyHintTimeoutMs   int
 
 	SyncTitleHeadingOnRename bool
 	EditorTabSize            int
@@ -81,8 +82,9 @@ type Prefs struct {
 // DefaultPrefs are the shipped defaults.
 func DefaultPrefs() Prefs {
 	return Prefs{
-		HelixMode:                  true,
-		HelixWrappedLineMotions:    "display",
+		HelixMode:                true,
+		Motions:                  "vim",
+		HelixWrappedLineMotions:  "display",
 		TabsEnabled:              true,
 		SavedTaskFilters:         map[string]string{},
 		WhichKeyHints:            true,
@@ -163,6 +165,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		}
 	}
 	setBool(modal, "enabled", &p.HelixMode)
+	setString(modal, "motions", &p.Motions)
 	setString(modal, "wrapped_line_motions", &p.HelixWrappedLineMotions)
 	setString(modal, "insert_escape", &p.HelixInsertEscape)
 	setBool(modal, "yank_to_clipboard", &p.HelixYankToClipboard)

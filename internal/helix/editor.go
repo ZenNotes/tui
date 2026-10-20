@@ -89,6 +89,21 @@ type RegisterStore struct {
 	values map[rune]Register
 }
 
+// Init makes a zero-value store usable.
+func (s *RegisterStore) Init() {
+	if s.values == nil {
+		s.values = make(map[rune]Register)
+	}
+}
+
+// Map is the backing register map. Both engines point their Editor at it so
+// registers stay session-wide; the host owns the store, so this stays on the
+// event loop like the rest of the engine.
+func (s *RegisterStore) Map() map[rune]Register {
+	s.Init()
+	return s.values
+}
+
 // Range is a line range for an ex command, zero-based and inclusive.
 type Range struct {
 	Start, End int
@@ -1728,6 +1743,9 @@ func (e *Editor) GotoLine(line int) {
 
 // StatusSuffix is the text a status line shows after the mode: pending
 // keys and the macro being recorded.
+// ModeLabel is the status-bar name of the current mode.
+func (e *Editor) ModeLabel() string { return e.mode.Label() }
+
 func (e *Editor) StatusSuffix() string {
 	parts := []string{}
 	if p := e.Pending(); p != "" {

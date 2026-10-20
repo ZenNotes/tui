@@ -505,12 +505,12 @@ func (m *menu) render(a *App, w, h int) string {
 // --- quick capture ---
 
 type captureOverlay struct {
-	ed *helix.Editor
+	ed modalEditor
 }
 
 func (a *App) openQuickCapture() {
 	opts := a.editorOptions()
-	ed := helix.New("", opts, helix.Hooks{})
+	ed := a.newModalEditorWithOpts("", opts, helix.Hooks{}, nil)
 	ed.SetViewport(8)
 	if a.prefs.HelixMode {
 		ed.HandleKey(helix.R('i'))
@@ -548,7 +548,7 @@ func (c *captureOverlay) render(a *App, w, h int) string {
 	c.ed.EnsureCursorVisible()
 	body := renderPlainEditor(a, c.ed, inner, 8, true)
 	lines = append(lines, strings.Split(body, "\n")...)
-	mode := c.ed.Mode().Label()
+	mode := c.ed.ModeLabel()
 	if !a.prefs.HelixMode {
 		mode = "EDIT"
 	}

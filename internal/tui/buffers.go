@@ -20,7 +20,7 @@ type noteBuffer struct {
 	// codeHL caches the syntax highlighting of fenced code per version.
 	codeHL      *codeHighlights
 	path        string
-	ed          *helix.Editor
+	ed          modalEditor
 	meta        vault.NoteMeta
 	savedText   string
 	diskChanged bool
@@ -70,7 +70,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	if a.deferReads {
 		meta, _ := a.noteMeta(path)
 		buf := &noteBuffer{path: path, meta: meta, loading: true}
-		buf.ed = helix.NewWithRegisters("", a.editorOptions(), a.editorHooks(buf), &a.registers)
+		buf.ed = a.newModalEditor("", a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[path] = buf
 		a.queue(a.readBufferCmd(buf))
@@ -81,7 +81,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 		return nil, err
 	}
 	buf := &noteBuffer{path: path, meta: content.NoteMeta, savedText: content.Body}
-	buf.ed = helix.NewWithRegisters(content.Body, a.editorOptions(), a.editorHooks(buf), &a.registers)
+	buf.ed = a.newModalEditor(content.Body, a.editorHooks(buf), &a.registers)
 	buf.ed.MarkSaved()
 	a.buffers[path] = buf
 	return buf, nil

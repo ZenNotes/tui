@@ -123,7 +123,7 @@ func underTagsKey(lines []string, lineNo int) bool {
 
 // tagTokenAt is the token the cursor is completing, if the place allows
 // tags at all: not in code, not in a heading, not in a link.
-func tagTokenAt(ed *helix.Editor) (tagToken, bool) {
+func tagTokenAt(ed modalEditor) (tagToken, bool) {
 	cur := ed.Cursor()
 	lines := ed.Lines()
 	if cur.Line >= len(lines) {

@@ -524,9 +524,18 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 
 ### Editing
 
-The editor is a full Vim: counts, registers, marks, macros, dot-repeat,
-undo and redo, text objects, visual, visual line and visual block, search,
-`:s` `:g` `:sort` `:norm` with ranges, `gq`, and heading motions `]]` `[[`.
+The editor ships two motion engines: Vim (default) and Helix. Pick one with
+`[helix] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
+engine keeps classic operator-pending editing — `dw` `cw` `yiw`, visual,
+visual line and visual block, and the rest of the Vim toolkit. The Helix
+engine is selection-first — motions like `w` select as they travel, so `wd`
+deletes a word and `n` selects the next match; `miw` picks a word precisely.
+Tab switching (`gn` `gp`, `gt` `gT`, `]b` `[b`), the leader, registers and
+macros work in either engine.
+
+The editor also has counts, registers, marks, macros, dot-repeat, undo and
+redo, text objects, search, `:s` `:g` `:sort` `:norm` with ranges, `gq`, and
+heading motions `]]` `[[`.
 Markdown on top: `Ctrl+L` toggles the checkbox on the line, `gd` follows a
 link, `gx` opens a URL, `gy` copies a link, `zc zo zM zR` fold headings,
 Enter continues lists, Tab indents list items, `[[` opens the note picker
@@ -539,7 +548,7 @@ linewise and blockwise selections, and delete history work across notes too.
 Closing the source note does not discard its yank. Each note keeps its own
 cursor and undo history; system-clipboard integration remains a separate preference.
 
-Vim mode follows `[vim] enabled` in `config.toml`. With it off, the editor
+Modal editing follows `[helix] enabled` in `config.toml`. With it off, the editor
 is a plain editor. Use arrows and Enter in lists, F2 for context actions,
 and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
 

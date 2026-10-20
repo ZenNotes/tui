@@ -57,7 +57,7 @@ func validateKnownValues(doc map[string]any) error {
 		}
 	}
 	enums := map[string]map[string][]string{
-		"helix":      {"which_key_hint_mode": {"timed", "sticky", "instant"}, "wrapped_line_motions": {"display", "logical"}},
+		"helix":      {"which_key_hint_mode": {"timed", "sticky", "instant"}, "wrapped_line_motions": {"display", "logical"}, "motions": {"helix", "vim"}},
 		"vim":        {"which_key_hint_mode": {"timed", "sticky", "instant"}, "wrapped_line_motions": {"display", "logical"}},
 		"editor":     {"default_view_mode": {"edit", "split", "preview"}, "line_number_mode": {"off", "absolute", "relative", "hybrid"}, "completed_task_style": {"none", "gray", "strikethrough", "gray-strikethrough"}, "time_format": {"12h", "24h"}},
 		"view":       {"tasks_view_mode": {"list", "kanban", "board", "calendar"}, "calendar_week_start": {"monday", "sunday"}, "note_sort_order": {"none", "name-asc", "name-desc", "updated-desc", "updated-asc", "created-desc", "created-asc"}},

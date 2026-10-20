@@ -503,7 +503,7 @@ func inVisualRange(line, col int, start, end helix.Pos, kind string, bl, br int,
 }
 
 // renderPlainEditor draws a small editor (quick capture) without gutter.
-func renderPlainEditor(a *App, ed *helix.Editor, w, h int, focused bool) string {
+func renderPlainEditor(a *App, ed modalEditor, w, h int, focused bool) string {
 	tmp := &noteBuffer{ed: ed}
 	saved := a.prefs.LineNumberMode
 	a.prefs.LineNumberMode = "off"
