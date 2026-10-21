@@ -255,10 +255,13 @@ type Editor struct {
 	// behind (the selector motions); finishNormal collapses stale anchors
 	// after every other normal-mode command.
 	motionSelected bool
-	// selExcl marks a selection whose upper-bound character is not part of
-	// it: word-start motions select up to the next word's first character
-	// without including it (Helix keeps that char as the exclusive head).
-	selExcl        bool
+	// selExcl marks a selection that leaves out the character under the
+	// head: a forward word motion stops on the first character of the word
+	// it lands on without selecting it.
+	selExcl bool
+	// expandStack holds the selections the growth commands replaced, so
+	// Alt+i can restore the one before it.
+	expandStack    []selState
 	lastMotionArgs struct {
 		count    int
 		hasCount bool
@@ -451,6 +454,9 @@ func (e *Editor) RegisterText(r rune) (Register, bool) {
 // --- undo ---
 
 func (e *Editor) beginChange() {
+	// Text that moves under the selection makes the saved growth steps
+	// stale, so the stack starts over.
+	e.expandStack = nil
 	if e.active != nil {
 		return
 	}
@@ -948,6 +954,14 @@ func (e *Editor) normalCommand(rest []Key, count int, hasCount bool, register ru
 		e.repeatLastMotion(n)
 		return parseComplete, false
 	}
+	if k.IsAlt('o') || (k.Alt && k.Name == "up") {
+		e.expandSelection()
+		return parseComplete, false
+	}
+	if k.IsAlt('i') || (k.Alt && k.Name == "down") {
+		e.shrinkSelection()
+		return parseComplete, false
+	}
 	if k.IsCtrl('d') {
 		e.scrollHalfPage(1, count, hasCount)
 		return parseComplete, false
@@ -1323,10 +1337,29 @@ func (e *Editor) selectByMotion(m motion, count int, hasCount bool) {
 		e.pushJump()
 	}
 	e.motionSelected = true
-	// Word-start motions stop at the next word's first character without
-	// selecting it; every other selector includes its target.
-	e.selExcl = m.kind == "w" || m.kind == "W" || m.kind == "b" || m.kind == "B"
-	e.anchor = e.buf.clampNormal(from)
+	// Word-start motions leave out the word they land on: they stop on its
+	// first character without selecting it. A backward word motion is the
+	// exception: it selects the word it lands on, plus the space that
+	// follows it. Every other selector includes its target. A word motion
+	// that ran out of words stops on the last character of a word instead,
+	// and that character is part of the selection.
+	e.selExcl = !res.inclusive && !res.hasWordEnd && (m.kind == "w" || m.kind == "W" || m.kind == "b" || m.kind == "B")
+	switch {
+	case res.hasWordEnd:
+		// A backward word motion selects the word it lands on, so the
+		// selection ends there and not at the cursor.
+		e.anchor = e.buf.clampNormal(res.wordEnd)
+	case res.hasAnchor && e.mode != ModeSelect:
+		// The motion crossed to the next line: the selection starts
+		// there, like Helix.
+		e.anchor = res.anchor
+	case res.hasSelStart:
+		// The selection starts at the first character of the word under
+		// the cursor, so the word is covered whole.
+		e.anchor = e.buf.clampNormal(res.selStart)
+	default:
+		e.anchor = e.buf.clampNormal(from)
+	}
 	e.cursor = e.buf.clampNormal(res.pos)
 	e.desiredCol = -1
 	e.openFoldAt(e.cursor.Line)

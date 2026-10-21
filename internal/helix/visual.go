@@ -101,15 +101,31 @@ func (e *Editor) VisualRange() (start, end Pos, mode Mode, ok bool) {
 	if e.mode == ModeInsert || (e.mode != ModeSelect && e.anchor == e.cursor) {
 		return Pos{}, Pos{}, e.mode, false
 	}
-	start, end = e.selRange()
-	if e.selExcl && start.Less(end) {
-		end = e.prevCharPos(end)
-	}
+	start, end = e.selectionChars()
 	if e.kind == selLine {
 		start.Col = 0
 		end.Col = max(0, e.buf.LineLen(end.Line)-1)
 	}
 	return start, end, e.mode, true
+}
+
+// BlockCursor is where the block cursor is drawn. Helix keeps the cursor on
+// the head side of the selection, inside it: a selection that stops short of
+// its head, like the one a word-start motion leaves, draws the cursor on the
+// character the selection ends on.
+func (e *Editor) BlockCursor() Pos {
+	if !e.selExcl || e.mode == ModeInsert {
+		return e.cursor
+	}
+	from, to := e.selectionChars()
+	if e.cursor.Less(e.anchor) {
+		// A backward motion: the head is the lower bound, so the cursor
+		// sits on the first character of the selection.
+		return from
+	}
+	// A forward motion: the head is the upper bound, so the cursor sits
+	// on the last character of the selection.
+	return to
 }
 
 // prevCharPos is the character before p, walking back over line breaks.
@@ -119,6 +135,17 @@ func (e *Editor) prevCharPos(p Pos) Pos {
 	}
 	if p.Line > 0 {
 		return Pos{p.Line - 1, max(0, e.buf.LineLen(p.Line-1)-1)}
+	}
+	return p
+}
+
+// nextCharPos is the character after p, walking over line breaks.
+func (e *Editor) nextCharPos(p Pos) Pos {
+	if p.Col+1 < e.buf.LineLen(p.Line) {
+		return Pos{p.Line, p.Col + 1}
+	}
+	if p.Line+1 < e.buf.LineCount() {
+		return Pos{p.Line + 1, 0}
 	}
 	return p
 }
@@ -146,11 +173,9 @@ func (e *Editor) selectionSpan() span {
 		left, right, toEnd := e.BlockColumns()
 		return span{start: Pos{from.Line, left}, end: Pos{to.Line, right}, blockwise: true, blockLeft: left, blockRight: right, blockToEnd: toEnd}
 	}
-	if e.selExcl {
-		// The upper-bound character sits past the selection: `w` stops on
-		// the next word's first char without selecting it.
-		return span{start: from, end: to}
-	}
+	// The characters the selection covers: a word-start motion leaves out
+	// the word it landed on, on either side of the selection.
+	from, to = e.selectionChars()
 	return span{start: from, end: e.stepInsertPos(to)}
 }
 
@@ -440,6 +465,12 @@ func (e *Editor) runSelect(keys []Key) parseStatus {
 		return finish(false)
 	case k.IsAlt('.'):
 		e.repeatLastMotion(n)
+		return parseComplete
+	case k.IsAlt('o') || (k.Alt && k.Name == "up"):
+		e.expandSelection()
+		return parseComplete
+	case k.IsAlt('i') || (k.Alt && k.Name == "down"):
+		e.shrinkSelection()
 		return parseComplete
 	case k.IsRune('z'):
 		if len(rest) < 2 {

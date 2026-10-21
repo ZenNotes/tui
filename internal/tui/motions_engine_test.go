@@ -42,6 +42,27 @@ func TestMotionsOptionPicksTheEngine(t *testing.T) {
 	}
 }
 
+// TestHelixWordMotionLeavesTheNextWordOut checks that the helix engine keeps
+// the word a motion lands on out of the selection, and draws the block cursor
+// inside the selection, the way Helix does.
+func TestHelixWordMotionLeavesTheNextWordOut(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	a.prefs.Motions = "helix"
+	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("one two three\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.openNote("note.md", true)
+	ed := a.activeBuffer().ed
+	ed.Feed("w")
+	start, end, _, ok := ed.VisualRange()
+	if !ok || start != (helix.Pos{Line: 0, Col: 0}) || end != (helix.Pos{Line: 0, Col: 3}) {
+		t.Fatalf("selection after w = %v..%v ok=%t, want the text before the next word", start, end, ok)
+	}
+	if got, want := ed.BlockCursor(), (helix.Pos{Line: 0, Col: 3}); got != want {
+		t.Fatalf("block cursor after w = %v, want %v", got, want)
+	}
+}
+
 // TestVimMotionsKeepAppKeys checks that with the vim engine the app-level
 // sequences still work and visual mode reports its label.
 func TestVimMotionsKeepAppKeys(t *testing.T) {

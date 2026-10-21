@@ -288,7 +288,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	textW := max(1, w-gutter)
 	lines := ed.Lines()
 	blocks := computeBlockState(lines)
-	cur := ed.Cursor()
+	cur := ed.BlockCursor()
 	vStart, vEnd, _, inVisual := ed.VisualRange()
 	vKind := ed.SelectionKind()
 	blockLeft, blockRight, blockToEnd := 0, 0, false

@@ -11,6 +11,7 @@ import (
 // either one the same way; the vim adapter converts its engine-local Mode.
 type modalEditor interface {
 	BlockColumns() (left, right int, toEnd bool)
+	BlockCursor() helix.Pos
 	ClearMessage()
 	Cmdline() (kind rune, text string, cursor int, active bool)
 	Completions() ([]string, int)
@@ -74,6 +75,10 @@ func (w vimEditor) Mode() helix.Mode {
 // ModeLabel is the status-bar name of the current mode, including vim's
 // visual and replace modes.
 func (w vimEditor) ModeLabel() string { return w.Editor.Mode().Label() }
+
+// BlockCursor is where the block cursor is drawn. Vim keeps the cursor on
+// the character under it, so the head position is the cursor.
+func (w vimEditor) BlockCursor() helix.Pos { return w.Editor.Cursor() }
 
 // VisualRange reports the selection; the vim engine's mode maps to a plain
 // helix selection, with the kind carried by SelectionKind.

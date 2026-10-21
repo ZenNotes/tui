@@ -15,8 +15,10 @@ type motion struct {
 
 // motionResult is where a motion lands and how an operator treats it.
 type motionResult struct {
-	pos       Pos
-	linewise  bool
+	pos      Pos
+	linewise bool
+	// inclusive marks a motion whose target character is part of the
+	// selection: an operator's span covers it and a selection includes it.
 	inclusive bool
 	keepCol   bool
 	stickyEnd bool
@@ -25,6 +27,19 @@ type motionResult struct {
 	// motion can select the whole match the way Helix does.
 	matchEnd Pos
 	matched  bool
+	// anchor overrides where a selection starts. A word motion that
+	// crosses to the next line starts the selection there, like Helix.
+	anchor    Pos
+	hasAnchor bool
+	// selStart is where a forward word motion starts its selection: the
+	// first character of the word under the cursor, so the selection
+	// covers whole words.
+	selStart    Pos
+	hasSelStart bool
+	// wordEnd is where the selection of a backward word motion ends: the
+	// word it lands on, plus the space that follows it.
+	wordEnd    Pos
+	hasWordEnd bool
 	// exclusiveLinewise applies Vim's rule: an exclusive motion ending in
 	// column 0 pulls back to the end of the previous line, and becomes
 	// linewise when it also started at or before the first non-blank.
@@ -219,14 +234,47 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 	case "w", "W":
 		big := m.kind == "W"
 		p := from
+		inclusive := false
 		for i := 0; i < n; i++ {
-			next, ok := e.wordForward(p, big, forOperator && i == n-1)
+			var next Pos
+			var ok bool
+			if forOperator {
+				next, ok = e.wordForward(p, big, i == n-1)
+			} else {
+				// The word motion follows Helix: the head lands on the
+				// first character of the next word, which stays out of
+				// the selection. The last word of a line runs to the end
+				// of the line, and the next motion crosses to the next
+				// line.
+				next, ok, inclusive = e.wordForwardStart(p, big)
+			}
 			if !ok {
 				break
 			}
 			p = next
 		}
+		if !forOperator && p == from {
+			// The word motion had nothing to select: the cursor and the
+			// selection stay where they are.
+			e.motionSelected = true
+			return res, false
+		}
 		res.pos = p
+		res.inclusive = inclusive
+		if !forOperator && p.Line > from.Line {
+			// The motion crossed to the next line: the selection starts
+			// there, like Helix.
+			res.anchor = Pos{p.Line, 0}
+			res.hasAnchor = true
+		} else if !forOperator {
+			// The selection starts at the first character of the word
+			// under the cursor: a word motion covers whole words, so
+			// the word it moves over is never cut in half.
+			if start, ok := e.wordStart(from, big); ok {
+				res.selStart = start
+				res.hasSelStart = true
+			}
+		}
 		if forOperator && p.Line > from.Line && p.Col == 0 {
 			// `dw` on the last word of a line stops at the line end.
 			prevLine := p.Line - 1
@@ -245,7 +293,19 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 			}
 			p = next
 		}
+		if !forOperator && p == from {
+			// There is no word before the cursor: the cursor and the
+			// selection stay where they are.
+			e.motionSelected = true
+			return res, false
+		}
 		res.pos = p
+		if !forOperator {
+			// The selection covers the word the motion lands on, plus the
+			// space that follows it.
+			res.wordEnd = e.wordSelectionEnd(p, from, big)
+			res.hasWordEnd = true
+		}
 	case "e", "E":
 		big := m.kind == "E"
 		p := from
@@ -460,6 +520,127 @@ func (e *Editor) wordForward(p Pos, big bool, lastForOperator bool) (Pos, bool) 
 		return p, false
 	}
 	return end, true
+}
+
+// wordForwardStart finds the start of the next word, following Helix. The
+// head lands on the first character of the next word, which stays out of
+// the selection. The word under the cursor can be the last one on its line:
+// then the head lands on the line end and the selection covers the rest of
+// the line. From the end of a line the motion crosses to the next line.
+func (e *Editor) wordForwardStart(p Pos, big bool) (pos Pos, moved bool, inclusive bool) {
+	line := e.buf.Line(p.Line)
+	col := min(p.Col, len(line))
+	if col >= len(line) {
+		// The cursor sits past the last character: the motion crosses to
+		// the next line.
+		return e.wordForwardNextLine(p.Line+1, big)
+	}
+	// The end of the word under the cursor, if it is on one.
+	wordEnd := col
+	if cls := charClass(line[col], big); cls != 0 {
+		for wordEnd < len(line) && charClass(line[wordEnd], big) == cls {
+			wordEnd++
+		}
+	}
+	// The next word on the line.
+	next := wordEnd
+	for next < len(line) && isBlank(line[next]) {
+		next++
+	}
+	if next < len(line) {
+		// The next word starts here: the selection stops short of it.
+		return Pos{p.Line, next}, true, false
+	}
+	if wordEnd > col && col < len(line)-1 {
+		// The word under the cursor is the last one on the line: the
+		// selection covers the rest of the line, the last character
+		// included.
+		return Pos{p.Line, len(line) - 1}, true, true
+	}
+	// The cursor is at the end of the line, or in the space behind the
+	// last word: the motion crosses to the next line.
+	return e.wordForwardNextLine(p.Line+1, big)
+}
+
+// wordForwardNextLine finds the first word on one of the lines after line.
+// Helix skips the lines that hold no word.
+func (e *Editor) wordForwardNextLine(line int, big bool) (Pos, bool, bool) {
+	for ; line < e.buf.LineCount(); line++ {
+		l := e.buf.Line(line)
+		for col := 0; col < len(l); col++ {
+			if charClass(l[col], big) != 0 {
+				// The first word of the line starts here.
+				return Pos{line, col}, true, false
+			}
+		}
+	}
+	return Pos{}, false, false
+}
+
+// wordStart is the first character of the word under p. It reports false
+// when the cursor does not sit on a word.
+func (e *Editor) wordStart(p Pos, big bool) (Pos, bool) {
+	line := e.buf.Line(p.Line)
+	if p.Col >= len(line) {
+		return p, false
+	}
+	cls := charClass(line[p.Col], big)
+	if cls == 0 {
+		// The cursor is on a blank, not on a word.
+		return p, false
+	}
+	col := p.Col
+	for col > 0 && charClass(line[col-1], big) == cls {
+		col--
+	}
+	return Pos{p.Line, col}, true
+}
+
+// wordSelectionEnd is the last character of the selection a backward word
+// motion makes. The selection covers the word the motion landed on and the
+// space that follows it; the words it travelled over follow that word, as
+// long as the cursor does not cut them in half.
+func (e *Editor) wordSelectionEnd(head, anchor Pos, big bool) Pos {
+	line := e.buf.Line(head.Line)
+	if len(line) == 0 {
+		// The motion landed on an empty line: the "word" is the line
+		// break itself, so the selection ends on the line's one position.
+		return Pos{head.Line, 0}
+	}
+	limit := len(line)
+	if anchor.Line == head.Line {
+		// The selection stops before the character under the cursor.
+		limit = min(anchor.Col, len(line))
+	}
+	end := min(head.Col, len(line))
+	// The word the motion landed on is always part of the selection.
+	cls := charClass(line[end], big)
+	for end < len(line) && charClass(line[end], big) == cls {
+		end++
+	}
+	// The words the motion travelled over follow it.
+	for end < limit {
+		cls := charClass(line[end], big)
+		if cls == 0 {
+			// A blank belongs to the space after the word.
+			end++
+			continue
+		}
+		wordEnd := end
+		for wordEnd < limit && charClass(line[wordEnd], big) == cls {
+			wordEnd++
+		}
+		if wordEnd == limit && wordEnd < len(line) && charClass(line[wordEnd], big) == cls {
+			// The word runs on past the cursor: leave it out.
+			break
+		}
+		end = wordEnd
+	}
+	// The space after the last word is part of the selection.
+	if end < len(line) && isBlank(line[end]) {
+		end++
+	}
+	return Pos{head.Line, end - 1}
 }
 
 func (e *Editor) wordBackward(p Pos, big bool) (Pos, bool) {
@@ -886,12 +1067,8 @@ var _ = unicode.IsLetter
 // *). With detectBound it wraps the pattern in word boundaries when the
 // selection looks like a whole word, which is Helix's * versus Alt-*.
 func (e *Editor) searchSelection(detectBound bool) {
-	from, to := e.selRange()
-	at := e.stepInsertPos(to)
-	if e.selExcl {
-		at = to
-	}
-	word := e.buf.Range(from, at)
+	from, to := e.selectionChars()
+	word := e.buf.Range(from, e.stepInsertPos(to))
 	if word == "" {
 		return
 	}

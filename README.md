@@ -534,6 +534,17 @@ Tab switching works in either engine: `gt` `gT` and `]b` `[b` everywhere,
 plus `gn` `gp` with the Helix engine. The leader, registers and macros work
 in both.
 
+The Helix engine also grows and shrinks a selection by context: `Alt+O`
+(`Alt+Up`) expands it — word, paragraph, function in a code block, code
+block, heading section, note — and `Alt+I` (`Alt+Down`) shrinks it back, the
+way Helix walks the syntax tree. Its word motions follow one rule: the
+selection covers a whole word plus the space that follows it, and never the
+first character of the word the motion lands on. `w` moves over the word the
+cursor sits on, `b` lands on the previous word and selects it, so `wd` and
+`bd` both delete one word. The block cursor stays inside the selection. `w`
+runs to the end of the line when the last word of a line is reached, and the
+next `w` moves on to the next line.
+
 The editor also has counts, registers, marks, macros, dot-repeat, undo and
 redo, text objects, search, `:s` `:g` `:sort` `:norm` with ranges, `gq`, and
 heading motions `]]` `[[`.
