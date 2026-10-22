@@ -76,6 +76,7 @@ func helpLines(a *App, filter string) []string {
 		"Ctrl+D Ctrl+U Ctrl+F Ctrl+B Ctrl+E Ctrl+Y zt zz zb\tScrolling",
 		"Ctrl+O Ctrl+I\tJump list, across notes too",
 		"gj gk\tMove by display row when a line wraps",
+		"$ $\tOn a wrapped line, $ ends the visible row and a second $ reaches the line end",
 		"",
 		"## Editor: operators and text objects",
 		"d c y > < gu gU g~ = J gq\tOperators; double them for a line (dd, cc, yy, >>)",

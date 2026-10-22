@@ -98,6 +98,20 @@ func parseMotion(keys []Key) (motion, parseStatus) {
 	return motion{}, parseInvalid
 }
 
+// atWrappedRowEnd reports a cursor already on the last character of a
+// soft-wrapped row that is not the line's last. A bare `$` stops at the end
+// of the visible row, so pressing it again there goes on to the end of the
+// line, where Vim's `$` lands; otherwise the second press did nothing and
+// the true end was out of reach. Operators keep the row (`d$` deletes what
+// the user can see).
+func (e *Editor) atWrappedRowEnd(from Pos, forOperator bool) bool {
+	if forOperator {
+		return false
+	}
+	start, end := e.hooks.DisplayRowBounds(from)
+	return end < e.buf.LineLen(from.Line) && from.Col >= max(start, end-1)
+}
+
 // applyMotion computes where a motion lands from `from`. forOperator marks
 // operator-pending use, where a few motions behave differently (cw, e).
 func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOperator bool) (motionResult, bool) {
@@ -105,7 +119,7 @@ func (e *Editor) applyMotion(m motion, count int, hasCount bool, from Pos, forOp
 	line := e.buf.Line(from.Line)
 	lineCount := e.buf.LineCount()
 	res := motionResult{pos: from}
-	if e.hooks.DisplayRowBounds != nil && ((m.kind == "$" && n == 1 && e.opts.WrappedLineMotions) || m.kind == "g$" || m.kind == "g0" || m.kind == "g^") {
+	if e.hooks.DisplayRowBounds != nil && ((m.kind == "$" && n == 1 && e.opts.WrappedLineMotions && !e.atWrappedRowEnd(from, forOperator)) || m.kind == "g$" || m.kind == "g0" || m.kind == "g^") {
 		start, end := e.hooks.DisplayRowBounds(from)
 		res.pos.Col = start
 		if m.kind == "$" || m.kind == "g$" {
