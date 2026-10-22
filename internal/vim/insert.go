@@ -234,9 +234,14 @@ func (e *Editor) insertPrintable(r rune) {
 		e.cursor.Col++
 		return
 	}
+	// A backtick after a backtick grows a run (a ``` fence, a `` span)
+	// instead of opening a pair: pairing every one turned ``` into ```` with
+	// the cursor before the fourth, so Enter split the fence instead of
+	// closing it.
+	afterBacktick := e.cursor.Col > 0 && line[e.cursor.Col-1] == '`'
 	e.insertRaw(string(r))
 	if closer, ok := autoPairOpeners[r]; ok && e.opts.AutoPairs && (next == 0 || isBlank(next) || next == ')' || next == ']' || next == '}') {
-		if r != '`' || next == 0 || isBlank(next) {
+		if r != '`' || ((next == 0 || isBlank(next)) && !afterBacktick) {
 			e.buf.InsertText(e.cursor, string(closer))
 			e.ins.pairedInsert = e.cursor
 		}

@@ -77,3 +77,19 @@ func TestHelpersRespectLongCodeFences(t *testing.T) {
 		t.Fatal("closing fence left helper disabled")
 	}
 }
+
+func TestTypedBacktickFenceClosesOnEnter(t *testing.T) {
+	a, buf := newTagTestApp(t, vimPrefs(), "# Draft")
+	feed(a, vim.R('o'))
+	typeKeys(a, "```go")
+	if got := buf.ed.Line(1); got != "```go" {
+		t.Fatalf("typed fence %q", got)
+	}
+	feed(a, vim.KeyEnter)
+	if got := buf.ed.Text(); got != "# Draft\n```go\n\n```" {
+		t.Fatalf("Enter after the fence: %q", got)
+	}
+	if got := buf.ed.Cursor(); got != (vim.Pos{Line: 2, Col: 0}) {
+		t.Fatalf("cursor should sit inside the block: %v", got)
+	}
+}
