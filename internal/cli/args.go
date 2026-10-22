@@ -51,6 +51,7 @@ var valuelessFlags = map[string]bool{
 	"no-default":       true,
 	"no-start":         true,
 	"check":            true,
+	"dry-run":          true,
 	"rollback":         true,
 	"no-edit":          true,
 	"page":             true,

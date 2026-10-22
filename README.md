@@ -234,13 +234,16 @@ zn comment add "Project plan.md" "Can we simplify this?"
 zn comment list "Project plan.md" --all --json
 zn base create "Reading list"
 zn base rows "Reading list" --json
+zn base pages "Reading list"
 ```
 
 Use the stable ID returned by `task list` with `task toggle <id>`. Comment
 replies and resolve/reopen operations take a thread ID. `base add` and
 `base set` accept repeated `--set Field=Value` flags for existing fields;
 `base add --body` or `--page` also creates a record page. `base convert`
-turns a loose CSV into a `.base` folder.
+turns a loose CSV into a `.base` folder, and `base pages` gives every
+record that has no page its record page, so a database converted from a
+CSV can be linked right away (`--dry-run` lists what it would create).
 
 ### Watching task status
 

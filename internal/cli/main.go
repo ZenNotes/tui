@@ -58,6 +58,7 @@ func dispatchTable() map[string]Handler {
 		"base add":        cmdBaseAdd,
 		"base set":        cmdBaseSet,
 		"base convert":    cmdBaseConvert,
+		"base pages":      cmdBasePages,
 		"capture":         cmdCapture,
 	}
 }

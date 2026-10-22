@@ -670,6 +670,17 @@ func (o *Ops) CreateRecordPage(csvPath, title, body string) (string, error) {
 	return noteRel, nil
 }
 
+// RecordPageExists reports whether a record page note is there. A read error
+// comes back as an error, never as a missing page, so a failing read cannot
+// mint a second page for a record that has one.
+func (o *Ops) RecordPageExists(notePath string) (bool, error) {
+	text, err := o.io.ReadFileTextOrNull(toPosix(notePath))
+	if err != nil {
+		return false, err
+	}
+	return text != nil, nil
+}
+
 // RenameDatabase renames the `.base` folder and returns the new csv path.
 func (o *Ops) RenameDatabase(csvPath, newTitle string) (string, error) {
 	oldFormDir := FormDirFromCSVPath(toPosix(csvPath))

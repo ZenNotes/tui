@@ -94,6 +94,7 @@ var helpSections = []helpSection{
 		{"base add <base>", "Add a row; --body (or --body - for stdin) also creates its record page", "--set Field=Value …  --body <text|->  --page  --json"},
 		{"base set <base> <row>", "Set fields; select options mint, the page re-mirrors", "--set Field=Value …  --json"},
 		{"base convert <base>", "Turn a loose .csv into a .base folder so rows can have record pages", "--json"},
+		{"base pages <base>", "Give every record without one its record page, so each can be linked", "--dry-run  --json"},
 	}},
 	{"CAPTURE", []helpRow{
 		{"capture \"...\"", "Quick add. Pipes stdin if no positional", "--folder <f>  --tag <t>  --title <t>  --json"},

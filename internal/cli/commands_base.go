@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
@@ -461,5 +462,99 @@ func cmdBaseConvert(_ context.Context, b backend.Backend, args Args) error {
 		return nil
 	}
 	emitOK(fmt.Sprintf("Converted %s to %s", summary.Path, database.FormDirFromCSVPath(next)))
+	return nil
+}
+
+// cmdBasePages gives every record without a page its record page: the
+// desktop's "Create pages for all records". A record is a note links can
+// reach only once it has a page, and pages were made one record at a time,
+// so a database converted from a CSV had none. --dry-run lists what it
+// would create and writes nothing.
+func cmdBasePages(_ context.Context, b backend.Backend, args Args) error {
+	ops := b.DatabaseOps()
+	summary, err := resolveDatabase(ops, args.Positional(0))
+	if err != nil {
+		return err
+	}
+	if !database.HasRecordPages(summary.Path) {
+		return fmt.Errorf("%s is a loose .csv, which has no record pages. Run `zn base convert %q` first.", summary.Path, summary.Title)
+	}
+	doc, err := ops.OpenDatabase(summary.Path)
+	if err != nil {
+		return err
+	}
+	plan, err := doc.PlanRecordPages(ops.RecordPageExists)
+	if err != nil {
+		return err
+	}
+	type pageView struct {
+		ID    string `json:"id"`
+		Title string `json:"title"`
+		Page  string `json:"page,omitempty"`
+	}
+	dryRun := args.Bool("dry-run")
+	pages := []pageView{}
+	var failure error
+	for _, row := range plan.Missing {
+		title := doc.RecordTitle(row)
+		if dryRun {
+			pages = append(pages, pageView{ID: row.ID, Title: title})
+			continue
+		}
+		page, err := ops.CreateRecordPage(summary.Path, title, doc.ComposePageBody(row, "# "+title+"\n\n"))
+		if err != nil {
+			failure = err
+			break
+		}
+		if doc.Pages == nil {
+			doc.Pages = map[string]string{}
+		}
+		doc.Pages[row.ID] = page
+		pages = append(pages, pageView{ID: row.ID, Title: title, Page: page})
+	}
+	// One schema write for the run, kept when a page fails partway so the
+	// pages already written stay linked to their rows.
+	if !dryRun && len(pages) > 0 {
+		if _, err := ops.WriteSchema(summary.Path, doc); err != nil {
+			return err
+		}
+	}
+	if failure != nil {
+		return fmt.Errorf("Created %d of %d record pages in %s, then: %w", len(pages), len(plan.Missing), summary.Title, failure)
+	}
+	if args.Bool("json") {
+		emitJSON(map[string]any{
+			"ok":       true,
+			"path":     summary.Path,
+			"dryRun":   dryRun,
+			"pages":    pages,
+			"existing": plan.Existing,
+			"untitled": plan.Untitled,
+		})
+		return nil
+	}
+	noun := func(n int, one, many string) string {
+		if n == 1 {
+			return "1 " + one
+		}
+		return strconv.Itoa(n) + " " + many
+	}
+	switch {
+	case len(pages) == 0:
+		emitOK("Every titled record in " + summary.Title + " already has a page")
+	case dryRun:
+		emitLine("Would create " + noun(len(pages), "record page", "record pages") + " in " + summary.Title + ":")
+		for _, p := range pages {
+			emitLine("  " + p.Title)
+		}
+	default:
+		emitOK("Created " + noun(len(pages), "record page", "record pages") + " in " + summary.Title)
+	}
+	if plan.Existing > 0 {
+		emitLine(noun(plan.Existing, "record already had its page", "records already had their pages"))
+	}
+	if plan.Untitled > 0 {
+		emitLine(noun(plan.Untitled, "record has no title and was left out", "records have no title and were left out"))
+	}
 	return nil
 }

@@ -268,6 +268,46 @@ func (d *Doc) ComposePageBody(row Row, body string) string {
 	return strings.Join(lines, "\n") + "\n" + strings.TrimLeft(body, "\n")
 }
 
+// RecordPagePlan is what giving every record its page would do.
+type RecordPagePlan struct {
+	// Missing are the records with no page, or whose page is gone, in row order.
+	Missing []Row
+	// Existing counts the records whose page is mapped and still there.
+	Existing int
+	// Untitled counts the records with an empty title field, left without a page.
+	Untitled int
+}
+
+// PlanRecordPages plans `zn base pages` with the desktop app's rules for
+// "Create pages for all records" (planRecordPages in the app's
+// shared-domain database-records.ts). A record is a note links can reach
+// only once it has a page. One whose page is mapped and still exists keeps
+// it; one whose page was deleted gets a new one, as opening it would; one
+// with an empty title is left out, since its page would only be "Untitled"
+// and nothing could link to it by name.
+func (d *Doc) PlanRecordPages(exists func(notePath string) (bool, error)) (RecordPagePlan, error) {
+	plan := RecordPagePlan{}
+	titleID := d.TitleFieldID()
+	for _, row := range d.Rows {
+		if page := d.Pages[row.ID]; page != "" {
+			ok, err := exists(page)
+			if err != nil {
+				return plan, err
+			}
+			if ok {
+				plan.Existing++
+				continue
+			}
+		}
+		if titleID == "" || strings.TrimSpace(row.Cells[titleID]) == "" {
+			plan.Untitled++
+			continue
+		}
+		plan.Missing = append(plan.Missing, row)
+	}
+	return plan, nil
+}
+
 // SetCell writes one cell.
 func (d *Doc) SetCell(rowID, fieldID, value string) {
 	for i := range d.Rows {
