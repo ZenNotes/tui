@@ -288,3 +288,38 @@ func TestParseDateInput(t *testing.T) {
 		t.Fatal("nonsense is rejected")
 	}
 }
+
+// Opening a record whose page file is already in the folder but not mapped
+// (a workaround script wrote it) links that file instead of writing a
+// `Dune 2.md` beside it.
+func TestOpenRecordPageLinksAPageFileAlreadyThere(t *testing.T) {
+	a, root := newDatabaseTestApp(t)
+	v := openTestDatabase(t, a)
+	next, err := a.backend.DatabaseOps().ConvertToFolder(v.csvPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := "# Dune\n\nMy notes on Dune.\n"
+	if err := os.WriteFile(filepath.Join(root, "Books.base", "Dune.md"), []byte(notes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v.csvPath = next
+	v.refresh(a)
+	var dune string
+	for _, row := range v.doc.Rows {
+		if v.doc.RecordTitle(row) == "Dune" {
+			dune = row.ID
+		}
+	}
+	v.focusRow(dune)
+	v.openRecordPage(a)
+	if _, err := os.Stat(filepath.Join(root, "Books.base", "Dune 2.md")); !os.IsNotExist(err) {
+		t.Fatal("opening wrote a second page beside the one already there")
+	}
+	if got := v.doc.Pages[dune]; got != "Books.base/Dune.md" {
+		t.Fatalf("Dune maps to %q", got)
+	}
+	if kept, _ := os.ReadFile(filepath.Join(root, "Books.base", "Dune.md")); string(kept) != notes {
+		t.Fatalf("the page changed: %q", kept)
+	}
+}

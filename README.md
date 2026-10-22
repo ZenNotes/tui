@@ -243,7 +243,9 @@ replies and resolve/reopen operations take a thread ID. `base add` and
 `base add --body` or `--page` also creates a record page. `base convert`
 turns a loose CSV into a `.base` folder, and `base pages` gives every
 record that has no page its record page, so a database converted from a
-CSV can be linked right away (`--dry-run` lists what it would create).
+CSV can be linked right away. A page file already in the database folder
+under a record's name is linked instead of copied, and `--dry-run` lists
+what it would do.
 
 ### Watching task status
 

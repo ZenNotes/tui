@@ -1,6 +1,7 @@
 package database
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/vault"
@@ -268,10 +269,97 @@ func (d *Doc) ComposePageBody(row Row, body string) string {
 	return strings.Join(lines, "\n") + "\n" + strings.TrimLeft(body, "\n")
 }
 
+var (
+	pageNameBad = regexp.MustCompile(`[\\/:\x00-\x1f*?"<>|]`)
+	spaceRun    = regexp.MustCompile(`\s+`)
+)
+
+// RecordPageCandidates lists where a record's page may already be without
+// being mapped to its row: a note named after the record in the database
+// folder, or in its `pages/` subfolder, under each name a page gets. The
+// app names a local page by its note-title rules, the server path and zn
+// only replace slashes, and a script someone wrote to make the pages likely
+// used the title as it is. Mirrors recordPageCandidates in the app's
+// shared-domain database-records.ts, name for name.
+func (d *Doc) RecordPageCandidates(title string) []string {
+	formDir := FormDirFromCSVPath(toPosix(d.Path))
+	raw := strings.TrimSpace(title)
+	if formDir == "" || raw == "" {
+		return nil
+	}
+	names := []string{}
+	add := func(name string) {
+		if name == "" {
+			return
+		}
+		for _, existing := range names {
+			if existing == name {
+				return
+			}
+		}
+		names = append(names, name)
+	}
+	app := strings.TrimSpace(spaceRun.ReplaceAllString(pageNameBad.ReplaceAllString(raw, "-"), " "))
+	if runes := []rune(app); len(runes) > 200 {
+		app = string(runes[:200])
+	}
+	add(app)
+	add(strings.NewReplacer("\\", "-", "/", "-").Replace(raw))
+	if !strings.ContainsAny(raw, `\/`) {
+		add(raw)
+	}
+	out := []string{}
+	for _, dir := range []string{formDir, formDir + "/pages"} {
+		for _, name := range names {
+			out = append(out, dir+"/"+name+".md")
+		}
+	}
+	return out
+}
+
+// RecordPageToAdopt is the unmapped page file a record should be linked to,
+// or "": the first of its candidates that exists and no row maps. Before
+// this, opening a record whose page file was there but unmapped wrote a
+// `Title 2.md` beside it. A record with an empty title has no name to match.
+func (d *Doc) RecordPageToAdopt(row Row, exists func(notePath string) (bool, error), taken map[string]bool) (string, error) {
+	titleID := d.TitleFieldID()
+	if titleID == "" {
+		return "", nil
+	}
+	if taken == nil {
+		taken = map[string]bool{}
+		for _, page := range d.Pages {
+			taken[page] = true
+		}
+	}
+	for _, candidate := range d.RecordPageCandidates(row.Cells[titleID]) {
+		if taken[candidate] {
+			continue
+		}
+		ok, err := exists(candidate)
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return candidate, nil
+		}
+	}
+	return "", nil
+}
+
+// AdoptedPage is a record linked to a page file that was already there.
+type AdoptedPage struct {
+	Row  Row
+	Page string
+}
+
 // RecordPagePlan is what giving every record its page would do.
 type RecordPagePlan struct {
 	// Missing are the records with no page, or whose page is gone, in row order.
 	Missing []Row
+	// Adopt are the records whose page file is already there, unmapped:
+	// linked, not written.
+	Adopt []AdoptedPage
 	// Existing counts the records whose page is mapped and still there.
 	Existing int
 	// Untitled counts the records with an empty title field, left without a page.
@@ -284,10 +372,18 @@ type RecordPagePlan struct {
 // only once it has a page. One whose page is mapped and still exists keeps
 // it; one whose page was deleted gets a new one, as opening it would; one
 // with an empty title is left out, since its page would only be "Untitled"
-// and nothing could link to it by name.
+// and nothing could link to it by name. A record whose page file is already
+// in the folder but not mapped (written by a script, or left by an older
+// map) is linked to that file instead of getting a `Title 2.md` beside it;
+// a file another row maps, or an earlier record took, is never taken twice.
 func (d *Doc) PlanRecordPages(exists func(notePath string) (bool, error)) (RecordPagePlan, error) {
 	plan := RecordPagePlan{}
 	titleID := d.TitleFieldID()
+	// Every mapped page belongs to its row, even one that is gone for now.
+	taken := map[string]bool{}
+	for _, page := range d.Pages {
+		taken[page] = true
+	}
 	for _, row := range d.Rows {
 		if page := d.Pages[row.ID]; page != "" {
 			ok, err := exists(page)
@@ -301,6 +397,15 @@ func (d *Doc) PlanRecordPages(exists func(notePath string) (bool, error)) (Recor
 		}
 		if titleID == "" || strings.TrimSpace(row.Cells[titleID]) == "" {
 			plan.Untitled++
+			continue
+		}
+		found, err := d.RecordPageToAdopt(row, exists, taken)
+		if err != nil {
+			return plan, err
+		}
+		if found != "" {
+			taken[found] = true
+			plan.Adopt = append(plan.Adopt, AdoptedPage{Row: row, Page: found})
 			continue
 		}
 		plan.Missing = append(plan.Missing, row)

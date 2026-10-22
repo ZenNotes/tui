@@ -494,6 +494,17 @@ func cmdBasePages(_ context.Context, b backend.Backend, args Args) error {
 	}
 	dryRun := args.Bool("dry-run")
 	pages := []pageView{}
+	linked := []pageView{}
+	for _, adopted := range plan.Adopt {
+		linked = append(linked, pageView{ID: adopted.Row.ID, Title: doc.RecordTitle(adopted.Row), Page: adopted.Page})
+		if dryRun {
+			continue
+		}
+		if doc.Pages == nil {
+			doc.Pages = map[string]string{}
+		}
+		doc.Pages[adopted.Row.ID] = adopted.Page
+	}
 	var failure error
 	for _, row := range plan.Missing {
 		title := doc.RecordTitle(row)
@@ -514,7 +525,7 @@ func cmdBasePages(_ context.Context, b backend.Backend, args Args) error {
 	}
 	// One schema write for the run, kept when a page fails partway so the
 	// pages already written stay linked to their rows.
-	if !dryRun && len(pages) > 0 {
+	if !dryRun && len(pages)+len(linked) > 0 {
 		if _, err := ops.WriteSchema(summary.Path, doc); err != nil {
 			return err
 		}
@@ -528,6 +539,7 @@ func cmdBasePages(_ context.Context, b backend.Backend, args Args) error {
 			"path":     summary.Path,
 			"dryRun":   dryRun,
 			"pages":    pages,
+			"linked":   linked,
 			"existing": plan.Existing,
 			"untitled": plan.Untitled,
 		})
@@ -540,15 +552,28 @@ func cmdBasePages(_ context.Context, b backend.Backend, args Args) error {
 		return strconv.Itoa(n) + " " + many
 	}
 	switch {
-	case len(pages) == 0:
+	case len(pages) == 0 && len(linked) == 0:
 		emitOK("Every titled record in " + summary.Title + " already has a page")
 	case dryRun:
-		emitLine("Would create " + noun(len(pages), "record page", "record pages") + " in " + summary.Title + ":")
-		for _, p := range pages {
-			emitLine("  " + p.Title)
+		if len(pages) > 0 {
+			emitLine("Would create " + noun(len(pages), "record page", "record pages") + " in " + summary.Title + ":")
+			for _, p := range pages {
+				emitLine("  " + p.Title)
+			}
+		}
+		if len(linked) > 0 {
+			emitLine("Would link " + noun(len(linked), "record to the page file already there", "records to the page files already there") + ":")
+			for _, p := range linked {
+				emitLine("  " + p.Title + " -> " + p.Page)
+			}
 		}
 	default:
-		emitOK("Created " + noun(len(pages), "record page", "record pages") + " in " + summary.Title)
+		if len(pages) > 0 {
+			emitOK("Created " + noun(len(pages), "record page", "record pages") + " in " + summary.Title)
+		}
+		if len(linked) > 0 {
+			emitOK("Linked " + noun(len(linked), "record to the page file already there", "records to the page files already there"))
+		}
 	}
 	if plan.Existing > 0 {
 		emitLine(noun(plan.Existing, "record already had its page", "records already had their pages"))

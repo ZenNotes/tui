@@ -143,3 +143,39 @@ func TestBasePagesRefusesALooseCSV(t *testing.T) {
 		t.Fatalf("refusal wrote files: %v", entries)
 	}
 }
+
+// A workaround script wrote a page file per record but no schema.json entry:
+// those files are linked as they are, never shadowed by a `Title 2.md`.
+func TestBasePagesLinksPageFilesAScriptWrote(t *testing.T) {
+	root, base := basePagesVault(t)
+	notes := "---\nAuthor: Herbert\n---\n# Dune\n\nMy notes on Dune.\n"
+	if err := os.WriteFile(filepath.Join(base, "Dune.md"), []byte(notes), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"base", "pages", "Books", "--json", "--vault", root}
+	out := captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	var result struct {
+		Pages  []struct{ Title, Page string } `json:"pages"`
+		Linked []struct{ Title, Page string } `json:"linked"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if len(result.Linked) != 1 || result.Linked[0].Title != "Dune" || len(result.Pages) != 2 {
+		t.Fatalf("result: %+v", result)
+	}
+	if got := mdFiles(t, base); !reflect.DeepEqual(got, []string{"Dune.md", "Emma.md", "Kindred.md"}) {
+		t.Fatalf("pages on disk: %v", got)
+	}
+	if kept, _ := os.ReadFile(filepath.Join(base, "Dune.md")); string(kept) != notes {
+		t.Fatalf("the script's page changed: %q", kept)
+	}
+	raw, _ := os.ReadFile(filepath.Join(base, "schema.json"))
+	if !strings.Contains(string(raw), `"Dune.md"`) {
+		t.Fatalf("schema does not map Dune.md: %s", raw)
+	}
+}

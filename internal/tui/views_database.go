@@ -1026,6 +1026,21 @@ func (v *databaseView) openRecordPage(a *App) {
 		return
 	}
 	ops := a.backend.DatabaseOps()
+	// A page file already there under the record's name but not mapped (a
+	// script wrote it, say) is linked, not shadowed by a `Title 2.md`.
+	if page, err := v.doc.RecordPageToAdopt(*r, ops.RecordPageExists, nil); err == nil && page != "" {
+		if v.doc.Pages == nil {
+			v.doc.Pages = map[string]string{}
+		}
+		v.doc.Pages[r.ID] = page
+		if _, err := ops.WriteSchema(v.csvPath, v.doc); err != nil {
+			a.notifyError(err.Error())
+		}
+		a.refreshIndex()
+		a.notify("Linked record page " + page)
+		a.openNote(page, true)
+		return
+	}
 	title := v.doc.RecordTitle(*r)
 	body := v.doc.ComposePageBody(*r, "")
 	path, err := ops.CreateRecordPage(v.csvPath, title, body)
