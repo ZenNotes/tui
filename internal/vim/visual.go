@@ -551,3 +551,14 @@ func (e *Editor) finishBlockInsert() {
 }
 
 var _ = unicode.IsUpper
+
+// SelectionKind reports what the selection covers: "v", "V" or "^V".
+func (e *Editor) SelectionKind() string {
+	switch e.mode {
+	case ModeVisualLine:
+		return "V"
+	case ModeVisualBlock:
+		return "^V"
+	}
+	return "v"
+}

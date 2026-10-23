@@ -20,8 +20,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/selfupdate"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 type versionView struct {
@@ -37,7 +37,7 @@ type versionDetailsMsg struct {
 	text string
 }
 
-func (a *App) showVersion(cmd vim.ExCommand) error {
+func (a *App) showVersion(cmd helix.ExCommand) error {
 	if arg := strings.TrimSpace(cmd.Args); arg != "" && arg != "copy" {
 		return fmt.Errorf("usage: :version [copy] or :version!")
 	}
@@ -80,7 +80,7 @@ func (v *versionView) copy(a *App) {
 	a.notify("Copied version details")
 }
 
-func (v *versionView) handleKey(a *App, k vim.Key) {
+func (v *versionView) handleKey(a *App, k helix.Key) {
 	if k.IsRune('c') || k.IsRune('y') {
 		v.copy(a)
 		return

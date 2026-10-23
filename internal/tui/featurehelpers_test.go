@@ -23,6 +23,7 @@ func newFeatureTestApp(t *testing.T) (*App, string) {
 		t.Fatal(err)
 	}
 	a := newApp(context.Background(), Options{Backend: b, Target: target}, config.DefaultPrefs(), true)
+	a.prefs.Motions = "helix" // these features test the helix engine; see motions_engine_test.go
 	m := a.loadIndexCmd()().(indexLoadedMsg)
 	if m.err != nil {
 		t.Fatal(m.err)

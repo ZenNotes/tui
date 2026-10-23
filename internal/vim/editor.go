@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // Mode is the editor's state.
@@ -41,93 +43,36 @@ func (m Mode) Label() string {
 	return "NORMAL"
 }
 
-// Options tune the engine. Zero values are filled by New.
-type Options struct {
-	WrappedLineMotions      bool
-	TabSize                 int
-	ScrollOff               int
-	IgnoreCase              bool
-	SmartCase               bool
-	WrapScan                bool
-	InsertEscape            string
-	AutoPairs               bool
-	AutoPairQuotes          bool
-	TextReplacements        map[string]string
-	TextReplacementsEnabled bool
-	MarkdownLists           bool
-	YankToClipboard         bool
-	// VimEnabled false runs the buffer as a plain editor: always inserting,
-	// arrows and the usual editing keys only.
-	VimEnabled bool
-}
+// Options tune the engine. Zero values are filled by New. It is the helix
+// engine's Options so the host can configure either engine the same way;
+// the vim engine reads the fields it knows and ignores the rest.
+type Options = helix.Options
 
 // DefaultOptions are the shipped defaults.
 func DefaultOptions() Options {
-	return Options{
-		TabSize:                 4,
-		WrapScan:                true,
-		AutoPairs:               true,
-		TextReplacements:        map[string]string{"->": "→"},
-		TextReplacementsEnabled: true,
-		MarkdownLists:           true,
-		VimEnabled:              true,
-	}
+	o := helix.DefaultOptions()
+	o.HelixEnabled = true // modal editing on; the motions select vim keys
+	return o
 }
 
-// Register is a yank or delete.
-type Register struct {
-	Text      string
-	Linewise  bool
-	Blockwise bool
-}
+// Register is a yank or delete. It is the helix engine's Register so hosts
+// share register stores across engines.
+type Register = helix.Register
 
 // RegisterStore holds yank, delete, and macro registers shared by editors in
 // one host session. Its zero value is ready to use. Like Editor, it is owned by
 // the host's event loop rather than accessed concurrently.
-type RegisterStore struct {
-	values map[rune]Register
-}
+type RegisterStore = helix.RegisterStore
 
 // Range is a line range for an ex command, zero-based and inclusive.
-type Range struct {
-	Start, End int
-	Given      bool
-}
+type Range = helix.Range
 
 // ExCommand is a command the editor hands to its host.
-type ExCommand struct {
-	Name  string
-	Args  string
-	Bang  bool
-	Range Range
-	Raw   string
-}
+type ExCommand = helix.ExCommand
 
-// Hooks are the host's side of the engine. Every field is optional.
-type Hooks struct {
-	DisplayRowBounds func(Pos) (int, int)
-	// ExCommand runs a command the editor does not own; handled false means
-	// unknown command.
-	ExCommand func(cmd ExCommand) (handled bool, err error)
-	// ExComplete proposes completions for the ex line. It receives the text
-	// before the cursor and returns the part to keep plus the candidates
-	// that replace the rest, so a host can complete note titles with spaces
-	// as one argument. Nil candidates fall back to the built-in command
-	// names.
-	ExComplete     func(text string) (keep string, candidates []string)
-	ReadClipboard  func() (string, bool)
-	WriteClipboard func(text string) bool
-	// OnJump is told before a jump motion moves the cursor.
-	OnJump func(from Pos)
-	// FollowLink is `gd`, CopyLink is `gy`, OpenURL is `gx`.
-	FollowLink func()
-	CopyLink   func()
-	OpenURL    func()
-	// LineRows is how many screen rows a line takes when soft-wrapped.
-	LineRows func(line int) int
-	// Changed is called after every committed change.
-	Changed func()
-}
+// Hooks are the host's side of the engine. Every field is optional. It is
+// the helix engine's Hooks so hosts wire either engine the same way.
+type Hooks = helix.Hooks
 
 type snapshot struct {
 	lines  [][]rune
@@ -269,21 +214,19 @@ func NewWithRegisters(text string, opts Options, hooks Hooks, store *RegisterSto
 	if store == nil {
 		store = &RegisterStore{}
 	}
-	if store.values == nil {
-		store.values = make(map[rune]Register)
-	}
+	store.Init()
 	e := &Editor{
 		buf:        NewBuffer(text),
 		opts:       opts,
 		hooks:      hooks,
-		registers:  store.values,
+		registers:  store.Map(),
 		marks:      map[rune]Pos{},
 		desiredCol: -1,
 		searchDir:  1,
 		rows:       24,
 		folds:      map[int]int{},
 	}
-	if !opts.VimEnabled {
+	if !opts.HelixEnabled {
 		e.mode = ModeInsert
 	}
 	return e
@@ -308,12 +251,12 @@ func (e *Editor) SetOptions(opts Options) {
 	if opts.TabSize <= 0 {
 		opts.TabSize = 4
 	}
-	wasEnabled := e.opts.VimEnabled
+	wasEnabled := e.opts.HelixEnabled
 	e.opts = opts
-	if wasEnabled && !opts.VimEnabled {
+	if wasEnabled && !opts.HelixEnabled {
 		e.leaveToInsertOnly()
 	}
-	if !wasEnabled && opts.VimEnabled && e.mode == ModeInsert {
+	if !wasEnabled && opts.HelixEnabled && e.mode == ModeInsert {
 		e.mode = ModeNormal
 		e.cursor = e.buf.clampNormal(e.cursor)
 	}
@@ -528,7 +471,7 @@ func (e *Editor) HandleKey(k Key) bool {
 	}
 	switch e.mode {
 	case ModeInsert, ModeReplace:
-		if !e.opts.VimEnabled {
+		if !e.opts.HelixEnabled {
 			return e.plainKey(k)
 		}
 		e.insertKey(k)

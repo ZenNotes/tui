@@ -381,7 +381,7 @@ func TestRegistersAndMarks(t *testing.T) {
 
 func TestPlainMode(t *testing.T) {
 	opts := DefaultOptions()
-	opts.VimEnabled = false
+	opts.HelixEnabled = false
 	e := New("ab", opts, Hooks{})
 	if e.Mode() != ModeInsert {
 		t.Fatal("plain mode starts inserting")

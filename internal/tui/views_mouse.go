@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // Click handling for the built-in views. Coordinates are relative to the
@@ -47,7 +47,7 @@ func (v *tasksView) click(a *App, p *pane, x, y int, m tea.MouseMsg, double bool
 			v.selectDay(a, day)
 			v.dayFocus = false
 			if double {
-				v.calendarKey(a, vim.KeyEnter)
+				v.calendarKey(a, helix.KeyEnter)
 			}
 			return
 		}
@@ -112,7 +112,7 @@ func (v *tagsView) click(a *App, p *pane, x, y int, m tea.MouseMsg, double bool)
 			}
 		}
 		if m.Button == tea.MouseButtonRight {
-			v.handleKey(a, vim.R('m'))
+			v.handleKey(a, helix.R('m'))
 			return
 		}
 		v.refresh(a)

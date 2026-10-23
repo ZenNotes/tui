@@ -11,11 +11,11 @@ import (
 
 	"github.com/atotto/clipboard"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // createNote makes a note and opens it.
@@ -31,8 +31,8 @@ func (a *App) createNote(folder vault.NoteFolder, title, subpath string, body *s
 		a.openNote(meta.Path, true)
 		a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) {
 			buf.ed.GotoLine(buf.ed.LineCount())
-			if a.prefs.VimMode {
-				buf.ed.HandleKey(vim.R('A'))
+			if a.prefs.HelixMode {
+				buf.ed.HandleKey(helix.R('A'))
 			}
 		})
 	}
@@ -697,7 +697,7 @@ func (a *App) insertTemplate(t templates.Template) {
 }
 
 // posForOffset maps a rune offset to a position.
-func posForOffset(text string, offset int) vim.Pos {
+func posForOffset(text string, offset int) helix.Pos {
 	line, col := 0, 0
 	for i, r := range []rune(text) {
 		if i == offset {
@@ -710,7 +710,7 @@ func posForOffset(text string, offset int) vim.Pos {
 			col++
 		}
 	}
-	return vim.Pos{Line: line, Col: col}
+	return helix.Pos{Line: line, Col: col}
 }
 
 // --- folders ---
@@ -925,7 +925,7 @@ func (a *App) openNoteQuiet(path string) {
 // note inserts its title and steps past the closing brackets auto-pairs
 // added.
 func (a *App) maybeWikilinkCompletion(buf *noteBuffer) {
-	if buf.ed.Mode() != vim.ModeInsert {
+	if buf.ed.Mode() != helix.ModeInsert {
 		return
 	}
 	cur := buf.ed.Cursor()
@@ -949,7 +949,7 @@ func (a *App) openWikilinkPicker(buf *noteBuffer) {
 		case opened && closed:
 			buf.ed.InsertAtCursor(title)
 			c := buf.ed.Cursor()
-			buf.ed.SetCursor(vim.Pos{Line: c.Line, Col: c.Col + 2})
+			buf.ed.SetCursor(helix.Pos{Line: c.Line, Col: c.Col + 2})
 		case opened:
 			buf.ed.InsertAtCursor(title + "]]")
 		default:

@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 	"sort"
 	"strconv"
 	"strings"
@@ -87,9 +87,9 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
-func (v *settingsView) handleKey(a *App, k vim.Key) bool {
+func (v *settingsView) handleKey(a *App, k helix.Key) bool {
 	if k.IsRune('v') {
-		_ = a.showVersion(vim.ExCommand{Name: "version"})
+		_ = a.showVersion(helix.ExCommand{Name: "version"})
 		return true
 	}
 	if a.listNav(&v.list, k, len(v.settings), v.rows) {
@@ -113,7 +113,7 @@ func (v *settingsView) handleKey(a *App, k vim.Key) bool {
 }
 
 var settingChoices = map[string][]string{
-	"which_key_hint_mode": {"timed", "sticky"}, "wrapped_line_motions": {"display", "logical"}, "default_view_mode": {"edit", "split", "preview"}, "line_number_mode": {"off", "absolute", "relative"}, "completed_task_style": {"none", "gray", "strikethrough", "gray-strikethrough"}, "time_format": {"12h", "24h"}, "theme_mode": {"dark", "light", "system"}, "note_sort_order": {"modified-desc", "created-desc", "title-asc", "title-desc"}, "calendar_week_start": {"monday", "sunday"}, "tasks_view_mode": {"list", "kanban", "calendar"}, "preview_style": {"auto", "dark", "light", "ascii", "notty"}, "images": {"auto", "kitty", "off"},
+	"which_key_hint_mode": {"timed", "sticky"}, "wrapped_line_motions": {"display", "logical"}, "motions": {"helix", "vim"}, "default_view_mode": {"edit", "split", "preview"}, "line_number_mode": {"off", "absolute", "relative"}, "completed_task_style": {"none", "gray", "strikethrough", "gray-strikethrough"}, "time_format": {"12h", "24h"}, "theme_mode": {"dark", "light", "system"}, "note_sort_order": {"modified-desc", "created-desc", "title-asc", "title-desc"}, "calendar_week_start": {"monday", "sunday"}, "tasks_view_mode": {"list", "kanban", "calendar"}, "preview_style": {"auto", "dark", "light", "ascii", "notty"}, "images": {"auto", "kitty", "off"},
 }
 
 func (v *settingsView) edit(a *App, row settingRow) {

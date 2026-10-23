@@ -2,7 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"regexp"
 	"strings"
 	"unicode"
@@ -31,8 +31,8 @@ func inMarkdownFence(lines []string, line int) bool {
 
 var blockSnippetRe = regexp.MustCompile("^([\\t ]*(?:(?:[-+*]|[0-9]+[.)])[\\t ]+|>[\\t ]?)*)((?:`{3,}|~{3,}).*|\\$\\$)$")
 
-func (a *App) markdownSnippet(buf *noteBuffer, k vim.Key) bool {
-	if !a.prefs.MarkdownSnippets || buf.ed.Mode() != vim.ModeInsert {
+func (a *App) markdownSnippet(buf *noteBuffer, k helix.Key) bool {
+	if !a.prefs.MarkdownSnippets || buf.ed.Mode() != helix.ModeInsert {
 		return false
 	}
 	cur := buf.ed.Cursor()
@@ -64,7 +64,7 @@ func (a *App) markdownSnippet(buf *noteBuffer, k vim.Key) bool {
 				return false
 			}
 			buf.ed.InsertAtCursor("\n" + indent + "\n" + indent + token)
-			buf.ed.SetCursor(vim.Pos{Line: cur.Line + 1, Col: len([]rune(indent))})
+			buf.ed.SetCursor(helix.Pos{Line: cur.Line + 1, Col: len([]rune(indent))})
 			return true
 		}
 	}
@@ -163,7 +163,7 @@ func (a *App) markdownCompletion() {
 		}
 		next := string(line[:start]) + it.id + suffix + rest
 		buf.ed.ReplaceLineText(cur.Line, next)
-		buf.ed.SetCursor(vim.Pos{Line: cur.Line, Col: start + len([]rune(it.id+suffix))})
+		buf.ed.SetCursor(helix.Pos{Line: cur.Line, Col: start + len([]rune(it.id+suffix))})
 	}}
 	p.refilter(a)
 	a.overlay = p

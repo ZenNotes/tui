@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // tasksView is the Tasks tab: list, board and calendar modes.
@@ -763,7 +763,7 @@ func sameDay(a, b time.Time) bool {
 
 // --- keys ---
 
-func (v *tasksView) handleKey(a *App, k vim.Key) bool {
+func (v *tasksView) handleKey(a *App, k helix.Key) bool {
 	if k.IsRune('S') {
 		a.savedTaskFilters()
 		return true
@@ -848,7 +848,7 @@ func (v *tasksView) selectedTask() *vault.Task {
 	return nil
 }
 
-func (v *tasksView) listKey(a *App, k vim.Key) bool {
+func (v *tasksView) listKey(a *App, k helix.Key) bool {
 	n := len(v.rows)
 	before := v.list.cursor
 	if a.listNav(&v.list, k, n, v.pageRows) {
@@ -919,7 +919,7 @@ func (v *tasksView) listKey(a *App, k vim.Key) bool {
 }
 
 // taskEditKey handles the per-task edit keys shared by every mode.
-func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
+func (v *tasksView) taskEditKey(a *App, k helix.Key, t *vault.Task) bool {
 	if t == nil {
 		return false
 	}
@@ -950,7 +950,7 @@ func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
 	return true
 }
 
-func (v *tasksView) boardKey(a *App, k vim.Key) bool {
+func (v *tasksView) boardKey(a *App, k helix.Key) bool {
 	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
 		return false
 	}
@@ -1058,7 +1058,7 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 	v.col = target
 }
 
-func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
+func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
 	t := v.selectedTask()
 	if v.dayFocus {
 		switch {

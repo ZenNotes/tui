@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/database"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // boardState is the kanban layout of a board view: one column per option
@@ -263,7 +263,7 @@ func (v *databaseView) boardCursorPos() (int, int) {
 	return 1, 1
 }
 
-func (v *databaseView) boardKey(a *App, k vim.Key) bool {
+func (v *databaseView) boardKey(a *App, k helix.Key) bool {
 	b := &v.board
 	rows := v.boardColumnRows()
 	switch {
@@ -340,7 +340,7 @@ func (v *databaseView) boardKey(a *App, k vim.Key) bool {
 	case k.IsRune('>'):
 		v.moveBoardColumn(a, 1)
 	case k.IsRune('d') || k.IsRune('g') || k.IsRune('y'):
-		v.navKeys = []vim.Key{k}
+		v.navKeys = []helix.Key{k}
 	case k.IsRune('i') || k.IsRune('c') || k.IsRune('e'):
 		v.editCell(a)
 	case k.IsRune('x'):

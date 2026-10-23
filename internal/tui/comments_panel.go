@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"time"
@@ -112,7 +112,7 @@ func commentThreadText(t backend.CommentThreadView) string {
 	}
 	return strings.Join(lines, "\n")
 }
-func (p *commentsPanel) handleKey(a *App, k vim.Key) {
+func (p *commentsPanel) handleKey(a *App, k helix.Key) {
 	if k.Is("esc") {
 		a.focus = focusPane
 		return

@@ -1,13 +1,13 @@
 package tui
 
 import (
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"testing"
 )
 
 func TestLeaderAppearsImmediatelyAndTimedSequenceExpires(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
-	a.handleKey(vim.R(' '))
+	a.handleKey(helix.R(' '))
 	if a.leader == nil || !a.leader.showHints {
 		t.Fatal("leader hints must appear on the first key")
 	}
@@ -20,9 +20,9 @@ func TestLeaderAppearsImmediatelyAndTimedSequenceExpires(t *testing.T) {
 
 func TestLeaderSubmenuIgnoresPreviousExpiry(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
-	a.handleKey(vim.R(' '))
+	a.handleKey(helix.R(' '))
 	seq := a.leader.seq
-	a.handleKey(vim.R('l'))
+	a.handleKey(helix.R('l'))
 	a.Update(leaderHintMsg{seq: seq})
 	if a.leader == nil || !a.leader.showHints {
 		t.Fatal("old timeout closed the submenu")
@@ -36,11 +36,11 @@ func TestLeaderSubmenuIgnoresPreviousExpiry(t *testing.T) {
 func TestStickyLeaderDismissesWithLeaderKey(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
 	a.prefs.WhichKeyHintMode = "sticky"
-	a.handleKey(vim.R(' '))
+	a.handleKey(helix.R(' '))
 	if a.leader == nil || !a.leader.showHints {
 		t.Fatal("sticky hints must appear immediately")
 	}
-	a.handleKey(vim.R(' '))
+	a.handleKey(helix.R(' '))
 	if a.leader != nil || a.messageErr || a.message != "" {
 		t.Fatal("leader should quietly dismiss sticky hints")
 	}
