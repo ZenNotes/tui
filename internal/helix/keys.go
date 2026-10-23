@@ -12,7 +12,9 @@ import (
 
 // Key is one keystroke, normalized. Printable keys carry a Rune; special
 // keys carry a Name (esc, enter, tab, backspace, delete, up, down, left,
-// right, home, end, pgup, pgdn, insert).
+// right, home, end, pgup, pgdn, insert). The vim engine shares this
+// terminal-facing key model so the TUI can drive either through one
+// interface; its aliases keep the two packages signature-compatible.
 type Key struct {
 	Rune  rune
 	Name  string

@@ -5,7 +5,8 @@ import (
 	"unicode"
 )
 
-// Pos is a position in the buffer: a zero-based line and a rune column.
+// Pos is a position in the buffer: a zero-based line and a rune column. The
+// vim engine aliases it so both engines share one coordinate type.
 type Pos struct {
 	Line, Col int
 }

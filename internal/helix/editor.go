@@ -42,7 +42,9 @@ const (
 	selBlock
 )
 
-// Options tune the engine. Zero values are filled by New.
+// Options tune the engine. Zero values are filled by New. The vim engine
+// aliases it so the host can configure either engine the same way; the
+// vim engine reads the fields it knows and ignores the rest.
 type Options struct {
 	WrappedLineMotions      bool
 	TabSize                 int
@@ -75,7 +77,8 @@ func DefaultOptions() Options {
 	}
 }
 
-// Register is a yank or delete.
+// Register is a yank or delete. The vim engine aliases it so hosts share
+// register stores across engines.
 type Register struct {
 	Text      string
 	Linewise  bool
@@ -119,7 +122,8 @@ type ExCommand struct {
 	Raw   string
 }
 
-// Hooks are the host's side of the engine. Every field is optional.
+// Hooks are the host's side of the engine. Every field is optional. The vim
+// engine aliases it so hosts wire either engine the same way.
 type Hooks struct {
 	DisplayRowBounds func(Pos) (int, int)
 	// ExCommand runs a command the editor does not own; handled false means
