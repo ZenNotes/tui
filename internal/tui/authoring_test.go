@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vim"
 	"strings"
 	"testing"
 )
