@@ -14,8 +14,6 @@ type Prefs struct {
 	HelixWrappedLineMotions string
 	IgnoredKeys             []string
 	HelixMode               bool
-	// Motions picks the modal engine: "vim" (default) or "helix". It is
-	// [vim] motions in config.toml.
 	Motions               string
 	HelixInsertEscape     string
 	HelixYankToClipboard  bool
@@ -155,10 +153,6 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		m, _ := doc[name].(map[string]any)
 		return m
 	}
-	// The modal engine section stays [vim], the name it has always had; the
-	// motions key picks which engine (vim or helix) runs behind it. A
-	// [helix] section written by older helix-branch builds is still honored
-	// when [vim] is absent.
 	modal := section("vim")
 	if modal == nil {
 		modal = section("helix")
