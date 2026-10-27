@@ -88,7 +88,7 @@ func (v *tasksView) setMode(mode string) {
 func (v *tasksView) refresh(a *App) {
 	all := a.displayTasks()
 	v.tasks = filterTaskQuery(all, v.filter)
-	groups := vault.GroupTasks(v.tasks, time.Now())
+	groups := vault.OrderTaskGroups(vault.GroupTasks(v.tasks, time.Now()), a.prefs.TasksListOrder)
 	v.rows = nil
 	add := func(name string, tasks []vault.Task, extra string) {
 		if len(tasks) == 0 {
@@ -110,6 +110,7 @@ func (v *tasksView) refresh(a *App) {
 	}
 	add("Today", groups.Today, overdue)
 	add("Upcoming", groups.Upcoming, "")
+	add("No due date", groups.Undated, "")
 	add("Waiting", groups.Waiting, "")
 	add("Done", groups.Done, "")
 	add("Forwarded", groups.Forwarded, "")
@@ -290,7 +291,7 @@ func (v *tasksView) buildColumns(a *App) {
 			}
 		}
 	case "status", "":
-		for _, c := range []struct{ id, title string }{{"today", "Today"}, {"upcoming", "Upcoming"}, {"in-progress", "In progress"}, {"waiting", "Waiting"}, {"done", "Done"}} {
+		for _, c := range []struct{ id, title string }{{"today", "Today"}, {"upcoming", "Upcoming"}, {"undated", "No due date"}, {"in-progress", "In progress"}, {"waiting", "Waiting"}, {"done", "Done"}} {
 			cols = append(cols, kanbanColumn{id: c.id, title: v.columnTitle(a, c.id, c.title)})
 		}
 		today := vault.TodayISO(time.Now())
@@ -306,6 +307,8 @@ func (v *tasksView) buildColumns(a *App) {
 				id = "waiting"
 			case t.InProgress:
 				id = "in-progress"
+			case t.Due == "":
+				id = "undated"
 			case t.Due > today:
 				id = "upcoming"
 			}
@@ -772,6 +775,14 @@ func (v *tasksView) handleKey(a *App, k helix.Key) bool {
 		v.boardMenu(a)
 		return true
 	}
+	if k.IsRune('O') && v.mode == "list" && a.listKeyAllowed(k) {
+		next := "priority"
+		if a.prefs.TasksListOrder == "priority" {
+			next = "note"
+		}
+		a.setTasksListOrder(next)
+		return true
+	}
 	if k.IsRune('v') && a.listKeyAllowed(k) {
 		switch v.mode {
 		case "list":
@@ -893,13 +904,18 @@ func (v *tasksView) listKey(a *App, k helix.Key) bool {
 		if t != nil {
 			a.openTaskSource(*t)
 		}
-	case "tasks.moveTaskUp":
-		if t != nil {
-			a.moveTaskWithinNote(*t, -1)
+	case "tasks.moveTaskUp", "tasks.moveTaskDown":
+		// J and K move lines in the note, which the list only shows in note order.
+		if a.prefs.TasksListOrder == "priority" {
+			a.notify("Reordering works in note order. Press O to switch.")
+			return true
 		}
-	case "tasks.moveTaskDown":
 		if t != nil {
-			a.moveTaskWithinNote(*t, 1)
+			dir := 1
+			if id == "tasks.moveTaskUp" {
+				dir = -1
+			}
+			a.moveTaskWithinNote(*t, dir)
 		}
 	case "nav.localEx":
 		a.openLocalEx()
@@ -1043,6 +1059,10 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 			return
 		}
 	case "status", "":
+		if col.id == "undated" && t.DueInferred {
+			a.notify("This task's date comes from its daily note, so there is no due date to clear")
+			return
+		}
 		a.setTaskStatusColumn(t, col.id)
 	case "folder":
 		a.notify("Folder boards are read-only. Move the source note to change its folder.")
@@ -1305,6 +1325,11 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 			checked(false)
 			waiting(false)
 			progress(true)
+		case "undated":
+			checked(false)
+			waiting(false)
+			progress(false)
+			due("")
 		case "today", "upcoming":
 			checked(false)
 			waiting(false)

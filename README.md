@@ -606,8 +606,12 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   with `:tasks list|kanban|calendar`, `Space x`, `Space k`, or the rows
   under Tasks in the sidebar; `v` cycles them. `x` toggles, Enter opens the
   note at the line, `p d w c /` set priority, due date, waiting, cancelled
-  and in progress, `f` filters, `m` opens the menu. The default board uses
-  Today / Upcoming / In progress / Waiting / Done. `H`/`L` move a card;
+  and in progress, `f` filters, `m` opens the menu. The list and the default
+  board use Today / Upcoming / No due date / In progress / Waiting / Done
+  (moving a card to No due date clears its due date). `O` or `:order
+  priority|note` orders the list inside each group by priority or by the
+  notes' line order (`tasks_list_order`, shared with the desktop's Order
+  menu; `J`/`K` reorder in note order). `H`/`L` move a card;
   `g` regroups by status, priority, due date, folder or `field:<key>`.
   `:boardoptions` (also F2 → Board options) sets the folder root, column labels,
   custom statuses and card order. Folder boards keep cross-folder moves

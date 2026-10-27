@@ -388,11 +388,46 @@ func TestGroupTasks(t *testing.T) {
 		{ID: "a#7", Due: "2026-09-08", Priority: "high"},
 	}
 	g := GroupTasks(tasks, today)
-	if len(g.Today) != 3 || g.OverdueCount != 1 || len(g.Upcoming) != 1 || len(g.Waiting) != 1 || len(g.Done) != 1 || len(g.Forwarded) != 1 || len(g.Cancelled) != 1 {
+	// An undated task has its own group (#990), out of Today.
+	if len(g.Today) != 2 || g.OverdueCount != 1 || len(g.Upcoming) != 1 || len(g.Undated) != 1 || g.Undated[0].ID != "a#1" || len(g.Waiting) != 1 || len(g.Done) != 1 || len(g.Forwarded) != 1 || len(g.Cancelled) != 1 {
 		t.Fatalf("groups = %+v", g)
 	}
 	if g.Today[0].ID != "a#7" {
 		t.Fatalf("priority first: %+v", g.Today)
+	}
+}
+
+func TestOrderTaskGroups(t *testing.T) {
+	// The desktop's Order menu above the Tasks list (#989).
+	g := TaskGroups{
+		Today: []Task{
+			{ID: "bank", SourcePath: "a.md", TaskIndex: 0, Priority: "med", Due: "2026-10-23"},
+			{ID: "passport", SourcePath: "a.md", TaskIndex: 1, Priority: "high", Due: "2026-10-20"},
+			{ID: "plants", SourcePath: "b.md", TaskIndex: 0, Due: "2026-10-23"},
+			{ID: "invoice", SourcePath: "b.md", TaskIndex: 1, Priority: "low", Due: "2026-10-23"},
+			{ID: "contract", SourcePath: "c.md", TaskIndex: 0, Priority: "high", Due: "2026-10-23"},
+		},
+		Done: []Task{{ID: "b-done", SourcePath: "b.md", Priority: "low"}, {ID: "a-done", SourcePath: "a.md", Priority: "high"}},
+	}
+	ids := func(tasks []Task) string {
+		out := []string{}
+		for _, t := range tasks {
+			out = append(out, t.ID)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := ids(OrderTaskGroups(g, "note").Today); got != "bank,passport,plants,invoice,contract" {
+		t.Fatalf("note order = %s", got)
+	}
+	byPriority := OrderTaskGroups(g, "priority")
+	if got := ids(byPriority.Today); got != "passport,contract,bank,invoice,plants" {
+		t.Fatalf("priority order = %s", got)
+	}
+	if got := ids(byPriority.Done); got != "a-done,b-done" {
+		t.Fatalf("done keeps line order: %s", got)
+	}
+	if ids(g.Today) != "bank,passport,plants,invoice,contract" {
+		t.Fatalf("OrderTaskGroups must not reorder its input: %s", ids(g.Today))
 	}
 }
 

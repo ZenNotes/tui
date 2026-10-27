@@ -124,8 +124,39 @@ func (a *App) filterMenu(name string) {
 		}},
 	})
 }
+
+// setTasksListOrder writes tasks_list_order to config.toml, the key the
+// desktop's Order menu above the Tasks list uses (#989), so both agree.
+func (a *App) setTasksListOrder(order string) {
+	if err := config.SetValue("view", "tasks_list_order", order); err != nil {
+		a.notifyError(err.Error())
+		return
+	}
+	_ = a.reloadPreferences()
+	a.prefs.TasksListOrder = order
+	if v := a.activeTasksView(); v != nil {
+		v.refresh(a)
+	}
+	if order == "priority" {
+		a.notify("Tasks ordered by priority")
+	} else {
+		a.notify("Tasks in their notes' order")
+	}
+}
+
 func (v *tasksView) boardMenu(a *App) {
+	listOrder := "List order: priority (O switches to note order)"
+	if a.prefs.TasksListOrder != "priority" {
+		listOrder = "List order: note order (O switches to priority)"
+	}
 	a.showMenu("Board options", []menuItem{
+		{key: "o", label: listOrder, run: func(a *App) {
+			next := "priority"
+			if a.prefs.TasksListOrder == "priority" {
+				next = "note"
+			}
+			a.setTasksListOrder(next)
+		}},
 		{key: "g", label: "Group by", run: func(a *App) {
 			items := []paletteItem{}
 			for _, g := range v.groupOptions() {

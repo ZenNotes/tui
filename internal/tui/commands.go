@@ -52,10 +52,25 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"comments"}, title: "Note comments", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.openComments(); return nil }},
-		{names: []string{"filters"}, title: "Saved task filters", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.savedTaskFilters(); return nil }},
-		{names: []string{"savefilter"}, title: "Save current task filter", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.saveTaskFilter(); return nil }},
-		{names: []string{"boardoptions"}, title: "Task board options", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
+		{names: []string{"comments"}, title: "Note comments", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openComments(); return nil }},
+		{names: []string{"filters"}, title: "Saved task filters", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.savedTaskFilters(); return nil }},
+		{names: []string{"savefilter"}, title: "Save current task filter", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.saveTaskFilter(); return nil }},
+		{names: []string{"order"}, title: "Order the task list (note | priority)", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+			switch want := strings.ToLower(strings.TrimSpace(cmd.Args)); want {
+			case "note", "priority":
+				a.setTasksListOrder(want)
+			case "":
+				next := "priority"
+				if a.prefs.TasksListOrder == "priority" {
+					next = "note"
+				}
+				a.setTasksListOrder(next)
+			default:
+				a.notify("Usage: :order note | priority")
+			}
+			return nil
+		}},
+		{names: []string{"boardoptions"}, title: "Task board options", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
 			if v := a.activeTasksView(); v != nil {
 				v.boardMenu(a)
 			}

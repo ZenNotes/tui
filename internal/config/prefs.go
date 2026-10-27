@@ -55,6 +55,7 @@ type Prefs struct {
 	CalendarWeekStart       string
 	CalendarShowWeekNumbers bool
 	TasksViewMode           string
+	TasksListOrder          string // note | priority: the desktop's Order menu above the Tasks list (#989)
 	ShowArchivedTasks       bool
 	KanbanGroupBy           string
 	KanbanFolderRoot        string
@@ -116,6 +117,7 @@ func DefaultPrefs() Prefs {
 		CalendarWeekStart:        "monday",
 		CalendarShowWeekNumbers:  true,
 		TasksViewMode:            "list",
+		TasksListOrder:           "note",
 		KanbanGroupBy:            "status",
 		KanbanStatuses:           []string{},
 		KanbanColumnTitles:       map[string]string{},
@@ -206,6 +208,10 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setString(view, "calendar_week_start", &p.CalendarWeekStart)
 	setBool(view, "calendar_show_week_numbers", &p.CalendarShowWeekNumbers)
 	setString(view, "tasks_view_mode", &p.TasksViewMode)
+	setString(view, "tasks_list_order", &p.TasksListOrder)
+	if p.TasksListOrder != "priority" {
+		p.TasksListOrder = "note"
+	}
 	setBool(view, "show_archived_tasks", &p.ShowArchivedTasks)
 	setString(view, "kanban_group_by", &p.KanbanGroupBy)
 	setString(view, "kanban_folder_root", &p.KanbanFolderRoot)

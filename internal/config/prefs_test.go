@@ -58,3 +58,22 @@ func TestStarterConfigParses(t *testing.T) {
 		t.Fatalf("starter theme: %+v", prefs)
 	}
 }
+
+func TestPrefsReadTheTasksListOrder(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZENNOTES_CONFIG_DIR", dir)
+	prefs, _, err := LoadPrefs()
+	if err != nil || prefs.TasksListOrder != "note" {
+		t.Fatalf("default order = %q, %v", prefs.TasksListOrder, err)
+	}
+	for _, tc := range []struct{ value, want string }{{"priority", "priority"}, {"note", "note"}, {"due", "note"}} {
+		toml := "[view]\ntasks_list_order = \"" + tc.value + "\"  # note | priority\n"
+		if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(toml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		prefs, _, err = LoadPrefs()
+		if err != nil || prefs.TasksListOrder != tc.want {
+			t.Fatalf("tasks_list_order = %q read as %q, want %q (%v)", tc.value, prefs.TasksListOrder, tc.want, err)
+		}
+	}
+}

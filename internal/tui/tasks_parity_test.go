@@ -36,18 +36,18 @@ func TestKanbanStatusColumnsMatchDesktop(t *testing.T) {
 	}}
 	a := &App{prefs: prefsView{Prefs: config.Prefs{KanbanStatuses: []string{"review", "blocked"}}}}
 	v.buildColumns(a)
-	assertKanbanColumnIDs(t, v, []string{"today", "upcoming", "in-progress", "waiting", "done"})
-	wantTitles := []string{"Today", "Upcoming", "In progress", "Waiting", "Done"}
+	assertKanbanColumnIDs(t, v, []string{"today", "upcoming", "undated", "in-progress", "waiting", "done"})
+	wantTitles := []string{"Today", "Upcoming", "No due date", "In progress", "Waiting", "Done"}
 	for i, col := range v.columns {
 		if col.title != wantTitles[i] {
 			t.Errorf("column %q title = %q, want %q", col.id, col.title, wantTitles[i])
 		}
 	}
 	want := map[string]string{
-		"undated": "today", "due-today": "today", "overdue": "today",
+		"undated": "undated", "due-today": "today", "overdue": "today",
 		"future": "upcoming", "started-undated": "in-progress", "started-future": "in-progress",
 		"waiting-started": "waiting", "waiting-overdue": "waiting", "done-waiting": "done",
-		"custom-status": "today", "custom-started": "today",
+		"custom-status": "undated", "custom-started": "undated",
 	}
 	got := map[string]string{}
 	for _, col := range v.columns {
@@ -211,6 +211,7 @@ func TestKanbanStatusMovesMatchDesktopMutations(t *testing.T) {
 		{name: "progress clears waiting and preserves due", line: "- [ ] Work @waiting due:" + future, target: "in-progress", due: future, progress: true},
 		{name: "waiting preserves progress and due", line: "- [/] Work due:" + future, target: "waiting", due: future, waiting: true, progress: true},
 		{name: "done preserves waiting and due", line: "- [/] Work @waiting due:" + future, target: "done", due: future, waiting: true, checked: true},
+		{name: "no due date clears due and reopens (#990)", line: "- [/] Work @waiting due:" + future, target: "undated", due: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -226,6 +227,24 @@ func TestKanbanStatusMovesMatchDesktopMutations(t *testing.T) {
 				t.Errorf("status move changed custom fields: %v", got.Fields)
 			}
 		})
+	}
+}
+
+func TestKanbanNoDueDateRefusesADailyNoteDate(t *testing.T) {
+	// The date comes from the note, not a due: on the line, so there is nothing
+	// to clear and the card would land straight back in its day (#990).
+	const body = "- [ ] Work @status:review\n"
+	a, path, task := newKanbanMutationTestApp(t, body)
+	task.Due = vault.TodayISO(time.Now())
+	task.DueInferred = true
+	v := &tasksView{groupBy: "status", columns: []kanbanColumn{{id: "undated"}}}
+	v.moveCard(a, task, 0)
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Errorf("a daily-note task must not be rewritten; body=%q, want %q", got, body)
 	}
 }
 

@@ -1034,7 +1034,9 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 }
 
 // GroupTasks buckets tasks for the list view. Waiting overrides everything
-// but Done; tasks without a due date land in Today.
+// but Done. Tasks without a due date have their own group, as in the desktop
+// app since ZenNotes 2.76 (#990): they used to land in Today. A daily-note task
+// is dated by InferDailyTaskDueDates before it gets here, so it stays in Today.
 func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 	todayISO := TodayISO(today)
 	g := TaskGroups{}
@@ -1049,7 +1051,7 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 		case task.Waiting:
 			g.Waiting = append(g.Waiting, task)
 		case task.Due == "":
-			g.Today = append(g.Today, task)
+			g.Undated = append(g.Undated, task)
 		case task.Due < todayISO:
 			g.Today = append(g.Today, task)
 			g.OverdueCount++
@@ -1090,11 +1092,57 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 	}
 	sortTasks(g.Today, byPriorityThenDue)
 	sortTasks(g.Upcoming, byDueThenPath)
+	sortTasks(g.Undated, byPriorityThenDue)
 	sortTasks(g.Waiting, byPriorityThenDue)
 	sortTasks(g.Done, byPath)
 	sortTasks(g.Forwarded, byDueThenPath)
 	sortTasks(g.Cancelled, byPath)
 	return g
+}
+
+// OrderTaskGroups orders each Tasks list group the way the desktop's Order
+// menu says (#989): "note" keeps every group in its notes' line order, which
+// J and K rearrange; "priority" puts high before medium before low before
+// none in the live groups, ties by due date and then line order, and leaves
+// forwarded, done and cancelled in line order.
+func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
+	byLine := func(a, b Task) bool {
+		if a.SourcePath != b.SourcePath {
+			return a.SourcePath < b.SourcePath
+		}
+		return a.TaskIndex < b.TaskIndex
+	}
+	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
+	byPriority := func(a, b Task) bool {
+		if rank[a.Priority] != rank[b.Priority] {
+			return rank[a.Priority] < rank[b.Priority]
+		}
+		ad, bd := a.Due, b.Due
+		if ad == "" {
+			ad = "9999-99-99"
+		}
+		if bd == "" {
+			bd = "9999-99-99"
+		}
+		if ad != bd {
+			return ad < bd
+		}
+		return byLine(a, b)
+	}
+	live := byLine
+	if order == "priority" {
+		live = byPriority
+	}
+	out := g
+	for _, group := range []*[]Task{&out.Today, &out.Upcoming, &out.Undated, &out.Waiting} {
+		*group = append([]Task(nil), (*group)...)
+		sortTasks(*group, live)
+	}
+	for _, group := range []*[]Task{&out.Done, &out.Forwarded, &out.Cancelled} {
+		*group = append([]Task(nil), (*group)...)
+		sortTasks(*group, byLine)
+	}
+	return out
 }
 
 func sortTasks(tasks []Task, less func(a, b Task) bool) {

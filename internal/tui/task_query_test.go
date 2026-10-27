@@ -74,7 +74,7 @@ func TestTaskViewsApplyPortableSavedQuery(t *testing.T) {
 	v := &tasksView{groupBy: "status", filter: "@project:alpha"}
 	v.refresh(a)
 	assertTaskQueryIDs(t, v.tasks, []string{"alpha"})
-	assertKanbanCards(t, v, "today", []string{"alpha"})
+	assertKanbanCards(t, v, "undated", []string{"alpha"})
 }
 
 func assertTaskQueryIDs(t *testing.T, tasks []vault.Task, want []string) {
