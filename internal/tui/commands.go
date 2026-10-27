@@ -11,11 +11,11 @@ import (
 
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // command is one ex command the host owns, also listed in the palette.
@@ -23,7 +23,7 @@ type command struct {
 	names []string
 	title string
 	hint  string
-	run   func(a *App, buf *noteBuffer, cmd vim.ExCommand) error
+	run   func(a *App, buf *noteBuffer, cmd helix.ExCommand) error
 	// palette false keeps a command out of the palette (argument-only ones).
 	palette bool
 }
@@ -34,16 +34,16 @@ func (a *App) commandTable() []command {
 	if a.commands != nil {
 		return a.commands
 	}
-	openView := func(path string) func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
-		return func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openVirtualByPath(path); return nil }
+	openView := func(path string) func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
+		return func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.openVirtualByPath(path); return nil }
 	}
 	a.commands = []command{
-		{names: []string{"complete"}, title: "Complete Markdown token", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.markdownCompletion(); return nil }},
-		{names: []string{"table"}, title: "Markdown table actions", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.tableMenu(); return nil }},
-		{names: []string{"formatting"}, title: "Formatting menu", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.formatMenu(); return nil }},
-		{names: []string{"templates"}, title: "Manage templates", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openTemplates(); return nil }},
-		{names: []string{"bulk"}, title: "Actions on marked notes", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.bulkMenu(); return nil }},
-		{names: []string{"mark"}, title: "Mark active note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"complete"}, title: "Complete Markdown token", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.markdownCompletion(); return nil }},
+		{names: []string{"table"}, title: "Markdown table actions", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.tableMenu(); return nil }},
+		{names: []string{"formatting"}, title: "Formatting menu", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.formatMenu(); return nil }},
+		{names: []string{"templates"}, title: "Manage templates", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.openTemplates(); return nil }},
+		{names: []string{"bulk"}, title: "Actions on marked notes", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.bulkMenu(); return nil }},
+		{names: []string{"mark"}, title: "Mark active note", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				buf = a.activeBuffer()
 			}
@@ -52,10 +52,10 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"comments"}, title: "Note comments", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.openComments(); return nil }},
-		{names: []string{"filters"}, title: "Saved task filters", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.savedTaskFilters(); return nil }},
-		{names: []string{"savefilter"}, title: "Save current task filter", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.saveTaskFilter(); return nil }},
-		{names: []string{"order"}, title: "Order the task list (note | priority)", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"comments"}, title: "Note comments", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.openComments(); return nil }},
+		{names: []string{"filters"}, title: "Saved task filters", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.savedTaskFilters(); return nil }},
+		{names: []string{"savefilter"}, title: "Save current task filter", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.saveTaskFilter(); return nil }},
+		{names: []string{"order"}, title: "Order the task list (note | priority)", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			switch want := strings.ToLower(strings.TrimSpace(cmd.Args)); want {
 			case "note", "priority":
 				a.setTasksListOrder(want)
@@ -70,14 +70,14 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"boardoptions"}, title: "Task board options", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"boardoptions"}, title: "Task board options", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			if v := a.activeTasksView(); v != nil {
 				v.boardMenu(a)
 			}
 			return nil
 		}},
-		{names: []string{"conflict"}, title: "Resolve external note changes", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.conflictMenu(); return nil }},
-		{names: []string{"w", "write", "save"}, title: "Save note", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"conflict"}, title: "Resolve external note changes", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.conflictMenu(); return nil }},
+		{names: []string{"w", "write", "save"}, title: "Save note", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			if strings.TrimSpace(cmd.Args) != "" {
 				return a.saveAs(buf, cmd.Args)
 			}
@@ -87,16 +87,16 @@ func (a *App) commandTable() []command {
 			a.queueSave(buf)
 			return nil
 		}},
-		{names: []string{"q", "quit", "close"}, title: "Close tab", hint: ":q", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"q", "quit", "close"}, title: "Close tab", hint: ":q", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			return a.closeActiveTabCommand(cmd.Bang)
 		}},
-		{names: []string{"wq", "x", "xit"}, title: "Save and close tab", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"wq", "x", "xit"}, title: "Save and close tab", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			if err := a.saveBufferReport(buf); err != nil {
 				return err
 			}
 			return a.closeActiveTabCommand(true)
 		}},
-		{names: []string{"qa", "qall", "quitall"}, title: "Quit ZenNotes", hint: ":qa", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"qa", "qall", "quitall"}, title: "Quit ZenNotes", hint: ":qa", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			if cmd.Bang {
 				a.quitting = true
 				return nil
@@ -104,21 +104,21 @@ func (a *App) commandTable() []command {
 			a.quit()
 			return nil
 		}},
-		{names: []string{"wa", "wall"}, title: "Save all notes", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"wa", "wall"}, title: "Save all notes", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			if err := a.saveAllBuffers(); err != nil {
 				return err
 			}
 			a.notify("Saved all notes")
 			return nil
 		}},
-		{names: []string{"wqa", "xa", "wqall", "xall"}, title: "Save all and quit", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"wqa", "xa", "wqall", "xall"}, title: "Save all and quit", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.quit()
 			return nil
 		}},
-		{names: []string{"bd", "bdelete", "bc", "bclose"}, title: "Close buffer", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"bd", "bdelete", "bc", "bclose"}, title: "Close buffer", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.closeActiveTabCommand(cmd.Bang)
 		}},
-		{names: []string{"bn", "bnext", "tabnext", "tabn"}, title: "Next tab", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"bn", "bnext", "tabnext", "tabn"}, title: "Next tab", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			if n, err := strconv.Atoi(strings.TrimSpace(cmd.Args)); err == nil {
 				a.selectTab(n)
 				return nil
@@ -126,15 +126,15 @@ func (a *App) commandTable() []command {
 			a.cycleTab(1)
 			return nil
 		}},
-		{names: []string{"bp", "bprev", "bprevious", "tabprev", "tabp", "tabprevious"}, title: "Previous tab", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"bp", "bprev", "bprevious", "tabprev", "tabp", "tabprevious"}, title: "Previous tab", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.cycleTab(-1)
 			return nil
 		}},
-		{names: []string{"buffers", "ls"}, title: "List open buffers", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"buffers", "ls"}, title: "List open buffers", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openBufferPicker()
 			return nil
 		}},
-		{names: []string{"tabnew", "new"}, title: "New note", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"tabnew", "new"}, title: "New note", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			title := strings.TrimSpace(cmd.Args)
 			if title == "" {
 				a.newNoteHere()
@@ -147,18 +147,18 @@ func (a *App) commandTable() []command {
 			a.createNote(folder, title, sub, nil, true)
 			return nil
 		}},
-		{names: []string{"tabclose", "tabc"}, title: "Close tab", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"tabclose", "tabc"}, title: "Close tab", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.closeActiveTabCommand(cmd.Bang)
 		}},
-		{names: []string{"tabonly", "tabo"}, title: "Close other tabs", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"tabonly", "tabo"}, title: "Close other tabs", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.closeOtherTabs()
 			return nil
 		}},
-		{names: []string{"pin", "tabpin", "unpin"}, title: "Pin or unpin the tab", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"pin", "tabpin", "unpin"}, title: "Pin or unpin the tab", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.togglePin(a.activePane, a.activePane.active)
 			return nil
 		}},
-		{names: []string{"tabmove", "tabm"}, title: "Move the tab left or right (:tabmove -1 / +1)", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"tabmove", "tabm"}, title: "Move the tab left or right (:tabmove -1 / +1)", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			delta := 1
 			switch {
@@ -193,30 +193,30 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"tabreopen", "reopen"}, title: "Reopen closed tab", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"tabreopen", "reopen"}, title: "Reopen closed tab", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.reopenClosedTab()
 			return nil
 		}},
-		{names: []string{"only", "on"}, title: "Close other panes", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"only", "on"}, title: "Close other panes", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.onlyPane()
 			return nil
 		}},
-		{names: []string{"sp", "split"}, title: "Split pane down", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"sp", "split"}, title: "Split pane down", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.splitPane(false)
 			return a.openArgument(cmd.Args)
 		}},
-		{names: []string{"vs", "vsplit", "vsp"}, title: "Split pane right", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"vs", "vsplit", "vsp"}, title: "Split pane right", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.splitPane(true)
 			return a.openArgument(cmd.Args)
 		}},
-		{names: []string{"e", "edit", "open", "o"}, title: "Open note", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"e", "edit", "open", "o"}, title: "Open note", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			if strings.TrimSpace(cmd.Args) == "" {
 				a.openNoteSearch("")
 				return nil
 			}
 			return a.openArgument(cmd.Args)
 		}},
-		{names: []string{"move", "mv"}, title: "Move note to folder", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"move", "mv"}, title: "Move note to folder", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
@@ -232,7 +232,7 @@ func (a *App) commandTable() []command {
 			a.moveNote(buf.path, folder, sub)
 			return nil
 		}},
-		{names: []string{"rename", "saveas"}, title: "Rename note", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"rename", "saveas"}, title: "Rename note", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
@@ -242,65 +242,65 @@ func (a *App) commandTable() []command {
 			}
 			return a.saveAs(buf, cmd.Args)
 		}},
-		{names: []string{"delete", "del", "trashnote"}, title: "Move note to trash", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"delete", "del", "trashnote"}, title: "Move note to trash", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			a.trashActiveNote()
 			return nil
 		}},
-		{names: []string{"archive"}, title: "Archive or unarchive note", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"archive"}, title: "Archive or unarchive note", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.archiveActiveNote()
 			return nil
 		}},
-		{names: []string{"restore"}, title: "Restore note from trash", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"restore"}, title: "Restore note from trash", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
 			a.restoreNote(buf.path)
 			return nil
 		}},
-		{names: []string{"duplicate", "dup"}, title: "Duplicate note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"duplicate", "dup"}, title: "Duplicate note", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
 			a.duplicateNote(buf.path)
 			return nil
 		}},
-		{names: []string{"favorite", "fav"}, title: "Toggle favorite", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"favorite", "fav"}, title: "Toggle favorite", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.toggleActiveFavorite()
 			return nil
 		}},
-		{names: []string{"copylink", "yanklink"}, title: "Copy note link", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"copylink", "yanklink"}, title: "Copy note link", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.copyActiveLink()
 			return nil
 		}},
-		{names: []string{"copy", "yanknote"}, title: "Copy note as Markdown", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"copy", "yanknote"}, title: "Copy note as Markdown", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.copyActiveNote()
 			return nil
 		}},
-		{names: []string{"format", "fmt"}, title: "Format note", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"format", "fmt"}, title: "Format note", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.formatActiveNote()
 			return nil
 		}},
-		{names: []string{"desktop", "app"}, title: "Open in ZenNotes app", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"desktop", "app"}, title: "Open in ZenNotes app", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openActiveInDesktop()
 			return nil
 		}},
-		{names: []string{"tasks"}, title: "Open Tasks", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"tasks"}, title: "Open Tasks", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.openTasksMode(strings.TrimSpace(cmd.Args))
 		}},
-		{names: []string{"kanban", "board"}, title: "Open Tasks as a Kanban board", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"kanban", "board"}, title: "Open Tasks as a Kanban board", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			return a.openTasksMode("kanban")
 		}},
-		{names: []string{"taskcalendar", "tcal", "agenda"}, title: "Open Tasks as a calendar", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"taskcalendar", "tcal", "agenda"}, title: "Open Tasks as a calendar", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			return a.openTasksMode("calendar")
 		}},
-		{names: []string{"tasklist"}, title: "Open Tasks as a list", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"tasklist"}, title: "Open Tasks as a list", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			return a.openTasksMode("list")
 		}},
-		{names: []string{"tags"}, title: "Open Tags", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"tags"}, title: "Open Tags", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.openTags(strings.TrimPrefix(strings.TrimSpace(cmd.Args), "#"))
 			return nil
 		}},
-		{names: []string{"tag"}, title: "Filter by tag", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"tag"}, title: "Filter by tag", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.openTags(strings.TrimPrefix(strings.TrimSpace(cmd.Args), "#"))
 			return nil
 		}},
@@ -308,7 +308,7 @@ func (a *App) commandTable() []command {
 		{names: []string{"quick", "quicknotes"}, title: "Open Quick Notes", palette: true, run: openView(tabQuickNotes)},
 		{names: []string{"archived", "archiveview"}, title: "Open Archive", palette: true, run: openView(tabArchive)},
 		{names: []string{"home"}, title: "Open Home", palette: true, run: openView(tabHome)},
-		{names: []string{"help", "h", "manual"}, title: "Open the manual", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"help", "h", "manual"}, title: "Open the manual", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.openHelp()
 			if q := strings.TrimSpace(cmd.Args); q != "" {
 				if t := a.activeTab(); t != nil {
@@ -321,7 +321,7 @@ func (a *App) commandTable() []command {
 			return nil
 		}},
 		{names: []string{"settings", "preferences"}, title: "Open Settings", palette: true, run: openView(tabSettings)},
-		{names: []string{"view"}, title: "Open a view", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"view"}, title: "Open a view", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			switch strings.ToLower(strings.TrimSpace(cmd.Args)) {
 			case "tasks":
 				a.openTasks()
@@ -351,7 +351,7 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"template", "tmpl"}, title: "New note from template", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"template", "tmpl"}, title: "New note from template", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			name := strings.TrimSpace(cmd.Args)
 			if name == "" {
 				a.openTemplatePicker(false)
@@ -379,7 +379,7 @@ func (a *App) commandTable() []command {
 			}
 			return fmt.Errorf("no template named %q", name)
 		}},
-		{names: []string{"insert", "inserttemplate"}, title: "Insert template", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"insert", "inserttemplate"}, title: "Insert template", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			name := strings.TrimSpace(cmd.Args)
 			if name == "" {
 				a.openTemplatePicker(true)
@@ -393,32 +393,32 @@ func (a *App) commandTable() []command {
 			}
 			return fmt.Errorf("no template named %q", name)
 		}},
-		{names: []string{"daily", "today"}, title: "Open today's daily note", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"daily", "today"}, title: "Open today's daily note", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.periodicCommand(periodic.Daily, cmd.Args)
 		}},
-		{names: []string{"weekly"}, title: "Open this week's note", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"weekly"}, title: "Open this week's note", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.periodicCommand(periodic.Weekly, cmd.Args)
 		}},
-		{names: []string{"monthly"}, title: "Open this month's note", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"monthly"}, title: "Open this month's note", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.periodicCommand(periodic.Monthly, cmd.Args)
 		}},
-		{names: []string{"outline"}, title: "Toggle outline panel", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"outline"}, title: "Toggle outline panel", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.toggleSidePanel(&a.outlineOpen, focusOutline)
 			return nil
 		}},
-		{names: []string{"connections", "backlinks", "links"}, title: "Toggle connections panel", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"connections", "backlinks", "links"}, title: "Toggle connections panel", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.toggleSidePanel(&a.connectionsOpen, focusConnections)
 			return nil
 		}},
-		{names: []string{"calendar", "cal"}, title: "Toggle calendar panel", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"calendar", "cal"}, title: "Toggle calendar panel", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.toggleSidePanel(&a.calendarOpen, focusCalendar)
 			return nil
 		}},
-		{names: []string{"closepanel"}, title: "Close side panels", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"closepanel"}, title: "Close side panels", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.closeSidePanels()
 			return nil
 		}},
-		{names: []string{"sidebar"}, title: "Toggle sidebar", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"sidebar"}, title: "Toggle sidebar", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			if strings.TrimSpace(cmd.Args) == "tags" {
 				key := "section:tags"
 				a.sidebar.collapsed[key] = !a.sidebar.collapsed[key]
@@ -433,51 +433,51 @@ func (a *App) commandTable() []command {
 			a.toggleSidebar()
 			return nil
 		}},
-		{names: []string{"zen"}, title: "Toggle Zen mode", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"zen"}, title: "Toggle Zen mode", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.toggleZen()
 			return nil
 		}},
-		{names: []string{"editmode", "edit-mode"}, title: "Editor mode", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"editmode", "edit-mode"}, title: "Editor mode", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.setPaneMode(modeEdit)
 			return nil
 		}},
-		{names: []string{"splitmode", "split-mode"}, title: "Split mode (editor + preview)", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"splitmode", "split-mode"}, title: "Split mode (editor + preview)", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.setPaneMode(modeSplit)
 			return nil
 		}},
-		{names: []string{"previewmode", "preview-mode", "preview"}, title: "Preview mode", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"previewmode", "preview-mode", "preview"}, title: "Preview mode", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.setPaneMode(modePreview)
 			return nil
 		}},
-		{names: []string{"togglepreview", "tp"}, title: "Toggle editor/preview", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"togglepreview", "tp"}, title: "Toggle editor/preview", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.togglePreview()
 			return nil
 		}},
-		{names: []string{"fold"}, title: "Fold heading at cursor", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"fold"}, title: "Fold heading at cursor", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf != nil {
 				buf.ed.Feed("zc")
 			}
 			return nil
 		}},
-		{names: []string{"unfold"}, title: "Unfold heading at cursor", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"unfold"}, title: "Unfold heading at cursor", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf != nil {
 				buf.ed.Feed("zo")
 			}
 			return nil
 		}},
-		{names: []string{"foldall"}, title: "Fold all headings", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"foldall"}, title: "Fold all headings", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf != nil {
 				buf.ed.Feed("zM")
 			}
 			return nil
 		}},
-		{names: []string{"unfoldall"}, title: "Unfold all headings", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"unfoldall"}, title: "Unfold all headings", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf != nil {
 				buf.ed.Feed("zR")
 			}
 			return nil
 		}},
-		{names: []string{"newtask", "task"}, title: "New task in today's daily note", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"newtask", "task"}, title: "New task in today's daily note", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			text := strings.TrimSpace(cmd.Args)
 			if text == "" {
 				a.promptFor("New task", "", "Task text, with due:YYYY-MM-DD or !high as needed", func(a *App, text string) {
@@ -490,7 +490,7 @@ func (a *App) commandTable() []command {
 			a.addTaskToDaily(text, time.Now())
 			return nil
 		}},
-		{names: []string{"filter"}, title: "Filter tasks", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"filter"}, title: "Filter tasks", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.openTasks()
 			if t := a.activeTab(); t != nil {
 				if tv, ok := t.view.(*tasksView); ok {
@@ -500,19 +500,19 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"capture"}, title: "Quick capture", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"capture"}, title: "Quick capture", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openQuickCapture()
 			return nil
 		}},
-		{names: []string{"search", "find"}, title: "Search vault text", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"search", "find"}, title: "Search vault text", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.openTextSearch(strings.TrimSpace(cmd.Args))
 			return nil
 		}},
-		{names: []string{"notes"}, title: "Search notes", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"notes"}, title: "Search notes", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			a.openNoteSearch(strings.TrimSpace(cmd.Args))
 			return nil
 		}},
-		{names: []string{"db", "database", "base"}, title: "Open database", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"db", "database", "base"}, title: "Open database", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			name := strings.TrimSpace(cmd.Args)
 			if name == "" {
 				a.openDatabasePicker()
@@ -521,7 +521,7 @@ func (a *App) commandTable() []command {
 			a.openDatabase(name)
 			return nil
 		}},
-		{names: []string{"dbnew", "newdb"}, title: "New database", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"dbnew", "newdb"}, title: "New database", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			name := strings.TrimSpace(cmd.Args)
 			if name == "" {
 				a.promptFor("New database", "", "Name", func(a *App, name string) {
@@ -534,7 +534,7 @@ func (a *App) commandTable() []command {
 			a.createDatabase(name)
 			return nil
 		}},
-		{names: []string{"dbconvert"}, title: "Convert the open .csv database to a .base folder", run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"dbconvert"}, title: "Convert the open .csv database to a .base folder", run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			t := a.activePane.activeTab()
 			if t == nil {
 				return fmt.Errorf("open a database first (:db)")
@@ -550,34 +550,36 @@ func (a *App) commandTable() []command {
 			dv.convertToFolder(a, nil)
 			return nil
 		}},
-		{names: []string{"config"}, title: "Edit config.toml", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return a.editConfig() }},
-		{names: []string{"reloadconfig"}, title: "Reload preferences", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return a.reloadPreferences() }},
-		{names: []string{"unbind"}, title: "Unbind a keymap action", run: func(a *App, _ *noteBuffer, c vim.ExCommand) error { return a.saveKeymap(strings.TrimSpace(c.Args), "") }},
-		{names: []string{"bind", "map"}, title: "Bind a keymap action", run: func(a *App, _ *noteBuffer, c vim.ExCommand) error {
+		{names: []string{"config"}, title: "Edit config.toml", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return a.editConfig() }},
+		{names: []string{"reloadconfig"}, title: "Reload preferences", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return a.reloadPreferences() }},
+		{names: []string{"unbind"}, title: "Unbind a keymap action", run: func(a *App, _ *noteBuffer, c helix.ExCommand) error {
+			return a.saveKeymap(strings.TrimSpace(c.Args), "")
+		}},
+		{names: []string{"bind", "map"}, title: "Bind a keymap action", run: func(a *App, _ *noteBuffer, c helix.ExCommand) error {
 			p := strings.Fields(c.Args)
 			if len(p) < 2 {
 				return fmt.Errorf("usage: :bind <action id> <keys>")
 			}
 			return a.saveKeymap(p[0], strings.Join(p[1:], " "))
 		}},
-		{names: []string{"keymaps", "keys"}, title: "Show keymap actions", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"keymaps", "keys"}, title: "Show keymap actions", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openKeymapList()
 			return nil
 		}},
-		{names: []string{"commands", "cmd", "palette"}, title: "Command palette", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"commands", "cmd", "palette"}, title: "Command palette", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openCommandPalette()
 			return nil
 		}},
-		{names: []string{"reload", "refresh"}, title: "Reload the vault", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"reload", "refresh"}, title: "Reload the vault", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.refreshIndex()
 			a.notify("Reloading the vault")
 			return nil
 		}},
-		{names: []string{"wrap"}, title: "Toggle word wrap", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"wrap"}, title: "Toggle word wrap", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.prefs.WordWrap = !a.prefs.WordWrap
 			return nil
 		}},
-		{names: []string{"linenumbers", "number", "nu"}, title: "Cycle line numbers", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"linenumbers", "number", "nu"}, title: "Cycle line numbers", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			modes := []string{"off", "absolute", "relative", "hybrid"}
 			arg := strings.TrimSpace(cmd.Args)
 			if arg != "" {
@@ -594,7 +596,7 @@ func (a *App) commandTable() []command {
 			a.prefs.LineNumberMode = "absolute"
 			return nil
 		}},
-		{names: []string{"theme"}, title: "Toggle dark/light theme", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"theme"}, title: "Toggle dark/light theme", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			name := strings.TrimSpace(cmd.Args)
 			if name == "" {
 				name = "dark"
@@ -604,14 +606,14 @@ func (a *App) commandTable() []command {
 			}
 			return a.selectTheme(name)
 		}},
-		{names: []string{"themes", "colorscheme", "colo"}, title: "Pick a color scheme", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"themes", "colorscheme", "colo"}, title: "Pick a color scheme", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			if name := strings.TrimSpace(cmd.Args); name != "" {
 				return a.selectTheme(name)
 			}
 			a.openThemePicker()
 			return nil
 		}},
-		{names: []string{"previewstyle", "style"}, title: "Preview style (Glamour name, JSON path, or zen)", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"previewstyle", "style"}, title: "Preview style (Glamour name, JSON path, or zen)", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			name := strings.TrimSpace(cmd.Args)
 			if name == "" {
 				a.openPreviewStylePicker()
@@ -623,22 +625,22 @@ func (a *App) commandTable() []command {
 			a.notify("Preview style: " + name)
 			return nil
 		}},
-		{names: []string{"link", "wikilink"}, title: "Insert a link to a note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"link", "wikilink"}, title: "Insert a link to a note", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
 			a.openWikilinkPicker(buf)
 			return nil
 		}},
-		{names: []string{"editor", "ed"}, title: "Edit note in $EDITOR", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"editor", "ed"}, title: "Edit note in $EDITOR", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.editActiveInEditor()
 			return nil
 		}},
-		{names: []string{"suspend", "stop"}, title: "Suspend to the shell (fg to return)", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"suspend", "stop"}, title: "Suspend to the shell (fg to return)", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.queue(tea.Suspend)
 			return nil
 		}},
-		{names: []string{"mouse"}, title: "Toggle mouse support", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"mouse"}, title: "Toggle mouse support", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			switch strings.ToLower(strings.TrimSpace(cmd.Args)) {
 			case "on":
 				a.mouseEnabled = true
@@ -656,23 +658,23 @@ func (a *App) commandTable() []command {
 			}
 			return nil
 		}},
-		{names: []string{"keyhelp"}, title: "Keys for the focused surface", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"keyhelp"}, title: "Keys for the focused surface", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openKeyHelp()
 			return nil
 		}},
-		{names: []string{"vim"}, title: "Toggle Vim mode (this session)", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
-			a.prefs.VimMode = !a.prefs.VimMode
+		{names: []string{"vim"}, title: "Toggle Vim mode (this session)", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
+			a.prefs.HelixMode = !a.prefs.HelixMode
 			for _, buf := range a.buffers {
 				buf.ed.SetOptions(a.editorOptions())
 			}
-			a.notify(map[bool]string{true: "Vim mode on", false: "Vim mode off: arrows to navigate, Enter to open, F2 for actions"}[a.prefs.VimMode])
+			a.notify(map[bool]string{true: "Vim mode on", false: "Vim mode off: arrows to navigate, Enter to open, F2 for actions"}[a.prefs.HelixMode])
 			return nil
 		}},
-		{names: []string{"emptytrash"}, title: "Empty trash", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"emptytrash"}, title: "Empty trash", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.emptyTrash()
 			return nil
 		}},
-		{names: []string{"newfolder", "mkdir"}, title: "New folder", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"newfolder", "mkdir"}, title: "New folder", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			folder, sub := a.currentFolderContext()
 			if folder == vault.FolderTrash || folder == vault.FolderQuick {
 				folder, sub = vault.FolderInbox, ""
@@ -684,22 +686,22 @@ func (a *App) commandTable() []command {
 			}
 			return a.createFolderNamed(folder, sub, name)
 		}},
-		{names: []string{"version", "ve"}, title: "Version details / copy bug report info", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"version", "ve"}, title: "Version details / copy bug report info", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.showVersion(cmd)
 		}},
-		{names: []string{"harper", "spell"}, title: "Grammar check (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
-		{names: []string{"imgwidth"}, title: "Image width (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
-		{names: []string{"workflow", "workflows"}, title: "Workflows (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
-		{names: []string{"atlas"}, title: "Atlas (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
-		{names: []string{"share", "publish"}, title: "Share (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
-		{names: []string{"sync"}, title: "Cloud sync (desktop only)", run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { return errNotInTerminal }},
+		{names: []string{"harper", "spell"}, title: "Grammar check (desktop only)", run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return errNotInTerminal }},
+		{names: []string{"imgwidth"}, title: "Image width (desktop only)", run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return errNotInTerminal }},
+		{names: []string{"workflow", "workflows"}, title: "Workflows (desktop only)", run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return errNotInTerminal }},
+		{names: []string{"atlas"}, title: "Atlas (desktop only)", run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return errNotInTerminal }},
+		{names: []string{"share", "publish"}, title: "Share (desktop only)", run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return errNotInTerminal }},
+		{names: []string{"sync"}, title: "Cloud sync (desktop only)", run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { return errNotInTerminal }},
 	}
 	a.commands = append(a.commands, a.parityCommands()...)
 	return a.commands
 }
 
 // runEx is the engine's host hook for commands it does not own.
-func (a *App) runEx(buf *noteBuffer, cmd vim.ExCommand) (bool, error) {
+func (a *App) runEx(buf *noteBuffer, cmd helix.ExCommand) (bool, error) {
 	name := strings.ToLower(cmd.Name)
 	for _, c := range a.commandTable() {
 		for _, n := range c.names {
@@ -849,7 +851,7 @@ func (a *App) runCommandLine(line string) {
 	name, args, _ := strings.Cut(line, " ")
 	bang := strings.HasSuffix(name, "!")
 	name = strings.TrimSuffix(name, "!")
-	handled, err := a.runEx(nil, vim.ExCommand{Name: name, Args: strings.TrimSpace(args), Bang: bang, Raw: line})
+	handled, err := a.runEx(nil, helix.ExCommand{Name: name, Args: strings.TrimSpace(args), Bang: bang, Raw: line})
 	if err != nil {
 		a.notifyError(err.Error())
 		return

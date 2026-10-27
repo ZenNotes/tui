@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 
 	"github.com/ZenNotes/tui/internal/config"
 )
@@ -57,8 +57,8 @@ type sessionPane struct {
 }
 
 type sessionPosition struct {
-	Cursor vim.Pos `json:"cursor"`
-	Scroll int     `json:"scroll"`
+	Cursor helix.Pos `json:"cursor"`
+	Scroll int       `json:"scroll"`
 }
 
 func sessionPath() string {

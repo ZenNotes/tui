@@ -14,12 +14,12 @@ func configPathInfo() (string, string, error) {
 // rows, plain prose. A filter keeps sections with a matching line.
 func helpLines(a *App, filter string) []string {
 	leader := "Space"
-	if a.keymap.Binding("vim.leaderPrefix") != "" {
-		leader = a.keymap.Binding("vim.leaderPrefix")
+	if a.keymap.Binding("helix.leaderPrefix") != "" {
+		leader = a.keymap.Binding("helix.leaderPrefix")
 	}
 	all := []string{
 		"# ZenNotes in the terminal",
-		"zn tui is ZenNotes without the window: the same vault, notes, tasks, tags, templates and Vim motions,",
+		"zn tui is ZenNotes without the window: the same vault, notes, tasks, tags, templates and Helix selections,",
 		"driven from the keyboard. Every key below assumes Vim mode ([vim] enabled = true in config.toml).",
 		"With Vim mode off, use arrows, Enter and Escape to navigate; F2 opens context actions and Ctrl+G opens commands.",
 		"",
@@ -61,14 +61,18 @@ func helpLines(a *App, filter string) []string {
 		leader + " n\tNew note",
 		leader + " ;\tCommand palette (every ex command, searchable)",
 		leader + " ?\tThis manual",
-		"Leader hints appear immediately; timed expires the sequence, sticky keeps it open (vim.which_key_hint_mode).",
+		"Leader hints appear immediately; timed expires the sequence, sticky keeps it open (helix.which_key_hint_mode).",
+		"Motions engine: [vim] motions = vim (operator-pending, default) or helix (selection-first).",
 		"",
 		"## Editor: motions",
-		"h j k l w b e W B E 0 ^ $\tThe usual",
-		"gg G { } ( ) H M L\tFile, paragraph, sentence and screen motions",
-		"f t F T ; ,\tFind a character on the line",
-		"% * # n N / ?\tMatching bracket, word search, pattern search (with incremental highlight)",
-		"]] [[ ][ []\tNext and previous Markdown heading",
+		"h j k l 0 ^ $\tMoves; word and find motions select as they travel",
+		"w b e W B E\tSelect a whole word and the space after it; b takes the word it lands on",
+		"f t F T , ;\tSelect through a character; ; also collapses the selection",
+		"n N * # / ?\tSelect the next match, use the selection as the pattern, search",
+		"gg G { } H M L\tFile, paragraph and screen motions",
+		"] ] [[ ][ []\tNext and previous Markdown heading",
+		"Alt+O / Alt+Up\tGrow the selection: word, paragraph, code function, section, note",
+		"Alt+I / Alt+Down\tShrink the selection back to the smaller context",
 		"Ctrl+D Ctrl+U Ctrl+F Ctrl+B Ctrl+E Ctrl+Y zt zz zb\tScrolling",
 		"Ctrl+O Ctrl+I\tJump list, across notes too",
 		"gj gk\tMove by display row when a line wraps",
@@ -98,7 +102,7 @@ func helpLines(a *App, filter string) []string {
 		"Ctrl+Q / gqip\tReflow the paragraph",
 		"Enter in a list\tContinues the list or checkbox; Enter on an empty item ends it",
 		"Tab / Shift+Tab in a list\tIndent or outdent the item",
-		"jk\tLeaves insert mode (vim.insert_escape in config.toml)",
+		"jk\tLeaves insert mode (helix.insert_escape in config.toml)",
 		"Auto-pairs, `->` to → and other text replacements follow the editor preferences.",
 		"",
 		"## Ex commands",
@@ -106,7 +110,7 @@ func helpLines(a *App, filter string) []string {
 		":q :bd\tClose the current tab; closing the last tab quits",
 		":w :wa :wq :x\tSave, save all, or save and close the current tab",
 		":e <note> :new <title> :vs :sp :only\tOpen, create, split",
-		":bn :bp ]b [b gt gT\tNext and previous tab",
+		":bn :bp ]b [b gt gT\tNext and previous tab (gn gp with helix motions)",
 		":pin :tabmove -1|+1|first|last\tPin or unpin the tab (pinned tabs sit first and survive :tabonly); reorder tabs",
 		":link, or [[ in insert mode\tPick a note and insert a wikilink to it",
 		"# and a letter in insert mode\tOffers the vault's tags under the cursor, most used first, as the desktop app does; inside a frontmatter tags: value it completes bare tags. Ctrl+N / Ctrl+P or ↑↓ move, Enter / Tab / Ctrl+Y accept, Ctrl+E dismisses, typing narrows",

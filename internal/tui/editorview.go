@@ -7,7 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // Style classes for editor runes.
@@ -288,10 +288,11 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	textW := max(1, w-gutter)
 	lines := ed.Lines()
 	blocks := computeBlockState(lines)
-	cur := ed.Cursor()
-	vStart, vEnd, vMode, inVisual := ed.VisualRange()
+	cur := ed.BlockCursor()
+	vStart, vEnd, _, inVisual := ed.VisualRange()
+	vKind := ed.SelectionKind()
 	blockLeft, blockRight, blockToEnd := 0, 0, false
-	if inVisual && vMode == vim.ModeVisualBlock {
+	if inVisual && vKind == "^V" {
 		blockLeft, blockRight, blockToEnd = ed.BlockColumns()
 	}
 	out := make([]string, 0, h)
@@ -368,7 +369,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 				if dimDone && lineDone {
 					key.dimDone = true
 				}
-				if inVisual && inVisualRange(line, col, vStart, vEnd, vMode, blockLeft, blockRight, blockToEnd) {
+				if inVisual && inVisualRange(line, col, vStart, vEnd, vKind, blockLeft, blockRight, blockToEnd) {
 					key.visual = true
 				}
 				for _, hit := range searchHits {
@@ -389,7 +390,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 							k2.fg, k2.bold, k2.italic = sp.fg, sp.bold, sp.italic
 						}
 					}
-					if inVisual && inVisualRange(line, j, vStart, vEnd, vMode, blockLeft, blockRight, blockToEnd) {
+					if inVisual && inVisualRange(line, j, vStart, vEnd, vKind, blockLeft, blockRight, blockToEnd) {
 						k2.visual = true
 					}
 					for _, hit := range searchHits {
@@ -476,14 +477,14 @@ func (a *App) renderGutter(buf *noteBuffer, line, curLine, rel int, first bool, 
 }
 
 // inVisualRange reports whether a cell is inside the visual selection.
-func inVisualRange(line, col int, start, end vim.Pos, mode vim.Mode, bl, br int, toEnd bool) bool {
+func inVisualRange(line, col int, start, end helix.Pos, kind string, bl, br int, toEnd bool) bool {
 	if line < start.Line || line > end.Line {
 		return false
 	}
-	switch mode {
-	case vim.ModeVisualLine:
+	switch kind {
+	case "V":
 		return true
-	case vim.ModeVisualBlock:
+	case "^V":
 		if toEnd {
 			return col >= bl
 		}
@@ -502,7 +503,7 @@ func inVisualRange(line, col int, start, end vim.Pos, mode vim.Mode, bl, br int,
 }
 
 // renderPlainEditor draws a small editor (quick capture) without gutter.
-func renderPlainEditor(a *App, ed *vim.Editor, w, h int, focused bool) string {
+func renderPlainEditor(a *App, ed modalEditor, w, h int, focused bool) string {
 	tmp := &noteBuffer{ed: ed}
 	saved := a.prefs.LineNumberMode
 	a.prefs.LineNumberMode = "off"

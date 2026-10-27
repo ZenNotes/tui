@@ -22,7 +22,7 @@ func TestViewPaintsEveryCellIndependentlyOfTerminalColors(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
 	for _, mode := range []string{"light", "dark"} {
 		t.Run(mode, func(t *testing.T) {
-			a := newApp(context.Background(), Options{}, config.Prefs{ThemeMode: mode, VimMode: true}, true)
+			a := newApp(context.Background(), Options{}, config.Prefs{ThemeMode: mode, HelixMode: true}, true)
 			a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 			for y, row := range strings.Split(a.View(), "\n") {
 				// Bubble Tea can redraw any row on its own after a resize or edit.

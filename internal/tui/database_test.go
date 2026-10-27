@@ -10,15 +10,15 @@ import (
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/keymaps"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
-func enterKey() vim.Key { return vim.Key{Name: "enter"} }
+func enterKey() helix.Key { return helix.Key{Name: "enter"} }
 
 func typeText(a *App, text string) {
 	for _, r := range text {
-		a.overlay.handleKey(a, vim.R(r))
+		a.overlay.handleKey(a, helix.R(r))
 	}
 }
 
@@ -41,7 +41,7 @@ func newDatabaseTestApp(t *testing.T) (*App, string) {
 		backend:   b,
 		keymap:    keymaps.NewResolver(nil),
 		theme:     buildTheme(true),
-		prefs:     prefsView{Prefs: config.Prefs{VimMode: true}},
+		prefs:     prefsView{Prefs: config.Prefs{HelixMode: true}},
 		panes:     newPaneTree(),
 		buffers:   map[string]*noteBuffer{},
 		noteModes: map[string]paneMode{},
@@ -95,24 +95,24 @@ func TestHeaderRowEditsFields(t *testing.T) {
 	a, _ := newDatabaseTestApp(t)
 	v := openTestDatabase(t, a)
 	v.render(a, 100, 20, true)
-	v.handleKey(a, vim.R('k'))
+	v.handleKey(a, helix.R('k'))
 	if !v.header {
 		t.Fatal("k on the first row enters the header")
 	}
-	v.handleKey(a, vim.R('L'))
+	v.handleKey(a, helix.R('L'))
 	if fieldNames(v) != "Status,Title,Done" || v.col != 1 {
 		t.Fatalf("L moves the column right: %s col %d", fieldNames(v), v.col)
 	}
-	v.handleKey(a, vim.R('t'))
+	v.handleKey(a, helix.R('t'))
 	m, ok := a.overlay.(*menu)
 	if !ok {
 		t.Fatal("t opens the type menu")
 	}
-	m.handleKey(a, vim.R('s'))
+	m.handleKey(a, helix.R('s'))
 	if v.doc.FieldByID(v.fields[1].ID).Type != "select" {
 		t.Fatal("s retypes the field to select")
 	}
-	v.handleKey(a, vim.R('x'))
+	v.handleKey(a, helix.R('x'))
 	if fieldNames(v) != "Status,Done" {
 		t.Fatalf("x hides the column: %s", fieldNames(v))
 	}
@@ -121,17 +121,17 @@ func TestHeaderRowEditsFields(t *testing.T) {
 	if fieldNames(v2) != "Status,Done" || v2.doc.HiddenColumns(v2.viewID)[0].Name != "Title" {
 		t.Fatalf("hidden column persists: %s", fieldNames(v2))
 	}
-	v.handleKey(a, vim.R('a'))
+	v.handleKey(a, helix.R('a'))
 	typeText(a, "Pages")
 	a.overlay.handleKey(a, enterKey())
-	a.overlay.handleKey(a, vim.R('n'))
+	a.overlay.handleKey(a, helix.R('n'))
 	if fieldNames(v) != "Status,Done,Pages" || v.fields[2].Type != "number" || v.col != 2 || v.header {
 		t.Fatalf("a adds a typed field and lands on it: %s col %d header %v", fieldNames(v), v.col, v.header)
 	}
 	v.header = true
-	v.handleKey(a, vim.R('d'))
-	v.handleKey(a, vim.R('d'))
-	a.overlay.handleKey(a, vim.R('y'))
+	v.handleKey(a, helix.R('d'))
+	v.handleKey(a, helix.R('d'))
+	a.overlay.handleKey(a, helix.R('y'))
 	if fieldNames(v) != "Status,Done" {
 		t.Fatalf("dd deletes the field after confirming: %s", fieldNames(v))
 	}
@@ -171,15 +171,15 @@ func TestSelectCellPickerAndSelection(t *testing.T) {
 		t.Fatal("Enter on a checkbox toggles it")
 	}
 	v.row = 0
-	v.handleKey(a, vim.R('x'))
+	v.handleKey(a, helix.R('x'))
 	if !v.selected[v.rows[0].ID] || v.row != 1 {
 		t.Fatal("x selects the row and moves down")
 	}
-	v.handleKey(a, vim.Key{Name: "esc"})
+	v.handleKey(a, helix.Key{Name: "esc"})
 	if len(v.selected) != 0 {
 		t.Fatal("Esc clears the selection")
 	}
-	v.handleKey(a, vim.R('D'))
+	v.handleKey(a, helix.R('D'))
 	if len(v.rows) != 3 || v.rows[2].Cells[v.fields[0].ID] != "Neuromancer" || v.row != 2 {
 		t.Fatalf("D duplicates the row after it: %d rows, cursor %d", len(v.rows), v.row)
 	}
@@ -222,25 +222,25 @@ func TestFiltersSortsAndBoard(t *testing.T) {
 	v.render(a, 120, 30, true)
 	v.board.col, v.board.card = 0, 0
 	dune := v.boardRow().ID
-	v.handleKey(a, vim.R('L'))
+	v.handleKey(a, helix.R('L'))
 	if v.doc.RowByID(dune).Cells[status.ID] != "done" || v.board.col != 1 || v.boardRow().ID != dune {
 		t.Fatalf("L moves the card to the next column and follows it: col %d", v.board.col)
 	}
-	v.handleKey(a, vim.R('L'))
+	v.handleKey(a, helix.R('L'))
 	if v.doc.RowByID(dune).Cells[status.ID] != "" {
 		t.Fatal("moving into the empty column clears the cell")
 	}
-	v.handleKey(a, vim.R('A'))
+	v.handleKey(a, helix.R('A'))
 	typeText(a, "later")
 	a.overlay.handleKey(a, enterKey())
 	if len(v.board.columns) != 4 || v.board.columns[v.board.col].Key != "later" {
 		t.Fatalf("A adds a column and focuses it: %d", len(v.board.columns))
 	}
-	v.handleKey(a, vim.R('<'))
+	v.handleKey(a, helix.R('<'))
 	if v.board.columns[1].Key != "later" {
 		t.Fatalf("< moves the column left: %v", v.boardOrder())
 	}
-	v.handleKey(a, vim.R('v'))
+	v.handleKey(a, helix.R('v'))
 	if v.isBoard() {
 		t.Fatal("v cycles back to the table view")
 	}

@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // previewState is the reading-mode state of a tab.
@@ -550,10 +550,10 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 // previewKey handles reading-mode keys.
 // previewHint is the help line for reading mode.
 func (a *App) previewHint() string {
-	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"vim.leaderPrefix", "leader"}})
+	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"helix.leaderPrefix", "leader"}})
 }
 
-func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
+func (a *App) previewKey(t *tab, buf *noteBuffer, k helix.Key) {
 	pv := t.preview
 	if pv == nil {
 		pv = &previewState{}
@@ -585,14 +585,14 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	if !a.listKeyAllowed(k) {
 		return
 	}
-	id, pending := a.resolveAction(k, "nav.toggleTask", "nav.openResult", "nav.localEx", "nav.filter", "vim.goToDefinition")
+	id, pending := a.resolveAction(k, "nav.toggleTask", "nav.openResult", "nav.localEx", "nav.filter", "helix.goToDefinition")
 	if pending {
 		return
 	}
 	switch id {
 	case "nav.toggleTask":
 		a.previewToggleTask(t, buf)
-	case "nav.openResult", "vim.goToDefinition":
+	case "nav.openResult", "helix.goToDefinition":
 		a.previewFollow(t, buf)
 	case "nav.localEx":
 		if buf != nil {
@@ -655,7 +655,7 @@ func (a *App) previewToggleTask(t *tab, buf *noteBuffer) {
 		return
 	}
 	cur := buf.ed.Cursor()
-	buf.ed.SetCursor(vim.Pos{Line: row.srcLine, Col: 0})
+	buf.ed.SetCursor(helix.Pos{Line: row.srcLine, Col: 0})
 	buf.ed.ToggleCheckboxAtCursor()
 	buf.ed.SetCursor(cur)
 }

@@ -3,9 +3,9 @@ package tui
 import (
 	"testing"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 func testAppWithNotes() *App {
@@ -45,23 +45,23 @@ func TestCompleteExCommandsAndArguments(t *testing.T) {
 func TestExPromptTabCyclesLikeVim(t *testing.T) {
 	a := testAppWithNotes()
 	p := &exPrompt{input: newTextInput("e R")}
-	p.handleKey(a, vim.KeyTab)
+	p.handleKey(a, helix.KeyTab)
 	if p.input.String() != "e Reading" {
 		t.Fatalf("first tab: %q", p.input.String())
 	}
-	p.handleKey(a, vim.KeyTab)
+	p.handleKey(a, helix.KeyTab)
 	if p.input.String() != "e Roadmap" {
 		t.Fatalf("second tab: %q", p.input.String())
 	}
-	p.handleKey(a, vim.KeyTab)
+	p.handleKey(a, helix.KeyTab)
 	if p.input.String() != "e R" {
 		t.Fatalf("cycling should return to the typed text: %q", p.input.String())
 	}
-	p.handleKey(a, vim.KeyShiftTab)
+	p.handleKey(a, helix.KeyShiftTab)
 	if p.input.String() != "e Roadmap" {
 		t.Fatalf("shift+tab: %q", p.input.String())
 	}
-	p.handleKey(a, vim.R('x'))
+	p.handleKey(a, helix.R('x'))
 	if p.completions != nil {
 		t.Fatal("typing resets the completion cycle")
 	}

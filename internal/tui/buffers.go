@@ -10,8 +10,8 @@ import (
 	"github.com/atotto/clipboard"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // noteBuffer is an open note: its Vim editor plus save state. One buffer
@@ -20,7 +20,7 @@ type noteBuffer struct {
 	// codeHL caches the syntax highlighting of fenced code per version.
 	codeHL      *codeHighlights
 	path        string
-	ed          *vim.Editor
+	ed          modalEditor
 	meta        vault.NoteMeta
 	savedText   string
 	diskChanged bool
@@ -46,18 +46,18 @@ type saveResultMsg struct {
 }
 
 // editorOptions derives the engine options from the preferences.
-func (a *App) editorOptions() vim.Options {
-	opts := vim.DefaultOptions()
-	opts.WrappedLineMotions = a.prefs.VimWrappedLineMotions == "display"
+func (a *App) editorOptions() helix.Options {
+	opts := helix.DefaultOptions()
+	opts.WrappedLineMotions = a.prefs.HelixWrappedLineMotions == "display"
 	opts.TabSize = a.prefs.EditorTabSize
 	opts.ScrollOff = a.prefs.EditorScrollOff
-	opts.InsertEscape = a.prefs.VimInsertEscape
+	opts.InsertEscape = a.prefs.HelixInsertEscape
 	opts.AutoPairs = a.prefs.AutoPairs
 	opts.AutoPairQuotes = a.prefs.AutoPairQuotesInProse
 	opts.TextReplacements = a.prefs.TextReplacements
 	opts.TextReplacementsEnabled = a.prefs.TextReplacementsEnabled
-	opts.YankToClipboard = a.prefs.VimYankToClipboard
-	opts.VimEnabled = a.prefs.VimMode
+	opts.YankToClipboard = a.prefs.HelixYankToClipboard
+	opts.HelixEnabled = a.prefs.HelixMode
 	opts.MarkdownLists = true
 	return opts
 }
@@ -70,7 +70,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	if a.deferReads {
 		meta, _ := a.noteMeta(path)
 		buf := &noteBuffer{path: path, meta: meta, loading: true}
-		buf.ed = vim.NewWithRegisters("", a.editorOptions(), a.editorHooks(buf), &a.registers)
+		buf.ed = a.newModalEditor("", a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[path] = buf
 		a.queue(a.readBufferCmd(buf))
@@ -81,15 +81,15 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 		return nil, err
 	}
 	buf := &noteBuffer{path: path, meta: content.NoteMeta, savedText: content.Body}
-	buf.ed = vim.NewWithRegisters(content.Body, a.editorOptions(), a.editorHooks(buf), &a.registers)
+	buf.ed = a.newModalEditor(content.Body, a.editorHooks(buf), &a.registers)
 	buf.ed.MarkSaved()
 	a.buffers[path] = buf
 	return buf, nil
 }
 
-func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
-	return vim.Hooks{
-		DisplayRowBounds: func(p vim.Pos) (int, int) {
+func (a *App) editorHooks(buf *noteBuffer) helix.Hooks {
+	return helix.Hooks{
+		DisplayRowBounds: func(p helix.Pos) (int, int) {
 			line := buf.ed.LineRunes(p.Line)
 			if !a.prefs.WordWrap {
 				return 0, len(line)
@@ -101,7 +101,7 @@ func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
 			}
 			return 0, len(line)
 		},
-		ExCommand: func(cmd vim.ExCommand) (bool, error) {
+		ExCommand: func(cmd helix.ExCommand) (bool, error) {
 			return a.runEx(buf, cmd)
 		},
 		ExComplete: func(text string) (string, []string) { return a.completeEx(text) },
@@ -115,7 +115,7 @@ func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
 		WriteClipboard: func(text string) bool {
 			return clipboard.WriteAll(text) == nil
 		},
-		OnJump: func(from vim.Pos) {
+		OnJump: func(from helix.Pos) {
 			a.pushJump(buf.path, from)
 		},
 		FollowLink: func() { a.followLinkAtCursor(buf) },

@@ -13,11 +13,11 @@ import (
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/fswatch"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // The desktop's command palette, ported. Everything here mirrors an entry
@@ -37,8 +37,8 @@ const (
 
 func (a *App) parityCommands() []command {
 	return []command{
-		{names: []string{"servers"}, title: "Manage local servers…", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error { a.managedServers(); return nil }},
-		{names: []string{"vault", "vaults"}, title: "Switch vault…", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"servers"}, title: "Manage local servers…", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error { a.managedServers(); return nil }},
+		{names: []string{"vault", "vaults"}, title: "Switch vault…", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			if arg == "" {
 				a.openVaultSwitcher()
@@ -47,7 +47,7 @@ func (a *App) parityCommands() []command {
 			a.switchByText(arg)
 			return nil
 		}},
-		{names: []string{"server", "connect"}, title: "Connect to remote vault…", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"server", "connect"}, title: "Connect to remote vault…", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			if arg == "" {
 				a.openServerPicker()
@@ -62,7 +62,7 @@ func (a *App) parityCommands() []command {
 			a.connectServerFlow(arg)
 			return nil
 		}},
-		{names: []string{"local"}, title: "Switch to local vault", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"local"}, title: "Switch to local vault", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			var target backend.Target
 			var err error
@@ -82,16 +82,16 @@ func (a *App) parityCommands() []command {
 			a.switchTarget(target)
 			return nil
 		}},
-		{names: []string{"rollover"}, title: "Roll over unfinished tasks to today", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"rollover"}, title: "Roll over unfinished tasks to today", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			return a.rolloverNow()
 		}},
-		{names: []string{"copypath", "yankpath"}, title: "Copy note path", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"copypath", "yankpath"}, title: "Copy note path", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			return a.copyPathCommand(buf, strings.TrimSpace(cmd.Args))
 		}},
-		{names: []string{"reveal", "finder"}, title: "Reveal note in file manager", palette: true, run: func(a *App, buf *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"reveal", "finder"}, title: "Reveal note in file manager", palette: true, run: func(a *App, buf *noteBuffer, cmd helix.ExCommand) error {
 			return a.revealCommand(buf, strings.TrimSpace(cmd.Args))
 		}},
-		{names: []string{"forward", "fwd"}, title: "Forward task to today's note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"forward", "fwd"}, title: "Forward task to today's note", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			t, err := a.taskAtCursor(buf)
 			if err != nil {
 				return err
@@ -99,24 +99,24 @@ func (a *App) parityCommands() []command {
 			a.forwardTask(t)
 			return nil
 		}},
-		{names: []string{"inprogress", "start", "wip"}, title: "Mark task in progress", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"inprogress", "start", "wip"}, title: "Mark task in progress", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			return a.setTaskStateAtCursor(buf, "inprogress")
 		}},
-		{names: []string{"cancel", "cancelled"}, title: "Cancel task", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"cancel", "cancelled"}, title: "Cancel task", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			return a.setTaskStateAtCursor(buf, "cancel")
 		}},
-		{names: []string{"taskfile", "tasknote"}, title: "New task in folder…", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"taskfile", "tasknote"}, title: "New task in folder…", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			return a.newTaskFile(strings.TrimSpace(cmd.Args))
 		}},
-		{names: []string{"tabcloseright", "tabcr"}, title: "Close tabs to the right", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"tabcloseright", "tabcr"}, title: "Close tabs to the right", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.closeTabsRight()
 			return nil
 		}},
-		{names: []string{"tabmenu"}, title: "Open active tab menu", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"tabmenu"}, title: "Open active tab menu", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openActiveTabMenu()
 			return nil
 		}},
-		{names: []string{"unarchive"}, title: "Unarchive note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"unarchive"}, title: "Unarchive note", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
@@ -126,7 +126,7 @@ func (a *App) parityCommands() []command {
 			a.unarchiveNote(buf.path)
 			return nil
 		}},
-		{names: []string{"purge", "deleteforever"}, title: "Delete note permanently", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"purge", "deleteforever"}, title: "Delete note permanently", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
@@ -136,18 +136,18 @@ func (a *App) parityCommands() []command {
 			a.deleteNoteForever(buf.path)
 			return nil
 		}},
-		{names: []string{"assets", "files"}, title: "Go to files", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"assets", "files"}, title: "Go to files", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openAssetsPicker()
 			return nil
 		}},
-		{names: []string{"ref", "reference"}, title: "Pin active note as reference", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"ref", "reference"}, title: "Pin active note as reference", palette: true, run: func(a *App, buf *noteBuffer, _ helix.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
 			}
 			a.openReference(buf.path)
 			return nil
 		}},
-		{names: []string{"notesort", "sortnotes"}, title: "Sort notes in the sidebar", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"notesort", "sortnotes"}, title: "Sort notes in the sidebar", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			if arg == "" {
 				a.openNoteSortMenu()
@@ -155,7 +155,7 @@ func (a *App) parityCommands() []command {
 			}
 			return a.setNoteSort(arg)
 		}},
-		{names: []string{"donestyle"}, title: "Completed tasks style", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+		{names: []string{"donestyle"}, title: "Completed tasks style", palette: true, run: func(a *App, _ *noteBuffer, cmd helix.ExCommand) error {
 			arg := strings.TrimSpace(cmd.Args)
 			if arg == "" {
 				a.openDoneStyleMenu()
@@ -163,39 +163,39 @@ func (a *App) parityCommands() []command {
 			}
 			return a.setDoneStyle(arg)
 		}},
-		{names: []string{"whichkey"}, title: "Toggle leader key hints", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"whichkey"}, title: "Toggle leader key hints", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.prefs.WhichKeyHints = !a.prefs.WhichKeyHints
-			a.notify(onOff("Leader key hints", a.prefs.WhichKeyHints) + " (vim.which_key_hints in config.toml keeps it)")
+			a.notify(onOff("Leader key hints", a.prefs.WhichKeyHints) + " (helix.which_key_hints in config.toml keeps it)")
 			return nil
 		}},
-		{names: []string{"tabs"}, title: "Toggle tabs", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"tabs"}, title: "Toggle tabs", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.prefs.TabsOff = !a.prefs.TabsOff
 			a.layout()
 			a.notify(onOff("Tab strip", !a.prefs.TabsOff))
 			return nil
 		}},
-		{names: []string{"quickdate"}, title: "Toggle quick note date titles", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"quickdate"}, title: "Toggle quick note date titles", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.prefs.QuickNoteDateTitle = !a.prefs.QuickNoteDateTitle
 			a.notify(onOff("Quick note date titles", a.prefs.QuickNoteDateTitle) + "")
 			return nil
 		}},
-		{names: []string{"website"}, title: "Open ZenNotes website", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"website"}, title: "Open ZenNotes website", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openExternal(appWebsiteURL)
 			return nil
 		}},
-		{names: []string{"discord"}, title: "Join ZenNotes Discord", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"discord"}, title: "Join ZenNotes Discord", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openExternal(appDiscordURL)
 			return nil
 		}},
-		{names: []string{"github", "repo"}, title: "Open GitHub repository", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"github", "repo"}, title: "Open GitHub repository", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openExternal(appRepoURL)
 			return nil
 		}},
-		{names: []string{"releases", "release"}, title: "View latest release", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"releases", "release"}, title: "View latest release", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openExternal(appReleasesURL)
 			return nil
 		}},
-		{names: []string{"issue", "bug"}, title: "Report an issue", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+		{names: []string{"issue", "bug"}, title: "Report an issue", palette: true, run: func(a *App, _ *noteBuffer, _ helix.ExCommand) error {
 			a.openExternal(appIssuesURL)
 			return nil
 		}},

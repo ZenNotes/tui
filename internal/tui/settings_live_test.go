@@ -2,14 +2,14 @@ package tui
 
 import (
 	"github.com/ZenNotes/tui/internal/config"
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"os"
 	"testing"
 )
 
 func TestPreferenceCommandPersistsAndReloads(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
-	a.runEx(nil, vim.ExCommand{Name: "wrap"})
+	a.runEx(nil, helix.ExCommand{Name: "wrap"})
 	a.afterKey()
 	p, _, err := config.LoadPrefs()
 	if err != nil {
@@ -21,7 +21,7 @@ func TestPreferenceCommandPersistsAndReloads(t *testing.T) {
 	if err := config.SetValue("editor", "tabs_enabled", false); err != nil {
 		t.Fatal(err)
 	}
-	a.runEx(nil, vim.ExCommand{Name: "reloadconfig"})
+	a.runEx(nil, helix.ExCommand{Name: "reloadconfig"})
 	if a.prefs.TabsEnabled() {
 		t.Fatal("reload did not apply tab preference")
 	}
@@ -31,7 +31,7 @@ func TestMalformedConfigIsNotOverwrittenByPreferenceCommand(t *testing.T) {
 	if err := os.WriteFile(config.ConfigTomlPath(), []byte("broken=["), 0600); err != nil {
 		t.Fatal(err)
 	}
-	a.runEx(nil, vim.ExCommand{Name: "wrap"})
+	a.runEx(nil, helix.ExCommand{Name: "wrap"})
 	a.afterKey()
 	got, _ := os.ReadFile(config.ConfigTomlPath())
 	if string(got) != "broken=[" {
@@ -54,7 +54,7 @@ func TestThemePreviewDoesNotChangePortablePreferences(t *testing.T) {
 	if p.ThemeFamily != before.ThemeFamily || p.ThemeMode != before.ThemeMode || p.ThemeID != before.ThemeID {
 		t.Fatalf("preview changed saved theme: %+v", p)
 	}
-	a.handleKey(vim.KeyEsc)
+	a.handleKey(helix.KeyEsc)
 }
 
 func TestSessionThemeSurvivesUnrelatedPreferenceChange(t *testing.T) {

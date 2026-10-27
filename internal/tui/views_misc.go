@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // --- Help ---
@@ -54,7 +54,7 @@ func (v *helpView) render(a *App, w, h int, focused bool) string {
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
 
-func (v *helpView) handleKey(a *App, k vim.Key) bool {
+func (v *helpView) handleKey(a *App, k helix.Key) bool {
 	n := len(v.lines)
 	cur := listCursor{cursor: v.scroll, scroll: v.scroll}
 	if a.listNav(&cur, k, max(1, n-v.rows+1), v.rows) {

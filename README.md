@@ -492,7 +492,7 @@ chrome.
 ### Moving around
 
 `Space` is the leader. The which-key panel appears immediately. Timed hints
-expire after `vim.which_key_hint_timeout_ms`; `vim.which_key_hint_mode = "sticky"`
+expire after `helix.which_key_hint_timeout_ms`; `helix.which_key_hint_mode = "sticky"`
 keeps them open until you choose an action, press Space again, or cancel.
 
 | Keys | What |
@@ -529,9 +529,30 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 
 ### Editing
 
-The editor is a full Vim: counts, registers, marks, macros, dot-repeat,
-undo and redo, text objects, visual, visual line and visual block, search,
-`:s` `:g` `:sort` `:norm` with ranges, `gq`, and heading motions `]]` `[[`.
+The editor ships two motion engines: Vim (default) and Helix. Pick one with
+`[vim] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
+engine keeps classic operator-pending editing — `dw` `cw` `yiw`, visual,
+visual line and visual block, and the rest of the Vim toolkit. The Helix
+engine is selection-first — motions like `w` select as they travel, so `wd`
+deletes a word and `n` selects the next match; `miw` picks a word precisely.
+Tab switching works in either engine: `gt` `gT` and `]b` `[b` everywhere,
+plus `gn` `gp` with the Helix engine. The leader, registers and macros work
+in both.
+
+The Helix engine also grows and shrinks a selection by context: `Alt+O`
+(`Alt+Up`) expands it — word, paragraph, function in a code block, code
+block, heading section, note — and `Alt+I` (`Alt+Down`) shrinks it back, the
+way Helix walks the syntax tree. Its word motions follow one rule: the
+selection covers a whole word plus the space that follows it, and never the
+first character of the word the motion lands on. `w` moves over the word the
+cursor sits on, `b` lands on the previous word and selects it, so `wd` and
+`bd` both delete one word. The block cursor stays inside the selection. `w`
+runs to the end of the line when the last word of a line is reached, and the
+next `w` moves on to the next line.
+
+The editor also has counts, registers, marks, macros, dot-repeat, undo and
+redo, text objects, search, `:s` `:g` `:sort` `:norm` with ranges, `gq`, and
+heading motions `]]` `[[`.
 Markdown on top: `Ctrl+L` toggles the checkbox on the line, `gd` follows a
 link, `gx` opens a URL, `gy` copies a link, `zc zo zM zR` fold headings,
 Enter continues lists, Tab indents list items, `[[` opens the note picker
@@ -544,9 +565,27 @@ linewise and blockwise selections, and delete history work across notes too.
 Closing the source note does not discard its yank. Each note keeps its own
 cursor and undo history; system-clipboard integration remains a separate preference.
 
-Vim mode follows `[vim] enabled` in `config.toml`. With it off, the editor
+Modal editing follows `[vim] enabled` in `config.toml`. With it off, the editor
 is a plain editor. Use arrows and Enter in lists, F2 for context actions,
 and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
+
+All editor engine settings live under `[vim]`:
+
+```toml
+[vim]
+enabled = true                       # modal editing; false = plain editor
+motions = "vim"                      # or "helix": the selection-first engine
+insert_escape = "jk"                 # two-key escape from insert mode
+yank_to_clipboard = false            # yanks mirror the system clipboard
+which_key_hints = true               # leader hints
+which_key_hint_mode = "timed"        # timed, sticky or instant
+which_key_hint_timeout_ms = 2500
+wrapped_line_motions = "display"     # $, I, A follow the wrapped row
+```
+
+`motions` picks the engine for new buffers; individual keys are overridden
+under `[keymaps]` and listed by `:keymaps`. A `[helix]` section from earlier
+helix-branch builds is still honored when `[vim]` is absent.
 
 `Ctrl+Space` in insert mode (or `:complete`) completes tags, frontmatter
 tag values, callouts and code-fence languages. With `markdown_snippets`
@@ -714,8 +753,8 @@ layout choices do not change these terminal layouts.
 
 | Section | Examples |
 | --- | --- |
-| `[vim]` | `enabled`, `which_key_hints`, `insert_escape` |
-| `[editor]` | `line_number_mode`, `word_wrap`, `completed_task_style` |
+| `[vim]` | `enabled`, `motions` (`vim` or `helix`), `insert_escape`, `yank_to_clipboard`, `which_key_hints`, `which_key_hint_mode`, `wrapped_line_motions` (a `[helix]` section is still honored when `[vim]` is absent) |
+| `[editor]` | `motions` (`vim` or `helix`), `line_number_mode`, `word_wrap`, `completed_task_style` |
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |

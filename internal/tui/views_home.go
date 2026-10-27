@@ -8,9 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // The Home view is a dashboard: a header with the day and the vault's
@@ -61,7 +61,11 @@ type homeHit struct {
 func (v *homeView) title() string { return "Home" }
 
 func (v *homeView) hintPairs(a *App) []hintPair {
-	return []hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"key:Enter", "open"}, {"nav.toggleTask", "toggle task"}, {"key:h/l", "week day"}, {"global.newNoteHere", "new note"}, {"global.searchNotes", "search"}, {"key:r", "refresh"}}
+	pairs := []hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"key:Enter", "open"}, {"nav.toggleTask", "toggle task"}, {"key:h/l", "week day"}, {"global.newNoteHere", "new note"}, {"global.searchNotes", "search"}, {"key:r", "refresh"}}
+	if a.prefs.Motions == "helix" {
+		pairs = append(pairs, hintPair{"helix.gotoTabNext|helix.gotoTabPrevious", "next/previous tab"})
+	}
+	return pairs
 }
 
 func (v *homeView) refresh(a *App) {
@@ -216,11 +220,11 @@ func (v *homeView) render(a *App, w, h int, focused bool) string {
 	right := strings.Join(stats, th.Muted.Render("  ·  "))
 	gap := max(1, inner-lipgloss.Width(left)-lipgloss.Width(right))
 	addLine(left + strings.Repeat(" ", gap) + right)
-	actions := []string{a.keyOf("global.newNoteHere") + " new note", a.keyOf("global.searchNotes") + " search", a.keyOf("vim.leaderPrefix") + " d daily", a.keyOf("vim.leaderPrefix") + " q capture", a.keyOf("vim.leaderPrefix") + " x tasks"}
+	actions := []string{a.keyOf("global.newNoteHere") + " new note", a.keyOf("global.searchNotes") + " search", a.keyOf("helix.leaderPrefix") + " d daily", a.keyOf("helix.leaderPrefix") + " q capture", a.keyOf("helix.leaderPrefix") + " x tasks"}
 	styled := []string{}
 	for _, act := range actions {
 		key, verb, _ := strings.Cut(act, " ")
-		if strings.HasPrefix(act, a.keyOf("vim.leaderPrefix")+" ") && a.keyOf("vim.leaderPrefix") != "" {
+		if strings.HasPrefix(act, a.keyOf("helix.leaderPrefix")+" ") && a.keyOf("helix.leaderPrefix") != "" {
 			parts := strings.SplitN(act, " ", 3)
 			key, verb = parts[0]+" "+parts[1], parts[2]
 		}
@@ -619,7 +623,7 @@ func (v *homeView) itemKey(it homeItem) string {
 
 // --- keys ---
 
-func (v *homeView) handleKey(a *App, k vim.Key) bool {
+func (v *homeView) handleKey(a *App, k helix.Key) bool {
 	n := len(v.items)
 	cur := listCursor{cursor: v.cursor}
 	if a.listNav(&cur, k, n, max(1, v.rows/2)) {

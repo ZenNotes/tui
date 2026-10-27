@@ -8,9 +8,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // --- Outline ---
@@ -67,7 +67,7 @@ func (p *outlinePanel) render(a *App, w, h int) string {
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
 
-func (p *outlinePanel) handleKey(a *App, k vim.Key) {
+func (p *outlinePanel) handleKey(a *App, k helix.Key) {
 	if k.Is("esc") {
 		a.focus = focusPane
 		return
@@ -200,7 +200,7 @@ func (p *connectionsPanel) render(a *App, w, h int) string {
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
 
-func (p *connectionsPanel) handleKey(a *App, k vim.Key) {
+func (p *connectionsPanel) handleKey(a *App, k helix.Key) {
 	if k.Is("esc") {
 		a.focus = focusPane
 		return
@@ -329,7 +329,7 @@ func (p *calendarPanel) render(a *App, w, h int) string {
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
 
-func (p *calendarPanel) handleKey(a *App, k vim.Key) {
+func (p *calendarPanel) handleKey(a *App, k helix.Key) {
 	if k.Is("esc") {
 		a.focus = focusPane
 		return

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // hintPair is one entry of a help line: a catalog action id (or a literal
@@ -89,9 +89,9 @@ var (
 		{"nav.filter", "search"}, {"key:Esc", "editor"}, {"key:?", "keys"},
 	}
 	editorHints = []hintPair{
-		{"vim.leaderPrefix", "leader"}, {"key::qa", "quit"}, {"key::help", "manual"}, {"global.searchNotes", "search"},
+		{"helix.leaderPrefix", "leader"}, {"key::qa", "quit"}, {"key::help", "manual"}, {"global.searchNotes", "search"},
 		{"key:Space z p", "preview"}, {"key:Space z s", "split"},
-		{"vim.panePrefix", "pane"}, {"global.newNoteHere", "new note"}, {"vim.goToDefinition", "follow link"},
+		{"helix.panePrefix", "pane"}, {"global.newNoteHere", "new note"}, {"helix.goToDefinition", "follow link"},
 		{"editor.toggleCheckbox", "checkbox"},
 	}
 	plainEditorHints = []hintPair{
@@ -106,7 +106,7 @@ var (
 func (a *App) hintLine() string {
 	var line string
 	switch {
-	case !a.prefs.VimMode:
+	case !a.prefs.HelixMode:
 		switch a.focus {
 		case focusSidebar:
 			line = a.keysHint(append(arrowHints, hintPair{"key:←/→", "collapse/expand"}, hintPair{"global.newNoteHere", "new note"}))
@@ -143,7 +143,7 @@ type keyHelpOverlay struct {
 	extra []hintPair
 }
 
-func (h *keyHelpOverlay) handleKey(a *App, k vim.Key) {
+func (h *keyHelpOverlay) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.Is("esc") || k.IsRune('?') || k.IsRune('q') || k.IsCtrl('c'):
 		a.overlay = nil
@@ -202,7 +202,7 @@ func (a *App) openKeyHelp() {
 		{"global.searchNotes", "search notes"}, {"global.newNoteHere", "new note"}, {"global.toggleSidebar", "toggle sidebar"},
 		{"key:Ctrl+W h/j/k/l", "focus panes (also Alt+H/J/K/L)"},
 		{"key:Space z e/s/p", "editor, split, preview mode (also Alt+E/S/P)"}, {"key:Esc", "in preview: back to the editor"},
-		{"global.toggleZenMode", "zen mode"}, {"global.toggleWordWrap", "word wrap"}, {"vim.historyBack|vim.historyForward", "jump list"},
+		{"global.toggleZenMode", "zen mode"}, {"global.toggleWordWrap", "word wrap"}, {"helix.historyBack|helix.historyForward", "jump list"},
 		{"key:Ctrl+S", "save"}, {"key:Ctrl+Z", "suspend"}, {"key:Ctrl+G", "command palette"},
 	}
 	title := "Keys"
@@ -224,8 +224,12 @@ func (a *App) openKeyHelp() {
 			}
 		} else {
 			title = "Editor keys"
+			tabs := "helix.bufferNext|helix.bufferPrevious"
+			if a.prefs.Motions == "helix" {
+				tabs += "|helix.gotoTabNext|helix.gotoTabPrevious"
+			}
 			pairs = append(editorHints, hintPair{"key:gx", "open URL"}, hintPair{"key:gy", "copy link"}, hintPair{"key:zc/zo/zM/zR", "folds"},
-				hintPair{"vim.bufferNext|vim.bufferPrevious", "next/previous tab"}, hintPair{"key::w :q :qa", "save, close, quit"})
+				hintPair{tabs, "next/previous tab"}, hintPair{"key::w :q :qa", "save, close, quit"})
 		}
 	}
 	a.overlay = &keyHelpOverlay{title: title, pairs: pairs, extra: global}

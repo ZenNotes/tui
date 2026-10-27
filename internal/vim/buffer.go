@@ -3,20 +3,13 @@ package vim
 import (
 	"strings"
 	"unicode"
+
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // Pos is a position in the buffer: a zero-based line and a rune column.
-type Pos struct {
-	Line, Col int
-}
-
-// Less orders positions.
-func (p Pos) Less(q Pos) bool {
-	if p.Line != q.Line {
-		return p.Line < q.Line
-	}
-	return p.Col < q.Col
-}
+// It is the helix engine's Pos so both engines share one coordinate type.
+type Pos = helix.Pos
 
 func minPos(a, b Pos) Pos {
 	if b.Less(a) {

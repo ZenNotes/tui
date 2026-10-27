@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 )
 
 // view is a built-in tab: Tasks, Tags, Trash and friends.
@@ -12,7 +12,7 @@ type view interface {
 	hint(a *App) string
 	refresh(a *App)
 	render(a *App, w, h int, focused bool) string
-	handleKey(a *App, k vim.Key) bool
+	handleKey(a *App, k helix.Key) bool
 }
 
 // refreshViews tells every open view the index changed.
@@ -145,7 +145,7 @@ func (c *listCursor) ensureVisible(rows int) {
 
 // listNav applies the shared movement keys to a cursor. It returns true
 // when the key was a movement.
-func (a *App) listNav(c *listCursor, k vim.Key, n, pageRows int) bool {
+func (a *App) listNav(c *listCursor, k helix.Key, n, pageRows int) bool {
 	if k.Is("down") {
 		c.move(1, n)
 		return true
@@ -175,7 +175,12 @@ func (a *App) listNav(c *listCursor, k vim.Key, n, pageRows int) bool {
 	if !a.listKeyAllowed(k) {
 		return false
 	}
-	id, pending := a.resolveAction(k, "nav.moveDown", "nav.moveUp", "nav.jumpTop", "nav.jumpBottom", "nav.halfPageDown", "nav.halfPageUp")
+	ids := []string{"nav.moveDown", "nav.moveUp", "nav.jumpTop", "nav.jumpBottom", "nav.halfPageDown", "nav.halfPageUp"}
+	if a.prefs.Motions == "helix" {
+		// gn/gp are helix-motion keys; the vim engine leaves them alone.
+		ids = append(ids, "helix.gotoTabPrevious", "helix.gotoTabNext")
+	}
+	id, pending := a.resolveAction(k, ids...)
 	if pending {
 		return true
 	}
@@ -194,6 +199,10 @@ func (a *App) listNav(c *listCursor, k vim.Key, n, pageRows int) bool {
 		c.move(max(1, pageRows/2), n)
 	case "nav.halfPageUp":
 		c.move(-max(1, pageRows/2), n)
+	case "helix.gotoTabPrevious":
+		a.cycleTab(-1)
+	case "helix.gotoTabNext":
+		a.cycleTab(1)
 	default:
 		return false
 	}

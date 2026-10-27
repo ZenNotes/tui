@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/ZenNotes/tui/internal/vim"
+	"github.com/ZenNotes/tui/internal/helix"
 	"strings"
 )
 
@@ -11,7 +11,7 @@ type textReader struct {
 	scroll, rows, total int
 }
 
-func (r *textReader) handleKey(a *App, k vim.Key) {
+func (r *textReader) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.Is("esc"), k.IsCtrl('c'), k.IsRune('q'):
 		a.overlay = nil

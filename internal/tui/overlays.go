@@ -8,14 +8,14 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // overlay is a modal surface: a palette, prompt, menu or dialog.
 type overlay interface {
-	handleKey(a *App, k vim.Key)
+	handleKey(a *App, k helix.Key)
 	render(a *App, w, h int) string
 }
 
@@ -50,7 +50,7 @@ func (t *textInput) endsWith(suffix string) bool {
 }
 
 // handle applies an editing key; false means the key was not for the input.
-func (t *textInput) handle(k vim.Key) bool {
+func (t *textInput) handle(k helix.Key) bool {
 	switch {
 	case k.Printable():
 		t.runes = append(t.runes[:t.cursor], append([]rune{k.Rune}, t.runes[t.cursor:]...)...)
@@ -182,7 +182,7 @@ func (p *palette) refilter(a *App) {
 	}
 }
 
-func (p *palette) handleKey(a *App, k vim.Key) {
+func (p *palette) handleKey(a *App, k helix.Key) {
 	if p.onMove != nil {
 		before := p.currentID()
 		defer func() {
@@ -341,7 +341,7 @@ func (a *App) promptSecret(title, help string, onSubmit func(a *App, text string
 	a.overlay = &prompt{title: title, input: newTextInput(""), help: help, onSubmit: onSubmit, masked: true}
 }
 
-func (p *prompt) handleKey(a *App, k vim.Key) {
+func (p *prompt) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c'):
 		a.overlay = nil
@@ -385,7 +385,7 @@ func (a *App) confirm(message string, onYes func()) {
 	a.overlay = &confirmDialog{message: message, onYes: onYes}
 }
 
-func (c *confirmDialog) handleKey(a *App, k vim.Key) {
+func (c *confirmDialog) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.IsRune('y') || k.IsRune('Y') || k.Is("enter"):
 		a.overlay = nil
@@ -435,7 +435,7 @@ func (a *App) showMenu(title string, items []menuItem) {
 	a.overlay = &menu{title: title, items: items, anchor: anchor}
 }
 
-func (m *menu) handleKey(a *App, k vim.Key) {
+func (m *menu) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsRune('q'):
 		a.overlay = nil
@@ -505,20 +505,20 @@ func (m *menu) render(a *App, w, h int) string {
 // --- quick capture ---
 
 type captureOverlay struct {
-	ed *vim.Editor
+	ed modalEditor
 }
 
 func (a *App) openQuickCapture() {
 	opts := a.editorOptions()
-	ed := vim.New("", opts, vim.Hooks{})
+	ed := a.newModalEditorWithOpts("", opts, helix.Hooks{}, nil)
 	ed.SetViewport(8)
-	if a.prefs.VimMode {
-		ed.HandleKey(vim.R('i'))
+	if a.prefs.HelixMode {
+		ed.HandleKey(helix.R('i'))
 	}
 	a.overlay = &captureOverlay{ed: ed}
 }
 
-func (c *captureOverlay) handleKey(a *App, k vim.Key) {
+func (c *captureOverlay) handleKey(a *App, k helix.Key) {
 	text := strings.TrimSpace(c.ed.Text())
 	switch {
 	case k.IsCtrl('s'):
@@ -528,7 +528,7 @@ func (c *captureOverlay) handleKey(a *App, k vim.Key) {
 	case k.IsCtrl('c'):
 		a.overlay = nil
 		return
-	case k.Is("esc") && (!a.prefs.VimMode || c.ed.Mode() == vim.ModeNormal):
+	case k.Is("esc") && (!a.prefs.HelixMode || c.ed.Mode() == helix.ModeNormal):
 		if text == "" {
 			a.overlay = nil
 			return
@@ -548,8 +548,8 @@ func (c *captureOverlay) render(a *App, w, h int) string {
 	c.ed.EnsureCursorVisible()
 	body := renderPlainEditor(a, c.ed, inner, 8, true)
 	lines = append(lines, strings.Split(body, "\n")...)
-	mode := c.ed.Mode().Label()
-	if !a.prefs.VimMode {
+	mode := c.ed.ModeLabel()
+	if !a.prefs.HelixMode {
 		mode = "EDIT"
 	}
 	lines = append(lines, th.Muted.Render(mode))
@@ -679,7 +679,7 @@ func (a *App) startHintMode() {
 	a.overlay = &hintOverlay{targets: targets}
 }
 
-func (h *hintOverlay) handleKey(a *App, k vim.Key) {
+func (h *hintOverlay) handleKey(a *App, k helix.Key) {
 	if k.Is("esc") || k.IsCtrl('c') || !k.Printable() {
 		a.overlay = nil
 		return
@@ -812,7 +812,7 @@ func (p *exPrompt) complete(a *App, backward bool) {
 	p.input = newTextInput(p.compBase + p.completions[p.compIdx])
 }
 
-func (p *exPrompt) handleKey(a *App, k vim.Key) {
+func (p *exPrompt) handleKey(a *App, k helix.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c'):
 		a.overlay = nil

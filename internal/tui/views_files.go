@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
-	"github.com/ZenNotes/tui/internal/vim"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"path/filepath"
@@ -122,7 +122,7 @@ func (v *filesView) render(a *App, w, h int, focused bool) string {
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
-func (v *filesView) handleKey(a *App, k vim.Key) bool {
+func (v *filesView) handleKey(a *App, k helix.Key) bool {
 	list := v.filtered()
 	if a.listNav(&v.list, k, len(list), v.rows) {
 		return true
