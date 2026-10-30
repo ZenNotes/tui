@@ -17,6 +17,7 @@ type settingRow struct {
 }
 type settingsView struct {
 	scroll, rows int
+	dscroll      int
 	lines        []string
 	filter       string
 	list         listCursor
@@ -78,14 +79,68 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 	v.list.ensureVisible(v.rows)
 	v.scroll = v.list.scroll
 	lines := []string{padRight(truncateCells(" Enter edit · / filter · v version · :config external editor", w), w), padRight(" "+v.filter, w)}
-	for i := v.scroll; i < len(v.lines) && len(lines) < h; i++ {
-		line := padRight(" "+truncateCells(v.lines[i], max(1, w-2)), w)
-		if focused && i == v.list.cursor {
+	disp, cur := v.display(w)
+	body := max(1, h-2)
+	if cur >= 0 {
+		start := cur
+		for n := 0; n < 2 && start > 0 && disp[start-1].idx < 0; n++ {
+			start--
+		}
+		if start < v.dscroll {
+			v.dscroll = start
+		} else if cur >= v.dscroll+body {
+			v.dscroll = cur - body + 1
+		}
+	}
+	v.dscroll = max(0, min(v.dscroll, len(disp)-1))
+	for i := v.dscroll; i < len(disp) && len(lines) < h; i++ {
+		line := padRight(disp[i].text, w)
+		switch {
+		case disp[i].idx < 0:
+			line = a.theme.Heading.Render(line)
+		case focused && disp[i].idx == v.list.cursor:
 			line = a.theme.SelectedFocus.Render(line)
 		}
 		lines = append(lines, line)
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
+}
+
+type settingDisplay struct {
+	text string
+	idx  int // index into settings; -1 for a heading
+}
+
+// display lays the settings out under two top-level sections, User and Vault,
+// each split into subsections named by the config prefix (vim, editor,
+// dailyNotes, ...). Rows keep their settings order, so the cursor index maps
+// straight onto v.settings. It returns the cell index of the cursor row.
+func (v *settingsView) display(w int) ([]settingDisplay, int) {
+	out := []settingDisplay{}
+	cur := -1
+	scope, sub := "", ""
+	for i, s := range v.settings {
+		name := "User"
+		if s.vault {
+			name = "Vault"
+		}
+		if name != scope {
+			if scope != "" {
+				out = append(out, settingDisplay{"", -1})
+			}
+			scope, sub = name, ""
+			out = append(out, settingDisplay{truncateCells(" "+strings.ToUpper(name), w), -1})
+		}
+		if s.section != sub {
+			sub = s.section
+			out = append(out, settingDisplay{truncateCells("  "+sub, w), -1})
+		}
+		if i == v.list.cursor {
+			cur = len(out)
+		}
+		out = append(out, settingDisplay{truncateCells("    "+s.key+" = "+fmt.Sprint(s.value), w), i})
+	}
+	return out, cur
 }
 func (v *settingsView) handleKey(a *App, k vim.Key) bool {
 	if k.IsRune('v') {
