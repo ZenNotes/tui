@@ -101,3 +101,20 @@ func (a *App) computeCursor() cursorState {
 	}
 	return cursorState{visible: true, x: x, y: y, shape: shape}
 }
+
+// suspendCursor hands the terminal to something else (the shell or an
+// external program): the cursor goes back to the terminal's default shape
+// and the wrapper stops adding sequences until resumeCursor.
+func (a *App) suspendCursor() {
+	if a.cursorOut != nil {
+		a.cursorOut.Reset()
+		a.cursorOut.Release()
+	}
+}
+
+// resumeCursor takes the terminal back and writes the cursor again.
+func (a *App) resumeCursor() {
+	if a.cursorOut != nil {
+		a.cursorOut.Hold()
+	}
+}

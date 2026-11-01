@@ -113,6 +113,7 @@ func (a *App) editConfig() error {
 	if err != nil {
 		return err
 	}
+	a.suspendCursor()
 	a.queue(tea.ExecProcess(cmd, func(err error) tea.Msg { return configEditedMsg{err} }))
 	return nil
 }

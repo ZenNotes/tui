@@ -635,6 +635,7 @@ func (a *App) commandTable() []command {
 			return nil
 		}},
 		{names: []string{"suspend", "stop"}, title: "Suspend to the shell (fg to return)", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+			a.suspendCursor()
 			a.queue(tea.Suspend)
 			return nil
 		}},

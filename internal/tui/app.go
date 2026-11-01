@@ -336,7 +336,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, tea.Batch(configPollCmd(), a.flush())
+	case tea.ResumeMsg:
+		a.resumeCursor()
+		return a, a.flush()
 	case configEditedMsg:
+		a.resumeCursor()
 		if m.err != nil {
 			a.notifyError(m.err.Error())
 		} else if err := a.reloadPreferences(); err != nil {
@@ -494,6 +498,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.invalidatePreviews()
 		return a, a.flush()
 	case editorDoneMsg:
+		a.resumeCursor()
 		a.finishExternalEdit(m)
 		return a, a.flush()
 	case leaderHintMsg:

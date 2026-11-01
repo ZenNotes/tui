@@ -56,6 +56,7 @@ func (a *App) editActiveInEditor() {
 		return
 	}
 	path := buf.path
+	a.suspendCursor()
 	a.queue(tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return editorDoneMsg{path: path, tmp: tmp, err: err}
 	}))
