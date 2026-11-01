@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -245,7 +246,16 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setString(terminal, "math", &p.TerminalMath)
 	setString(terminal, "view_mode_field", &p.TerminalViewModeField)
 	if rules, ok := terminal["view_mode_rules"].(map[string]any); ok {
-		p.ViewModeRules = mergeStringTable(map[string]string{}, rules)
+		p.ViewModeRules = map[string]string{}
+		for k, v := range rules {
+			// A mode that is not a string is kept as text, so the rule is
+			// listed as invalid and can be removed instead of vanishing.
+			s, isString := v.(string)
+			if !isString {
+				s = fmt.Sprint(v)
+			}
+			p.ViewModeRules[k] = s
+		}
 	}
 	setInt(terminal, "render_timeout", &p.RenderTimeout)
 	setInt(terminal, "render_concurrency", &p.RenderConcurrency)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -35,17 +36,33 @@ func SetValue(section, key string, value any) error {
 }
 
 // SetViewModeRule adds or changes one [terminal.view_mode_rules] entry,
-// keeping every other key and table. Rules already in the file that are
-// malformed never block the write.
+// keeping every other key and table. An entry already in the file for the
+// same field and value, written in any case or quoting and valid or not,
+// is changed in place instead of gaining a duplicate. Rules already in the
+// file that are malformed never block the write.
 func SetViewModeRule(key, mode string) error {
 	if err := ValidateViewModeRule(key, mode); err != nil {
 		return err
 	}
+	want, _ := ParseViewModeRule(key, mode)
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	return UpdateConfig(func(doc map[string]any) error {
 		terminal, rules, err := viewModeTables(doc, true)
 		if err != nil {
 			return err
+		}
+		if _, exact := rules[key]; !exact {
+			existing := make([]string, 0, len(rules))
+			for k := range rules {
+				existing = append(existing, k)
+			}
+			sort.Strings(existing)
+			for _, k := range existing {
+				if r, reason := ParseViewModeRule(k, "edit"); reason == "" && r.Key == want.Key && r.Value == want.Value {
+					key = k
+					break
+				}
+			}
 		}
 		rules[key] = mode
 		terminal["view_mode_rules"] = rules
