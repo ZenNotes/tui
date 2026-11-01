@@ -716,3 +716,24 @@ func TestReopenedClosedTabWithoutFrontmatterKeepsMode(t *testing.T) {
 		t.Fatalf("mode %q, want split", got)
 	}
 }
+
+// Reopening a closed tab whose note has since gone leaves the active tab's
+// mode alone.
+func TestReopenedDeletedNoteLeavesActiveTabAlone(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultNote(t, root, "gone.md", "---\nview-mode: preview\n---\nbody\n")
+	writeVaultNote(t, root, "stay.md", "---\nview-mode: preview\n---\nbody\n")
+	a.idx = a.loadIndexCmd()().(indexLoadedMsg).idx
+	enableViewModeField(a)
+	a.openNote("gone.md", true)
+	a.closeTab(a.activePane, a.activePane.findTab("gone.md"))
+	a.openNote("stay.md", true)
+	a.setPaneMode(modeSplit)
+	if err := os.Remove(filepath.Join(root, "gone.md")); err != nil {
+		t.Fatal(err)
+	}
+	a.reopenClosedTab()
+	if got := modeOf(t, a, "stay.md"); got != modeSplit {
+		t.Fatalf("active tab mode %q, want split", got)
+	}
+}

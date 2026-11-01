@@ -759,7 +759,9 @@ Precedence:
 - A tab restored from the saved session keeps its saved mode.
 - A note you have just created opens in the editor, whatever its frontmatter
   says. Reopening it later follows the frontmatter.
-- The pane opened by `:ref` stays in preview.
+- Reopening a closed tab follows the frontmatter too; the mode the tab was
+  closed in comes back only when the frontmatter asks for none.
+- The pane opened by `:ref`, and a peek from the sidebar, stay in preview.
 - Switching to a tab that is already open never changes its mode, and saving
   new frontmatter does not either.
 
