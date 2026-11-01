@@ -517,7 +517,7 @@ keeps them open until you choose an action, press Space again, or cancel.
 | `Ctrl+B` | Toggle the sidebar |
 | `Ctrl+W` then `v` `s` `h` `j` `k` `l` `q` `o` `=` | Split, move between and close panes |
 | `Ctrl+O` `Ctrl+I` | Jump back and forward across notes |
-| `gt` `gT` `]b` `[b` | Next and previous tab |
+| `gt` `gT` `]b` `[b` | Next and previous tab, from any view or panel (the calendars keep `[` `]` for the month, the Kanban board keeps `g` for its grouping) |
 | `:` | Ex commands; `Space ;` or `Ctrl+G` opens the command palette |
 | `?` | The keys of the current view; `:help` is the full manual |
 | `F2` | Context actions, including when Vim mode is off |
