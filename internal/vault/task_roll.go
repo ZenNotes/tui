@@ -1,0 +1,178 @@
+package vault
+
+import (
+	"regexp"
+	"strings"
+	"time"
+)
+
+// RollAction is how a repeating checkbox leaves the open state.
+type RollAction int
+
+const (
+	// RollComplete ticks the task, or unticks it when it is already done.
+	RollComplete RollAction = iota
+	// RollCancel marks the task `[-]`, or reopens it when it is already
+	// cancelled.
+	RollCancel
+)
+
+// RollTaskInBody completes or cancels the task at targetIndex, counted in the
+// given grammar. An open, in-progress or waiting task that carries a valid
+// `repeat:` rule also gets its next occurrence: an open copy of the line and
+// its indented block is inserted directly above it, with `due:` and
+// `scheduled:` moved to the next date and the original keeping its own dates.
+// Every other case is the plain toggle or cancel, with nothing inserted: no
+// rule, an invalid rule, unticking, reopening, a forwarded task, or a rule
+// with no date left to land on.
+//
+// The next date counts from `scheduled:`, else `due:`, else today, and from
+// today when the rule ends in `/done`. It is the first date of the rule after
+// that and after today that no `skip:` period covers. The other date and the
+// copied subtasks' dates move by the same number of days as the base field,
+// and each keeps its `THH:MM`. A task with neither date gets `scheduled:` on
+// the copy. now and weekStart are inputs so the caller chooses the clock and
+// the first day of the week.
+//
+// Only local notes roll. A remote vault's server parses the note itself, so
+// remote toggles use ToggleTaskInBody and never insert a line.
+//
+// inserted counts the task lines added above the original, which is how far
+// the original's index, and every later task's, moved. Line endings are
+// normalised to LF, as ToggleTaskInBody does. ok is false when the body holds
+// no task at that index.
+func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday) (next string, inserted int, ok bool) {
+	normalized := strings.ReplaceAll(body, "\r\n", "\n")
+	lines := strings.Split(normalized, "\n")
+	numbers := taskLineNumbersIn(lines, dialect)
+	if targetIndex < 0 || targetIndex >= len(numbers) {
+		return body, 0, false
+	}
+	at := numbers[targetIndex]
+	m := dialect.lineRe().FindStringSubmatch(lines[at])
+	if m == nil {
+		return body, 0, false
+	}
+
+	shift, scheduled, rolled := planRoll(m, dialect, action, now, weekStart)
+	if !rolled {
+		if action == RollComplete {
+			plain, found := ToggleTaskInBody(body, targetIndex, dialect)
+			return plain, 0, found
+		}
+		lines[at] = m[1] + cancelMarker(m[2]) + m[3]
+		return strings.Join(lines, "\n"), 0, true
+	}
+
+	end := taskBlockEnd(lines, at, leadingIndentWidth(lines[at]))
+	copied := make([]string, 0, end-at)
+	for i := at; i < end; i++ {
+		line := lines[i]
+		if cm := dialect.lineRe().FindStringSubmatch(line); cm != nil {
+			inserted++
+			line = cm[1] + " " + shift(cm[3])
+			if i == at && scheduled != "" {
+				line = strings.TrimRight(line, " \t") + " scheduled:" + scheduled
+			}
+		}
+		copied = append(copied, line)
+	}
+
+	original := m[1] + "x" + m[3]
+	if action == RollCancel {
+		original = m[1] + "-" + m[3]
+	}
+	out := make([]string, 0, len(lines)+len(copied))
+	out = append(out, lines[:at]...)
+	out = append(out, copied...)
+	out = append(out, original)
+	out = append(out, lines[at+1:]...)
+	return strings.Join(out, "\n"), inserted, true
+}
+
+// cancelMarker is the state a plain cancel gives a line: cancelled, or open
+// again when it already was cancelled.
+func cancelMarker(state string) string {
+	if state == "-" {
+		return " "
+	}
+	return "-"
+}
+
+// planRoll decides whether the task line m rolls. If it does, shift moves the
+// `due:` and `scheduled:` dates in the text after a line's `[ ` (which starts
+// with its `]`) by the offset of the new occurrence, and scheduled is the
+// `scheduled:` date to add to the copy of a task that has neither date.
+func planRoll(m []string, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday) (shift func(string) string, scheduled string, rolled bool) {
+	switch m[2] {
+	case " ", "/":
+	default:
+		return nil, "", false
+	}
+	tokens := extractTaskTokens(strings.TrimPrefix(m[3], "]"), dialect)
+	rule, valid := ParseRepeatRule(tokens.repeat)
+	if !valid {
+		return nil, "", false
+	}
+	_, periods := ParseSkipItems(strings.Join(tokens.skip, ","))
+
+	today := TodayISO(now)
+	field := tokens.scheduled
+	if field == "" {
+		field = tokens.due
+	}
+	base := field
+	if base == "" || (rule.FromCompletion && action == RollComplete) {
+		base = today
+	}
+	following, found := NextOccurrence(rule, base, today, weekStart, periods)
+	if !found {
+		return nil, "", false
+	}
+	from := field
+	if from == "" {
+		from = today
+	}
+	days := daysBetween(from, following)
+
+	shift = func(text string) string {
+		text = shiftTokenDate(text, inlineDueRe, days)
+		return shiftTokenDate(text, inlineScheduledRe, days)
+	}
+	if field == "" {
+		scheduled = following
+	}
+	return shift, scheduled, true
+}
+
+// shiftTokenDate moves the date of the first token re matches by days. The
+// token's `THH:MM` suffix stays as written. A value whose date is not real is
+// left alone.
+func shiftTokenDate(text string, re *regexp.Regexp, days int) string {
+	loc := re.FindStringSubmatchIndex(text)
+	if loc == nil || loc[2] < 0 {
+		return text
+	}
+	value := text[loc[2]:loc[3]]
+	date, _ := SplitDateTime(value)
+	if date == "" {
+		return text
+	}
+	moved, err := time.Parse(isoDay, date)
+	if err != nil {
+		return text
+	}
+	return text[:loc[2]] + moved.AddDate(0, 0, days).Format(isoDay) + value[len(date):] + text[loc[3]:]
+}
+
+// daysBetween counts whole calendar days from one `YYYY-MM-DD` date to a
+// later one. Both are read as UTC dates, so a daylight saving change cannot
+// add or drop a day.
+func daysBetween(from, to string) int {
+	a, errA := time.Parse(isoDay, from)
+	b, errB := time.Parse(isoDay, to)
+	if errA != nil || errB != nil {
+		return 0
+	}
+	return int(b.Sub(a).Hours() / 24)
+}
