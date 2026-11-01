@@ -520,9 +520,9 @@ func TestDayTooSmallBelowMinimum(t *testing.T) {
 
 func TestTooSmallMonthDoesNotSwitchModeButEscDoes(t *testing.T) {
 	a, tv := calTestApp(t, nil)
-	// A body that meets the week minimum but not the month one.
+	// A body too small for even the compact month.
 	for i := 0; i < 2; i++ {
-		requireTooSmall(t, calScreen(a, tv, 64, 12), true, "month at 64x12")
+		requireTooSmall(t, calScreen(a, tv, 30, 12), true, "month at 30x12")
 		if tv.calc().sub != calMonth {
 			t.Fatalf("render switched the layout to %v by itself", tv.calc().sub)
 		}

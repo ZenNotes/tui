@@ -60,8 +60,11 @@ type calDayBox struct {
 // clicks and menu placement all read the last one, so the geometry is
 // written once.
 type calLayout struct {
-	w, h      int
-	tooSmall  bool
+	w, h     int
+	tooSmall bool
+	// compact is the month view below its minimum: one line per week with a
+	// count per day, the selected day's items under the grid.
+	compact   bool
 	items     calRect
 	strip     calRect
 	boxes     []calDayBox
@@ -181,8 +184,7 @@ func (c *taskCalendar) selected(day time.Time) *vault.Task {
 func (c *taskCalendar) monthLayout(a *App, month time.Time, w, h int) calLayout {
 	lay := calLayout{w: w, h: h}
 	if m := calMin[calMonth]; w < m[0] || h < m[1] {
-		lay.tooSmall = true
-		return lay
+		return c.compactMonthLayout(a, month, w, h)
 	}
 	panelW := clampInt(w*30/100, 26, 44)
 	gw := w - panelW
@@ -207,6 +209,113 @@ func (c *taskCalendar) monthLayout(a *App, month time.Time, w, h int) calLayout 
 		}
 	}
 	return lay
+}
+
+// calCompactCell is the narrowest day cell of the compact month: the date
+// and a count, as in the side calendar panel.
+const calCompactCell = 5
+
+// compactMonthLayout computes the compact month for a body too small for
+// the day boxes: the grid at one line per week, the selected day's items
+// under it, and the strip at the bottom. It is too small only when even
+// that does not fit.
+func (c *taskCalendar) compactMonthLayout(a *App, month time.Time, w, h int) calLayout {
+	lay := calLayout{w: w, h: h, compact: true}
+	wnW := 0
+	if a.prefs.CalendarShowWeekNumbers {
+		wnW = 3
+	}
+	colW := min((w-wnW)/7, 2*calCompactCell)
+	first, weeks := monthGridStart(month, a.prefs.CalendarWeekStart != "sunday")
+	gridH := 2 + weeks
+	// Under the grid: the items' header and one item, then the strip's
+	// header and one task.
+	if colW < calCompactCell || h < gridH+4 {
+		lay.tooSmall = true
+		return lay
+	}
+	rest := h - gridH
+	stripRows := clampInt(rest/4, 1, 4)
+	stripH := 1 + stripRows
+	lay.items = calRect{x: 0, y: gridH, w: w, h: rest - stripH}
+	lay.strip = calRect{x: 0, y: h - stripH, w: w, h: stripH}
+	lay.stripRows = stripRows
+	day := first
+	for r := 0; r < weeks; r++ {
+		for col := 0; col < 7; col++ {
+			lay.boxes = append(lay.boxes, calDayBox{day: day, rect: calRect{x: wnW + col*colW, y: 2 + r, w: colW, h: 1}})
+			day = day.AddDate(0, 0, 1)
+		}
+	}
+	return lay
+}
+
+// renderCompactMonth draws the compact month: the grid with a count per
+// day, the selected day's items and the strip.
+func (c *taskCalendar) renderCompactMonth(a *App, month, day time.Time, lay calLayout, w, h int, focused bool) string {
+	th := a.theme
+	rows := make([]string, 0, h)
+	rows = append(rows, padRight(" "+th.Title.Render(month.Format("January 2006")), w))
+	wnW := lay.boxes[0].rect.x
+	colW := lay.boxes[0].rect.w
+	names := []string{"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"}
+	if a.prefs.CalendarWeekStart == "sunday" {
+		names = []string{"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"}
+	}
+	head := strings.Repeat(" ", wnW)
+	for _, n := range names {
+		head += padRight(" "+th.Dim.Render(n), colW)
+	}
+	rows = append(rows, padRight(head, w))
+	today := calendarNow()
+	for r := 0; r < len(lay.boxes)/7; r++ {
+		var sb strings.Builder
+		if wnW > 0 {
+			anchor := lay.boxes[r*7].day
+			if a.prefs.CalendarWeekStart == "sunday" {
+				anchor = anchor.AddDate(0, 0, 1)
+			}
+			_, wk := anchor.ISOWeek()
+			sb.WriteString(th.Muted.Render(fmt.Sprintf("%2d ", wk)))
+		}
+		for col := 0; col < 7; col++ {
+			box := lay.boxes[r*7+col]
+			sb.WriteString(c.compactCell(a, box, sameDay(box.day, day), sameDay(box.day, today), box.day.Month() != month.Month(), focused))
+		}
+		rows = append(rows, padRight(sb.String(), w))
+	}
+	rows = append(rows, c.itemPanel(a, day, lay, focused)...)
+	rows = append(rows, c.stripLines(a, lay, w, focused)...)
+	return fitBlock(strings.Join(rows, "\n"), w, h)
+}
+
+// compactCell is one day of the compact grid: the date, then how many
+// entries the day has (+ for ten or more).
+func (c *taskCalendar) compactCell(a *App, box calDayBox, selected, today, outside, focused bool) string {
+	th := a.theme
+	w := box.rect.w
+	num := fmt.Sprintf(" %2d", box.day.Day())
+	count := ""
+	if n := len(c.dayEntries(box.day)); n > 9 {
+		count = " +"
+	} else if n > 0 {
+		count = fmt.Sprintf(" %d", n)
+	}
+	if selected {
+		style := th.Selected
+		if focused && c.focus == calFocusGrid {
+			style = th.SelectedFocus
+		}
+		return style.Render(padRight(num+count, w))
+	}
+	style := th.Base
+	switch {
+	case today:
+		style = th.Base.Foreground(th.Accent).Bold(true)
+	case outside:
+		style = th.Muted
+	}
+	return padRight(style.Render(num)+th.Marker.Render(count), w)
 }
 
 // hourLabelWidth is the width of the widest hour label for the time format
@@ -529,6 +638,9 @@ func (c *taskCalendar) render(a *App, month, day time.Time, w, h int, focused bo
 	if c.sub != calMonth {
 		return c.renderColumns(a, day, lay, w, h, focused)
 	}
+	if lay.compact {
+		return c.renderCompactMonth(a, month, day, lay, w, h, focused)
+	}
 	weeks := len(lay.boxes) / 7
 	gw := lay.items.x
 	wnW := lay.boxes[0].rect.x
@@ -635,6 +747,11 @@ func (c *taskCalendar) itemPanel(a *App, day time.Time, lay calLayout, focused b
 	th := a.theme
 	pw := lay.items.w
 	sep := th.Dim.Render("│")
+	if lay.items.x == 0 {
+		// The compact month lists the items under the grid, not beside it.
+		sep = ""
+	}
+	sepW := cellWidth(sep)
 	entries := c.dayEntries(day)
 	out := make([]string, lay.items.h)
 	out[0] = padRight(sep+" "+th.Bold.Render(day.Format("Monday, January 2"))+th.Muted.Render(fmt.Sprintf(" (%d)", len(entries))), pw)
@@ -654,13 +771,13 @@ func (c *taskCalendar) itemPanel(a *App, day time.Time, lay calLayout, focused b
 			if e.scheduled {
 				lead = calScheduledMark
 			}
-			body := " " + lead + " " + truncateCells(e.task.Content, pw-4)
+			body := " " + lead + " " + truncateCells(e.task.Content, pw-3-sepW)
 			if focused && c.focus == calFocusItems && idx == c.cursor {
-				body = th.SelectedFocus.Render(padRight(body, pw-1))
+				body = th.SelectedFocus.Render(padRight(body, pw-sepW))
 			}
 			line += body
 		case len(entries) == 0 && i == 1:
-			line += " " + th.Muted.Render(truncateCells("Nothing here. n adds a task.", pw-2))
+			line += " " + th.Muted.Render(truncateCells("Nothing here. n adds a task.", pw-1-sepW))
 		}
 		out[i] = padRight(line, pw)
 	}

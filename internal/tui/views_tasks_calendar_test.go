@@ -370,9 +370,48 @@ func TestMonthStripBelowGrid(t *testing.T) {
 	}
 }
 
-func TestMonthTooSmallBelowMinimum(t *testing.T) {
+// Below the month minimum the calendar keeps a compact month: a line per
+// week with a count per day, and the selected day's items under it.
+func TestMonthCompactBelowMinimum(t *testing.T) {
+	a, tv := calTestApp(t, []vault.Task{
+		{ID: "n#0", SourcePath: "n.md", Content: "something", Due: "2026-11-18"},
+		{ID: "n#1", SourcePath: "n.md", Content: "undated thing"},
+	})
+	for _, size := range [][2]int{{71, 18}, {72, 17}, {43, 18}, {38, 12}} {
+		ctx := fmt.Sprintf("%dx%d", size[0], size[1])
+		lines := calScreen(a, tv, size[0], size[1])
+		text := calScreenText(lines)
+		if strings.Contains(text, "Terminal too small") {
+			t.Errorf("%s: `Terminal too small` instead of the compact month:\n%s", ctx, text)
+			continue
+		}
+		if !tv.calc().layout.compact {
+			t.Errorf("%s: layout is not the compact month", ctx)
+		}
+		if calWeekdayHeader(lines, calWeekdayNames) == nil {
+			t.Errorf("%s: no weekday header:\n%s", ctx, text)
+		}
+		for _, want := range []string{"November 2026", "18 1", "Wednesday, November 18 (1)", "something", "No date (1)", "undated thing"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s: compact month lacks %q:\n%s", ctx, want, text)
+			}
+		}
+		if len(lines) != size[1]+1 {
+			t.Errorf("%s: render is %d lines, want toolbar plus %d", ctx, len(lines), size[1])
+		}
+		for i, l := range lines {
+			if lipgloss.Width(l) > size[0] {
+				t.Errorf("%s: line %d is %d cells wide", ctx, i, lipgloss.Width(l))
+			}
+		}
+	}
+}
+
+func TestMonthTooSmallBelowCompactMinimum(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{{ID: "n#0", SourcePath: "n.md", Content: "something", Due: "2026-11-18"}})
-	for _, size := range [][2]int{{71, 18}, {72, 17}} {
+	// Seven cells of five beside the week numbers need 38 columns; six weeks
+	// with the item and strip lines under them need 12 rows.
+	for _, size := range [][2]int{{37, 18}, {72, 11}} {
 		text := calScreenText(calScreen(a, tv, size[0], size[1]))
 		if !strings.Contains(text, "Terminal too small") {
 			t.Errorf("%dx%d: no `Terminal too small`:\n%s", size[0], size[1], text)
@@ -382,6 +421,44 @@ func TestMonthTooSmallBelowMinimum(t *testing.T) {
 				t.Errorf("%dx%d: grid content %q shown while too small:\n%s", size[0], size[1], name, text)
 			}
 		}
+	}
+}
+
+// The compact month takes the same keys and clicks as the full one.
+func TestMonthCompactFocusAndClicks(t *testing.T) {
+	a, tv := calTestApp(t, []vault.Task{
+		{ID: "n#0", SourcePath: "n.md", Content: "first", Due: "2026-11-18"},
+		{ID: "n#1", SourcePath: "n.md", Content: "second", Due: "2026-11-18"},
+		{ID: "n#2", SourcePath: "n.md", Content: "on the 20th", Due: "2026-11-20"},
+	})
+	a.prefs.VimMode = true
+	calScreen(a, tv, 43, 18)
+	lay := tv.calc().layout
+	if !lay.compact {
+		t.Fatal("43x18 is not the compact month")
+	}
+	tv.handleKey(a, vim.KeyEnter)
+	tv.handleKey(a, vim.R('j'))
+	if got := tv.selectedTask(); got == nil || got.Content != "second" {
+		t.Fatalf("Enter then j selected %+v, want second", got)
+	}
+	calScreen(a, tv, 43, 18)
+	x, y := tv.calc().selectionCell(tv.day)
+	if !lay.items.contains(x, y) || y != lay.items.y+2 {
+		t.Errorf("menu anchor (%d,%d) is not on the second item row of %+v", x, y, lay.items)
+	}
+	for _, b := range lay.boxes {
+		if sameDay(b.day, calDate(2026, time.November, 20)) {
+			tv.calc().click(a, tv, b.rect.x+1, b.rect.y, false, false)
+		}
+	}
+	requireDay(t, tv, "2026-11-20", "click on the 20th")
+	if tv.calc().focus != calFocusGrid {
+		t.Errorf("click on a day left focus on %v", tv.calc().focus)
+	}
+	text := calScreenText(calScreen(a, tv, 43, 18))
+	if !strings.Contains(text, "Friday, November 20 (1)") || !strings.Contains(text, "on the 20th") {
+		t.Errorf("the 20th's items are not listed after the click:\n%s", text)
 	}
 }
 

@@ -585,7 +585,9 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   manage shared named queries. Prefix terminal operators with `where:`,
   for example `where: is:open due:today -meeting`.
   The calendar has month, week and day views; `Esc` cycles them, and a
-  start in `calendar` mode always opens the month grid. `h`/`j`/`k`/`l`
+  start in `calendar` mode always opens the month grid. On a narrow
+  terminal the month shows a compact grid with a count per day and the
+  selected day's tasks under it. `h`/`j`/`k`/`l`
   move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
   by half a view, and `o` opens the day's daily note. Week and day view
   show an hour list: hourly by default, half-hourly after `z` (Vim mode),
