@@ -48,9 +48,9 @@ func TestSettingsDisplayGroupsUserAndVaultByPrefix(t *testing.T) {
 	disp, cur := v.display(40)
 	var got []string
 	for _, d := range disp {
-		got = append(got, strings.TrimSpace(d.text))
+		got = append(got, d.scope+strings.TrimSpace(d.text))
 	}
-	want := []string{"USER", "vim", "a = 1", "b = 2 (note)", "editor", "c = 3", "", "VAULT", "dailyNotes", "enabled = true", "tasks", "includedFolders = x"}
+	want := []string{"User", "vim", "a = 1", "b = 2 (note)", "editor", "c = 3", "Vault", "dailyNotes", "enabled = true", "tasks", "includedFolders = x"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("layout = %q", got)
 	}
@@ -69,8 +69,8 @@ func TestSettingsRowsSitUnderTheScopeTheySaveTo(t *testing.T) {
 	scopes, scope := []string{}, ""
 	vaultRows := 0
 	for _, d := range disp {
-		if t := strings.TrimSpace(d.text); d.idx < 0 && (t == "USER" || t == "VAULT") {
-			scope = t
+		if d.scope != "" {
+			scope = d.scope
 			scopes = append(scopes, scope)
 			continue
 		}
@@ -78,14 +78,14 @@ func TestSettingsRowsSitUnderTheScopeTheySaveTo(t *testing.T) {
 			continue
 		}
 		s := v.settings[d.idx]
-		if s.vault != (scope == "VAULT") {
+		if s.vault != (scope == "Vault") {
 			t.Fatalf("%s.%s sits under %q", s.section, s.key, scope)
 		}
 		if s.vault {
 			vaultRows++
 		}
 	}
-	if strings.Join(scopes, ",") != "USER,VAULT" || vaultRows == 0 {
+	if strings.Join(scopes, ",") != "User,Vault" || vaultRows == 0 {
 		t.Fatalf("groups = %v with %d vault rows", scopes, vaultRows)
 	}
 }
@@ -117,13 +117,13 @@ func TestSettingsScrollKeepsGroupHeadingsInView(t *testing.T) {
 		t.Fatalf("%s: no %q above the dailyNotes row:\n%s", when, want, strings.Join(lines, "\n"))
 	}
 
-	if got := strings.Trim(strings.TrimSpace(screen()[2]), "─ "); got != "USER" {
+	if got := strings.Trim(strings.TrimSpace(screen()[2]), "─ "); got != "User · config.toml" {
 		t.Fatalf("top heading = %q", got)
 	}
 	v.list.cursor = firstVault - 1
 	screen()
 	v.list.move(1, len(v.settings))
-	expectAbove("down", screen(), "VAULT", "dailyNotes")
+	expectAbove("down", screen(), "Vault · .zennotes/vault.json", "dailyNotes")
 
 	v.list.cursor = len(v.settings) - 1
 	screen()
@@ -131,11 +131,11 @@ func TestSettingsScrollKeepsGroupHeadingsInView(t *testing.T) {
 		v.list.move(-1, len(v.settings))
 		screen()
 	}
-	expectAbove("up", screen(), "VAULT", "dailyNotes")
+	expectAbove("up", screen(), "Vault · .zennotes/vault.json", "dailyNotes")
 
 	// A window tall enough for the whole page shows it from the top again.
 	tall := strings.Split(stripAnsi(v.render(a, 70, 200, true)), "\n")
-	if got := strings.Trim(strings.TrimSpace(tall[2]), "─ "); got != "USER" {
+	if got := strings.Trim(strings.TrimSpace(tall[2]), "─ "); got != "User · config.toml" {
 		t.Fatalf("after growing, top line = %q", got)
 	}
 }
