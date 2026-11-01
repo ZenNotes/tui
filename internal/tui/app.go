@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -149,6 +150,9 @@ type App struct {
 
 	// cursor is where the terminal cursor belongs in the last frame drawn.
 	cursor cursorState
+	// cursorOut shapes the terminal cursor; nil when the app runs without a
+	// terminal, as in tests.
+	cursorOut *cursorOut
 	// cmdlineX is the column of the next typed character on the command
 	// line, set by renderCommandLine while a command line is open.
 	cmdlineX    int
@@ -196,9 +200,20 @@ func Run(ctx context.Context, opts Options) error {
 	if prefs.TerminalMouse {
 		teaOpts = append(teaOpts, tea.WithMouseCellMotion())
 	}
+	return runProgram(app, os.Stdout, os.Stdin, teaOpts...)
+}
+
+// runProgram runs app on out and in with the cursor wrapper between Bubble Tea
+// and the terminal. Bubble Tea recovers panics and p.Run returns an error, so
+// the cursor is restored on every path after p.Run returns.
+func runProgram(app *App, out cursorFile, in io.Reader, teaOpts ...tea.ProgramOption) error {
+	wrapper := newCursorOut(out)
+	app.cursorOut = wrapper
+	defer wrapper.Reset()
+	teaOpts = append([]tea.ProgramOption{tea.WithOutput(wrapper), tea.WithInput(in)}, teaOpts...)
 	p := tea.NewProgram(app, teaOpts...)
 	app.program = p
-	_, err = p.Run()
+	_, err := p.Run()
 	saveErr := app.shutdown()
 	if err == nil {
 		err = saveErr
@@ -722,6 +737,9 @@ func (a *App) View() string {
 		screen = a.renderToasts(screen)
 	}
 	a.cursor = a.computeCursor()
+	if a.cursorOut != nil {
+		a.cursorOut.Set(a.cursor)
+	}
 	return a.theme.paint(screen)
 }
 
