@@ -35,8 +35,8 @@ const (
 // Below it the body only says the terminal is too small.
 var calMin = map[calSub][2]int{
 	calMonth: {72, 18},
-	calWeek:  {64, 12},
-	calDay:   {40, 10},
+	calWeek:  {56, 8},
+	calDay:   {30, 7},
 }
 
 // calScheduledMark prefixes an entry placed by its scheduled date. It must
@@ -72,11 +72,6 @@ type calLayout struct {
 	stripRows int
 	// stripStart is the index of the first strip task shown.
 	stripStart int
-	// gutter is the width of the hour labels left of the week and day columns.
-	gutter int
-	// hourStart is the index of the first hour row shown, and hourTotal the
-	// number of rows in the whole list.
-	hourStart, hourTotal int
 }
 
 // taskCalendar is the Tasks tab's calendar: day entries, the items beside
@@ -86,14 +81,8 @@ type taskCalendar struct {
 	focus  calFocus
 	cursor int
 	strip  int
-	// half selects half-hourly hour rows in place of hourly ones.
-	half bool
-	// scroll is the time of day, in minutes, of the first hour row shown.
-	// It is a time rather than a row index so it survives a change of
-	// variant.
-	scroll int
 	// colScroll is how many entries the selected day's column has scrolled
-	// off its top. It only applies while the hour list is shown whole.
+	// off its top.
 	colScroll int
 
 	byDay   map[string][]calEntry
@@ -318,94 +307,6 @@ func (c *taskCalendar) compactCell(a *App, box calDayBox, selected, today, outsi
 	return padRight(style.Render(num)+th.Marker.Render(count), w)
 }
 
-// hourLabelWidth is the width of the widest hour label for the time format
-// and hour-list variant.
-func hourLabelWidth(a *App, half bool) int {
-	w := 2
-	if a.prefs.TimeFormat == "12h" {
-		w = 5
-	}
-	if half {
-		w += 3
-	}
-	return w
-}
-
-// hourLabel is the label of the row starting at the given minute of the day.
-func hourLabel(a *App, minute int) string {
-	h, half := minute/60, minute%60 == 30
-	if a.prefs.TimeFormat == "12h" {
-		n := h % 12
-		if n == 0 {
-			n = 12
-		}
-		suffix := "AM"
-		if h >= 12 {
-			suffix = "PM"
-		}
-		if half {
-			return fmt.Sprintf("%2d:30 %s", n, suffix)
-		}
-		return fmt.Sprintf("%2d %s", n, suffix)
-	}
-	if half {
-		return fmt.Sprintf("%02d:30", h)
-	}
-	return fmt.Sprintf("%02d", h)
-}
-
-// hourStep is the minutes one hour row covers.
-func (c *taskCalendar) hourStep() int {
-	if c.half {
-		return 30
-	}
-	return 60
-}
-
-// hourRowCount is the number of rows in the whole hour list.
-func (c *taskCalendar) hourRowCount() int { return 24 * 60 / c.hourStep() }
-
-// firstHourRow is the index of the first row shown when room rows fit.
-func (c *taskCalendar) firstHourRow(room int) int {
-	return clampInt(c.scroll/c.hourStep(), 0, max(0, c.hourRowCount()-room))
-}
-
-// visibleHourRows is how many hour rows the last layout showed, or 0 when
-// none was laid out.
-func (c *taskCalendar) visibleHourRows() int {
-	if c.layout.tooSmall || len(c.layout.boxes) == 0 || c.sub == calMonth {
-		return 0
-	}
-	return c.layout.boxes[0].rect.h
-}
-
-// hourListWhole reports whether the last layout shows every hour row.
-func (c *taskCalendar) hourListWhole() bool {
-	n := c.visibleHourRows()
-	return n > 0 && n >= c.hourRowCount()
-}
-
-// scrollHours moves the hour list by delta rows, never past either end.
-func (c *taskCalendar) scrollHours(delta int) {
-	step := c.hourStep()
-	room := c.visibleHourRows()
-	if room == 0 {
-		c.scroll = max(0, c.scroll+delta*step)
-		return
-	}
-	c.scroll = clampInt(c.firstHourRow(room)+delta, 0, max(0, c.hourRowCount()-room)) * step
-}
-
-// toggleHalf switches between hourly and half-hourly rows. The list starts at
-// the same time, or at the hour containing it, kept inside the new list.
-func (c *taskCalendar) toggleHalf() {
-	c.half = !c.half
-	c.scroll = c.scroll / c.hourStep() * c.hourStep()
-	if room := c.visibleHourRows(); room > 0 {
-		c.scroll = c.firstHourRow(room) * c.hourStep()
-	}
-}
-
 // columnDays is the days a week or day layout shows as columns, in order.
 func (c *taskCalendar) columnDays(a *App, day time.Time) []time.Time {
 	if c.sub == calDay {
@@ -424,8 +325,8 @@ func (c *taskCalendar) columnDays(a *App, day time.Time) []time.Time {
 }
 
 // columnLayout computes the regions of the week or day view for a body of
-// w x h. The hour list sits under the header rows with one column per day
-// beside it, and the strip is pinned to the bottom of the body.
+// w x h: one column per day under the header rows, and the strip pinned to
+// the bottom of the body.
 func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 	lay := calLayout{w: w, h: h}
 	if m := calMin[c.sub]; w < m[0] || h < m[1] {
@@ -441,31 +342,27 @@ func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 	stripH := 1 + stripRows
 	lay.stripRows = stripRows
 	lay.strip = calRect{x: 0, y: h - stripH, w: w, h: stripH}
-	lay.gutter = hourLabelWidth(a, c.half) + 2
-	lay.hourTotal = c.hourRowCount()
-	hourRows := clampInt(h-stripH-headRows, 0, lay.hourTotal)
-	lay.hourStart = c.firstHourRow(hourRows)
-	colW := (w - lay.gutter) / len(days)
+	colH := h - stripH - headRows
+	colW := w / len(days)
 	for i, d := range days {
-		lay.boxes = append(lay.boxes, calDayBox{day: d, rect: calRect{x: lay.gutter + i*colW, y: headRows, w: colW, h: hourRows}})
+		lay.boxes = append(lay.boxes, calDayBox{day: d, rect: calRect{x: i * colW, y: headRows, w: colW, h: colH}})
 	}
 	return lay
 }
 
-// renderColumns draws the week or day view: a header, the hour list with the
-// day columns beside it, and the strip. Entries are listed from the top of
-// their column, not placed by time of day.
+// renderColumns draws the week or day view: a header, the day columns and
+// the strip. Tasks carry a date but no time of day, so a column lists its
+// entries from the top.
 func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h int, focused bool) string {
 	th := a.theme
 	rows := make([]string, 0, h)
-	blank := strings.Repeat(" ", lay.gutter)
 	first, last := lay.boxes[0].day, lay.boxes[len(lay.boxes)-1].day
 	if c.sub == calDay {
 		rows = append(rows, padRight(" "+th.Title.Render(day.Format("Monday, January 2, 2006")), w))
 	} else {
 		title := first.Format("January 2") + " – " + last.Format("January 2, 2006")
 		rows = append(rows, padRight(" "+th.Title.Render(title), w))
-		head := blank
+		head := ""
 		for _, b := range lay.boxes {
 			cell := padRight(" "+b.day.Format("Mon")[:2]+b.day.Format(" 2"), b.rect.w)
 			if sameDay(b.day, day) {
@@ -477,10 +374,8 @@ func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h 
 		}
 		rows = append(rows, padRight(head, w))
 	}
-	hourRows := lay.boxes[0].rect.h
-	for i := 0; i < hourRows; i++ {
+	for i := 0; i < lay.boxes[0].rect.h; i++ {
 		var sb strings.Builder
-		sb.WriteString(th.Muted.Render(padRight(hourLabel(a, (lay.hourStart+i)*c.hourStep()), lay.gutter-2)) + th.Dim.Render(" │"))
 		for _, b := range lay.boxes {
 			scroll := 0
 			if sameDay(b.day, day) {
@@ -507,13 +402,9 @@ func (c *taskCalendar) maxColumnScroll(b calDayBox) int {
 	return n - (b.rect.h - 1)
 }
 
-// columnScroll is the scroll applied to box b, kept inside its range. A
-// column only scrolls while the hour list is shown whole.
+// columnScroll is the scroll applied to box b, kept inside its range.
 func (c *taskCalendar) columnScroll(b calDayBox) int {
 	items := c.focus == calFocusItems
-	if !c.hourListWhole() && !items {
-		return 0
-	}
 	s := clampInt(c.colScroll, 0, c.maxColumnScroll(b))
 	if items {
 		// Keep the selected entry on screen as the selection moves.
@@ -538,7 +429,7 @@ func (c *taskCalendar) columnShown(b calDayBox, s int) int {
 // scrollColumn scrolls the selected day's column by delta entries, never past
 // either end. It reports whether there is a column to scroll.
 func (c *taskCalendar) scrollColumn(day time.Time, delta int) bool {
-	if c.sub == calMonth || !c.hourListWhole() {
+	if c.sub == calMonth {
 		return false
 	}
 	for _, b := range c.layout.boxes {

@@ -247,49 +247,21 @@ func TestClickStripTaskFocusesStrip(t *testing.T) {
 	}
 }
 
-func TestWheelScrollsHourListOneRow(t *testing.T) {
-	for _, c := range []struct {
-		sub  calSub
-		w, h int
-	}{{calWeek, 64, 12}, {calDay, 40, 10}} {
-		for _, half := range []bool{false, true} {
-			a, tv := calTestApp(t, nil)
-			a.prefs.VimMode = true
-			a.prefs.TimeFormat = "24h"
-			calToSub(t, a, tv, c.sub)
-			if half {
-				calPress(a, tv, vim.R('z'))
-			}
-			ctx := fmt.Sprintf("layout %v half=%v", c.sub, half)
-			first := func() string {
-				got := calHourLabels(calScreen(a, tv, c.w, c.h), calLabel24)
-				if len(got) == 0 {
-					t.Fatalf("%s: no hour rows shown", ctx)
-				}
-				return got[0]
-			}
-			day := calDayISO(tv)
-			if got := first(); got != "00" {
-				t.Fatalf("%s: first row = %s before the wheel, want 00", ctx, got)
-			}
-			next := "01"
-			if half {
-				next = "00:30"
-			}
-			// The app sends the wheel as three steps; the list moves one row.
-			tv.scrollBy(a, 3)
-			if got := first(); got != next {
-				t.Errorf("%s: first row after one wheel step down = %s, want %s", ctx, got, next)
-			}
-			tv.scrollBy(a, -3)
-			if got := first(); got != "00" {
-				t.Errorf("%s: first row after one step down and one up = %s, want 00", ctx, got)
-			}
-			tv.scrollBy(a, -3)
-			if got := first(); got != "00" {
-				t.Errorf("%s: wheel up at the top scrolled to %s, want 00", ctx, got)
-			}
-			requireDay(t, tv, day, ctx+" wheel")
+// The wheel moves the selected day a week, in the week and day views as in
+// the month.
+func TestWheelMovesSelectedDayByWeek(t *testing.T) {
+	for _, sub := range []calSub{calWeek, calDay} {
+		a, tv := calTestApp(t, nil)
+		calToSub(t, a, tv, sub)
+		calScreen(a, tv, 120, 30)
+		ctx := fmt.Sprintf("layout %v", sub)
+		// The app sends one wheel notch as three steps.
+		tv.scrollBy(a, 3)
+		requireDay(t, tv, "2026-11-25", ctx+" wheel down")
+		tv.scrollBy(a, -3)
+		requireDay(t, tv, "2026-11-18", ctx+" wheel up")
+		if tv.calc().sub != sub {
+			t.Errorf("%s: the wheel changed the layout to %v", ctx, tv.calc().sub)
 		}
 	}
 }

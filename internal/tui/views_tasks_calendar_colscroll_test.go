@@ -69,26 +69,26 @@ func (v colView) String() string {
 	return fmt.Sprintf("above=%d entries=%v below=%d", v.above, v.entries, v.below)
 }
 
-// calColumnApp opens a layout with one very busy day and an hour list that is
-// shown whole.
+// calColumnBody is a body whose day columns hold far fewer lines than the
+// busy day has entries.
+const calColumnW, calColumnH = 120, 30
+
+// calColumnApp opens a layout with one very busy day.
 func calColumnApp(t *testing.T, sub calSub, vimOn bool) (*App, *tasksView) {
 	t.Helper()
 	a, tv := calTestApp(t, calManyTasks("2026-11-18", colScrollTotal, "zq"))
 	a.prefs.VimMode = vimOn
-	a.prefs.TimeFormat = "24h"
 	calToSub(t, a, tv, sub)
-	if got := calLabels(a, tv, 120, 70); len(got) != 24 || got[0] != "00" {
-		t.Fatalf("layout %v: hour list not shown whole: %v", sub, got)
-	}
+	calScreen(a, tv, calColumnW, calColumnH)
 	return a, tv
 }
 
 func calColumnAfter(t *testing.T, a *App, tv *tasksView) colView {
 	t.Helper()
-	return calColumnView(t, calScreen(a, tv, 120, 70))
+	return calColumnView(t, calScreen(a, tv, calColumnW, calColumnH))
 }
 
-func TestColumnScrollWhenHourListWhole(t *testing.T) {
+func TestColumnScrollsWithJK(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calColumnApp(t, sub, true)
 		ctx := fmt.Sprintf("layout %v", sub)
@@ -109,9 +109,6 @@ func TestColumnScrollWhenHourListWhole(t *testing.T) {
 			t.Errorf("%s: j selected entry %q, want none", ctx, sel.Content)
 		}
 		requireDay(t, tv, "2026-11-18", ctx+" after j")
-		if labels := calLabels(a, tv, 120, 70); len(labels) != 24 || labels[0] != "00" {
-			t.Errorf("%s: j scrolled the hour list: %v", ctx, labels)
-		}
 
 		calPress(a, tv, calRunes("jj")...)
 		if got := calColumnAfter(t, a, tv); got.above != 3 || got.entries[0] != 3 {
@@ -154,7 +151,7 @@ func TestScrolledColumnShowsMoreAboveAndBelow(t *testing.T) {
 		if want := colScrollTotal - 3 - wantEntries; got.below != want {
 			t.Errorf("%s: bottom count = %d, want +%d more", ctx, got.below, want)
 		}
-		lines := calScreen(a, tv, 120, 70)
+		lines := calScreen(a, tv, calColumnW, calColumnH)
 		if top, firstEntry := calRowOf(lines, "+3 more"), calRowOf(lines, "zq03"); top < 0 || top != firstEntry-1 {
 			t.Errorf("%s: `+3 more` on row %d, want the line right above the first entry (row %d)", ctx, top, firstEntry)
 		}

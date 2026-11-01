@@ -589,9 +589,9 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   terminal the month shows a compact grid with a count per day and the
   selected day's tasks under it. `h`/`j`/`k`/`l`
   move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
-  by half a view, and `o` opens the day's daily note. Week and day view
-  show an hour list: hourly by default, half-hourly after `z` (Vim mode),
-  scrolling with `j`/`k` when it does not fit. `Enter` and `Tab` move focus
+  by half a view, and `o` opens the day's daily note. In week and day view
+  each day is a column of its tasks, and `j`/`k` scroll a busy day's
+  column. `Enter` and `Tab` move focus
   between the day grid, the selected day's items and the No-date strip. On
   a focused item or strip task, `T` moves it to today and `@` opens a
   due-date menu, as in the desktop calendar. Unlike the

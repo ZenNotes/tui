@@ -44,38 +44,6 @@ func calHourLabels(lines []string, re *regexp.Regexp) []string {
 	return out
 }
 
-func calHours24() []string {
-	var out []string
-	for h := 0; h < 24; h++ {
-		out = append(out, fmt.Sprintf("%02d", h))
-	}
-	return out
-}
-
-func calHours12() []string {
-	var out []string
-	for h := 0; h < 24; h++ {
-		n := h % 12
-		if n == 0 {
-			n = 12
-		}
-		suffix := "AM"
-		if h >= 12 {
-			suffix = "PM"
-		}
-		out = append(out, fmt.Sprintf("%d %s", n, suffix))
-	}
-	return out
-}
-
-func requireLabels(t *testing.T, lines []string, re *regexp.Regexp, want []string, context string) {
-	t.Helper()
-	got := calHourLabels(lines, re)
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("%s: hour labels = %v, want %v\n%s", context, got, want, calScreenText(lines))
-	}
-}
-
 // calColumnOf is the cell column where text starts, or -1.
 func calColumnOf(lines []string, text string) int {
 	for _, l := range lines {
@@ -290,45 +258,27 @@ func TestWeekDayViewsHideWeekNumbers(t *testing.T) {
 	}
 }
 
-func TestHourlyLabels24h(t *testing.T) {
-	a, tv := calTestApp(t, nil)
-	a.prefs.TimeFormat = "24h"
-	for _, sub := range []calSub{calWeek, calDay} {
-		calToSub(t, a, tv, sub)
-		requireLabels(t, calScreen(a, tv, 120, 70), calLabel24, calHours24(), fmt.Sprintf("layout %v", sub))
-	}
-}
-
-func TestHourlyLabels12h(t *testing.T) {
-	a, tv := calTestApp(t, nil)
-	a.prefs.TimeFormat = "12h"
-	for _, sub := range []calSub{calWeek, calDay} {
-		calToSub(t, a, tv, sub)
-		requireLabels(t, calScreen(a, tv, 120, 70), calLabel12, calHours12(), fmt.Sprintf("layout %v", sub))
-	}
-}
-
-func TestEntriesStayOutOfHourRows(t *testing.T) {
+// Tasks carry a date but no time of day, so the week and day columns list
+// them with no hour axis beside them, in either time format.
+func TestColumnsShowNoHourAxis(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{
 		{ID: "n#0", SourcePath: "n.md", Content: "call at 15:00 sharp", Due: "2026-11-18"},
 	})
-	a.prefs.TimeFormat = "24h"
-	for _, sub := range []calSub{calWeek, calDay} {
-		calToSub(t, a, tv, sub)
-		lines := calScreen(a, tv, 120, 70)
-		text := calScreenText(lines)
-		if got := strings.Count(text, "call at 15:00"); got != 1 {
-			t.Fatalf("layout %v: entry shown %d times, want once in its column:\n%s", sub, got, text)
-		}
-		if len(calHourLabels(lines, calLabel24)) != 24 {
-			t.Fatalf("layout %v: hour list missing:\n%s", sub, text)
-		}
-		// Entries are listed from the top of the column, not by time of day:
-		// the entry cannot sit as far down as the 15 row.
-		entryRow := calRowOf(lines, "call at 15:00")
-		above := calHourLabels(lines[:entryRow+1], calLabel24)
-		if len(above) > 6 {
-			t.Errorf("layout %v: entry placed %d hour rows down the column:\n%s", sub, len(above), text)
+	for _, format := range []string{"24h", "12h"} {
+		a.prefs.TimeFormat = format
+		for _, sub := range []calSub{calWeek, calDay} {
+			calToSub(t, a, tv, sub)
+			lines := calScreen(a, tv, 120, 70)
+			text := calScreenText(lines)
+			if got := strings.Count(text, "call at 15:00"); got != 1 {
+				t.Fatalf("%s layout %v: entry shown %d times, want once in its column:\n%s", format, sub, got, text)
+			}
+			if got := calHourLabels(lines, calLabel24); len(got) != 0 {
+				t.Errorf("%s layout %v: hour labels %v shown:\n%s", format, sub, got, text)
+			}
+			if got := calHourLabels(lines, calLabel12); len(got) != 0 {
+				t.Errorf("%s layout %v: hour labels %v shown:\n%s", format, sub, got, text)
+			}
 		}
 	}
 }
@@ -351,10 +301,7 @@ func TestWeekShowsSevenColumnsInWeekStartOrder(t *testing.T) {
 		a.prefs.CalendarWeekStart = c.start
 		calToSub(t, a, tv, calWeek)
 		lines := calScreen(a, tv, 120, 70)
-		cols := requireWeekHeader(t, lines, c.order, c.start)
-		if cols[0] < 2 {
-			t.Errorf("%s: first day column starts at %d, leaving no room for the hour list", c.start, cols[0])
-		}
+		requireWeekHeader(t, lines, c.order, c.start)
 		prev := -1
 		for _, d := range c.in {
 			x := calColumnOf(lines, fmt.Sprintf("day%d", d))
@@ -378,7 +325,7 @@ func TestWeekShowsSevenColumnsInWeekStartOrder(t *testing.T) {
 func TestWeekColumnOverflowShowsMoreCount(t *testing.T) {
 	a, tv := calTestApp(t, calManyTasks("2026-11-18", 50, "zq"))
 	calToSub(t, a, tv, calWeek)
-	lines := calScreen(a, tv, 120, 60)
+	lines := calScreen(a, tv, 120, 30)
 	requireWeekHeader(t, lines, calWeekdayNames, "week view")
 	requireOverflowCount(t, lines, 50)
 }
@@ -386,7 +333,7 @@ func TestWeekColumnOverflowShowsMoreCount(t *testing.T) {
 func TestDayColumnOverflowShowsMoreCount(t *testing.T) {
 	a, tv := calTestApp(t, calManyTasks("2026-11-18", 50, "zq"))
 	calToSub(t, a, tv, calDay)
-	requireOverflowCount(t, calScreen(a, tv, 120, 60), 50)
+	requireOverflowCount(t, calScreen(a, tv, 120, 30), 50)
 }
 
 func requireOverflowCount(t *testing.T, lines []string, total int) {
@@ -434,9 +381,6 @@ func TestDayShowsOneFullWidthColumn(t *testing.T) {
 	if cols := calWeekdayHeader(lines, calWeekdayNames); cols != nil {
 		t.Errorf("day view shows seven day columns:\n%s", text)
 	}
-	if len(calHourLabels(lines, calLabel24)) != 24 {
-		t.Errorf("day view hour list missing:\n%s", text)
-	}
 }
 
 func TestWeekAndDayStripBelowGrid(t *testing.T) {
@@ -452,20 +396,16 @@ func TestWeekAndDayStripBelowGrid(t *testing.T) {
 		if got := strings.Count(text, "loose strip task"); got != 1 {
 			t.Fatalf("layout %v: undated task shown %d times, want once:\n%s", sub, got, text)
 		}
-		if calRowOf(lines, "column entry") < 0 {
+		entry := calRowOf(lines, "column entry")
+		if entry < 0 {
 			t.Fatalf("layout %v: dated entry missing:\n%s", sub, text)
 		}
-		last := -1
-		for i, l := range lines {
-			if m := calLabel24.FindStringSubmatch(l); m != nil && m[1] == "23" {
-				last = i
-			}
+		strip := calRowOf(lines, "No date")
+		if strip <= entry || calRowOf(lines, "loose strip task") != strip+1 {
+			t.Errorf("layout %v: strip at row %d is not under the columns (entry row %d):\n%s", sub, strip, entry, text)
 		}
-		if last < 0 {
-			t.Fatalf("layout %v: no 23 hour row:\n%s", sub, text)
-		}
-		if row := calRowOf(lines, "loose strip task"); row <= last {
-			t.Errorf("layout %v: strip row %d is not below the last hour row %d", sub, row, last)
+		if strip != len(lines)-1-tv.calc().layout.stripRows {
+			t.Errorf("layout %v: strip header on row %d is not pinned to the bottom:\n%s", sub, strip, text)
 		}
 	}
 }
@@ -473,21 +413,25 @@ func TestWeekAndDayStripBelowGrid(t *testing.T) {
 func TestWeekTooSmallBelowMinimum(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{{ID: "n#0", SourcePath: "n.md", Content: "something", Due: "2026-11-18"}})
 	calToSub(t, a, tv, calWeek)
-	for _, size := range [][2]int{{63, 12}, {64, 11}} {
+	m := calMin[calWeek]
+	for _, size := range [][2]int{{m[0] - 1, m[1]}, {m[0], m[1] - 1}} {
 		lines := calScreen(a, tv, size[0], size[1])
 		requireTooSmall(t, lines, true, fmt.Sprintf("%dx%d", size[0], size[1]))
 		if strings.Contains(calScreenText(lines), "something") {
 			t.Errorf("%dx%d: entry shown while too small", size[0], size[1])
 		}
 	}
-	lines := calScreen(a, tv, 64, 12)
-	requireTooSmall(t, lines, false, "64x12")
-	requireWeekHeader(t, lines, calWeekdayNames, "64x12")
-	if len(lines) != 13 {
-		t.Errorf("render is %d lines, want toolbar plus 12", len(lines))
+	lines := calScreen(a, tv, m[0], m[1])
+	requireTooSmall(t, lines, false, "at the minimum")
+	requireWeekHeader(t, lines, calWeekdayNames, "at the minimum")
+	if !strings.Contains(calScreenText(lines), "some") {
+		t.Errorf("at the minimum the week does not show the entry:\n%s", calScreenText(lines))
+	}
+	if len(lines) != m[1]+1 {
+		t.Errorf("render is %d lines, want toolbar plus %d", len(lines), m[1])
 	}
 	for i, l := range lines {
-		if lipgloss.Width(l) > 64 {
+		if lipgloss.Width(l) > m[0] {
 			t.Errorf("line %d is %d cells wide", i, lipgloss.Width(l))
 		}
 	}
@@ -496,23 +440,24 @@ func TestWeekTooSmallBelowMinimum(t *testing.T) {
 func TestDayTooSmallBelowMinimum(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{{ID: "n#0", SourcePath: "n.md", Content: "dt1", Due: "2026-11-18"}})
 	calToSub(t, a, tv, calDay)
-	for _, size := range [][2]int{{39, 10}, {40, 9}} {
+	m := calMin[calDay]
+	for _, size := range [][2]int{{m[0] - 1, m[1]}, {m[0], m[1] - 1}} {
 		lines := calScreen(a, tv, size[0], size[1])
 		requireTooSmall(t, lines, true, fmt.Sprintf("%dx%d", size[0], size[1]))
 		if strings.Contains(calScreenText(lines), "dt1") {
 			t.Errorf("%dx%d: entry shown while too small", size[0], size[1])
 		}
 	}
-	lines := calScreen(a, tv, 40, 10)
-	requireTooSmall(t, lines, false, "40x10")
+	lines := calScreen(a, tv, m[0], m[1])
+	requireTooSmall(t, lines, false, "at the minimum")
 	if !strings.Contains(calScreenText(lines), "dt1") {
-		t.Errorf("40x10: day column does not show the entry:\n%s", calScreenText(lines))
+		t.Errorf("at the minimum the day column does not show the entry:\n%s", calScreenText(lines))
 	}
-	if len(lines) != 11 {
-		t.Errorf("render is %d lines, want toolbar plus 10", len(lines))
+	if len(lines) != m[1]+1 {
+		t.Errorf("render is %d lines, want toolbar plus %d", len(lines), m[1])
 	}
 	for i, l := range lines {
-		if lipgloss.Width(l) > 40 {
+		if lipgloss.Width(l) > m[0] {
 			t.Errorf("line %d is %d cells wide", i, lipgloss.Width(l))
 		}
 	}
@@ -534,4 +479,54 @@ func TestTooSmallMonthDoesNotSwitchModeButEscDoes(t *testing.T) {
 	lines := calScreen(a, tv, 64, 12)
 	requireTooSmall(t, lines, false, "week at 64x12")
 	requireWeekHeader(t, lines, calWeekdayNames, "week at 64x12")
+}
+
+// z is not a calendar key in any view; the editor keeps its folds.
+func TestCalendarIgnoresZ(t *testing.T) {
+	a, tv := calTestApp(t, calManyTasks("2026-11-18", 3, "zt"))
+	a.prefs.VimMode = true
+	for _, sub := range []calSub{calMonth, calWeek, calDay} {
+		calToSub(t, a, tv, sub)
+		before := calScreenText(calScreen(a, tv, 120, 40))
+		calPress(a, tv, vim.R('z'))
+		if after := calScreenText(calScreen(a, tv, 120, 40)); after != before {
+			t.Errorf("z changed layout %v:\nbefore:\n%s\nafter:\n%s", sub, before, after)
+		}
+		if tv.calc().sub != sub {
+			t.Errorf("layout after z = %v, want %v", tv.calc().sub, sub)
+		}
+	}
+}
+
+func TestEditorFoldKeysUnaffected(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	a.prefs.VimMode = true
+	a.openNote("note.md", true)
+	buf := a.activeBuffer()
+	if buf == nil {
+		t.Fatal("no active note buffer")
+	}
+	buf.ed.ReplaceText("# A\na1\na2\n# B\nb1")
+	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 0})
+	press := func(s string) {
+		for _, r := range s {
+			a.handleKey(vim.R(r))
+		}
+	}
+	press("zc")
+	if end, ok := buf.ed.IsFoldStart(0); !ok || end != 2 {
+		t.Errorf("zc: fold at line 0 = %d %v, want 0..2", end, ok)
+	}
+	press("zo")
+	if _, ok := buf.ed.IsFoldStart(0); ok {
+		t.Error("zo did not open the fold")
+	}
+	press("zM")
+	if len(buf.ed.Folds()) != 2 {
+		t.Errorf("zM: folds = %v, want both sections", buf.ed.Folds())
+	}
+	press("zR")
+	if len(buf.ed.Folds()) != 0 {
+		t.Errorf("zR: folds = %v, want none", buf.ed.Folds())
+	}
 }

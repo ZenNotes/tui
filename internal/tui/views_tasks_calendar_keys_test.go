@@ -379,7 +379,7 @@ func TestCalendarHintsFollowFocus(t *testing.T) {
 		}
 	}
 	calToSub(t, a, tv, calWeek)
-	if week := stripAnsi(tv.hint(a)); !strings.Contains(week, "z hour step") || strings.Contains(week, "due today") {
+	if week := stripAnsi(tv.hint(a)); !strings.Contains(week, "j/k scroll") || strings.Contains(week, "due today") {
 		t.Errorf("week grid hint = %s", week)
 	}
 	calPress(a, tv, vim.KeyTab)
