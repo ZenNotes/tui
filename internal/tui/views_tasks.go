@@ -766,6 +766,16 @@ func sameDay(a, b time.Time) bool {
 
 // --- keys ---
 
+func (v *tasksView) ownsKey(a *App, k vim.Key) bool {
+	switch v.mode {
+	case "kanban":
+		return k.IsRune('g')
+	case "calendar":
+		return !v.dayFocus && (k.IsRune('[') || k.IsRune(']'))
+	}
+	return false
+}
+
 func (v *tasksView) handleKey(a *App, k vim.Key) bool {
 	if k.IsRune('S') {
 		a.savedTaskFilters()

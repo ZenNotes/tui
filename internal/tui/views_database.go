@@ -638,6 +638,10 @@ func (v *databaseView) renderRaw(a *App, w, h int) []string {
 
 // --- keys ---
 
+func (v *databaseView) ownsKey(a *App, k vim.Key) bool {
+	return v.doc != nil && v.raw && k.IsRune('g')
+}
+
 func (v *databaseView) handleKey(a *App, k vim.Key) bool {
 	if v.doc == nil {
 		return false

@@ -108,6 +108,7 @@ type App struct {
 	overlay  overlay
 	leader   *leaderState
 	navKeys  []vim.Key
+	tabSeq   []vim.Key // first key of a buffer/tab sequence typed outside the editor
 	paneKeys bool
 
 	// tagMenu is the tag completion under the cursor; tagDismissed the token
@@ -907,6 +908,8 @@ func (a *App) renderStatusBar() string {
 		suffix = "SPC " + a.leader.pendingLabel()
 	} else if len(a.navKeys) > 0 {
 		suffix = vim.KeysString(a.navKeys)
+	} else if len(a.tabSeq) > 0 {
+		suffix = vim.KeysString(a.tabSeq)
 	} else if a.paneKeys {
 		suffix = "^W"
 	}
