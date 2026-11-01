@@ -37,6 +37,12 @@ type Vault struct {
 	// desktop's renderer and a server do. `zn mcp` sets it. The CLI's listings and
 	// the TUI draw a database themselves and leave it off.
 	RecordPages bool
+
+	// WeekStart is the first day of the week for repeat rules counted in
+	// weeks. Monday by default.
+	WeekStart time.Weekday
+	// Now is the clock the task toggles read; nil means time.Now.
+	Now func() time.Time
 }
 
 // Open binds a Vault to an existing directory.
@@ -52,7 +58,15 @@ func Open(root string) (*Vault, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("not a directory: %s", abs)
 	}
-	return &Vault{root: abs, fileMode: 0o644, dirMode: 0o755, SyncTitleHeading: true}, nil
+	return &Vault{root: abs, fileMode: 0o644, dirMode: 0o755, SyncTitleHeading: true, WeekStart: time.Monday}, nil
+}
+
+// now is the current time on the vault's clock.
+func (v *Vault) now() time.Time {
+	if v.Now != nil {
+		return v.Now()
+	}
+	return time.Now()
 }
 
 // Root is the absolute vault directory.
@@ -1131,8 +1145,9 @@ func (v *Vault) ScanTasksForPath(rel string, opts ParseTasksOptions) ([]Task, er
 }
 
 // ToggleTask flips the task named by an id, counted in the given grammar.
-// Finishing a recurring task writes its next occurrence and returns the finished
-// one, whose id moved down past it. Exclusion-blind on purpose: an explicit id is an explicit ask.
+// Exclusion-blind on purpose: an explicit id is an explicit ask. Finishing a
+// recurring task writes its next occurrence above it and returns the finished
+// one, whose id moved down past it. The remote backend toggles plainly instead.
 // Returns (nil, nil) when the id no longer matches a task.
 func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	rel, indexStr, err := SplitTaskID(taskID)
@@ -1151,11 +1166,11 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	title := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 	opts := ParseTasksOptions{IncludeExcluded: true, Dialect: dialect}
 	if indexStr == "task" {
-		current, found := parseTaskFile(relPosix, title, folder, strings.ReplaceAll(string(body), "\r\n", "\n"), dialect)
+		_, found := parseTaskFile(relPosix, title, folder, strings.ReplaceAll(string(body), "\r\n", "\n"), dialect)
 		if !found {
 			return nil, nil
 		}
-		next := ToggleFileTaskInBody(string(body), current.Checked, time.Now())
+		next, _ := RollTaskFileInBody(string(body), RollComplete, v.now(), v.WeekStart)
 		if _, err := v.WriteNote(relPosix, next); err != nil {
 			return nil, err
 		}
@@ -1170,7 +1185,12 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	next, finalIndex, found := ToggleTaskRepeating(string(body), targetIndex, dialect, time.Now())
+	next, inserted, found := RollTaskInBody(string(body), targetIndex, dialect, RollComplete, v.now(), v.WeekStart)
+	finalIndex := targetIndex + inserted
+	if found && inserted == 0 {
+		// A task with an `@repeat:` rule rolls as the desktop app rolls it.
+		next, finalIndex, found = ToggleTaskRepeating(string(body), targetIndex, dialect, v.now())
+	}
 	if !found {
 		return nil, nil
 	}

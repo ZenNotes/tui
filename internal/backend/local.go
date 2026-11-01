@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/vault"
@@ -21,6 +22,10 @@ func newLocal(root string, opts Options) (*Local, error) {
 		return nil, err
 	}
 	v.SyncTitleHeading = opts.SyncTitleHeading
+	if opts.WeekStartSunday {
+		v.WeekStart = time.Sunday
+	}
+	v.Now = opts.Now
 	return &Local{vault: v}, nil
 }
 

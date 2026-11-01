@@ -3,8 +3,13 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ZenNotes/tui/internal/backend"
 )
 
 // The desktop MCP server's tool names; the Go server must offer them all.
@@ -86,5 +91,33 @@ func TestEncodedStringSize(t *testing.T) {
 	// An encoder may write a bad byte as a character or an escape. The larger is counted.
 	if got := encodedStringSize("bad\xff"); got != 9 {
 		t.Errorf("a bad byte: %d", got)
+	}
+}
+
+// toggle_task rolls a repeating task the way `zn task toggle` does: the open
+// copy for the next date goes above the ticked line.
+func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "inbox", "plants.md")
+	note := "intro\n- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\noutro\n"
+	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/plants.md#0"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	want := "intro\n- [ ] Water plants scheduled:2026-11-05 repeat:mon,thu\n" +
+		"- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\noutro\n"
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != want {
+		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
 	}
 }
