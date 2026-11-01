@@ -30,6 +30,9 @@ type noteBuffer struct {
 	afterLoad   []func(*noteBuffer)
 	loadErr     error
 	rows        []rowInfo
+	// focusRows is the wrapping of the pane that last drew this buffer with
+	// focus; rows belongs to whichever pane drew it last.
+	focusRows []rowInfo
 
 	words        int
 	wordsVersion int

@@ -444,6 +444,9 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	for len(out) < h {
 		out = append(out, padRight(th.Muted.Render("~"), w))
 	}
+	if focused {
+		buf.focusRows = append(buf.focusRows[:0], buf.rows...)
+	}
 	return strings.Join(out, "\n")
 }
 

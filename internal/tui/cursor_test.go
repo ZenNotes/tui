@@ -206,6 +206,12 @@ func TestInsertCursorNormalAndVisualKeepTheBlock(t *testing.T) {
 			if !found {
 				t.Fatalf("no reverse-video cell on the cursor character; reverse cells: %v", cells)
 			}
+			// The block is the character rendered with the cursor style (plus
+			// the selection background inside a visual range), unchanged.
+			want := a.styleFor(styleKey{cursor: true, visual: keys != ""}).Render("o")
+			if !strings.Contains(view, want) {
+				t.Fatalf("block cell is not drawn as %q", want)
+			}
 			if keys == "" && len(cells) != 1 {
 				t.Fatalf("normal mode draws %d reverse cells, want 1", len(cells))
 			}
@@ -250,6 +256,154 @@ func TestInsertCursorWaitsForTheNoteToLoad(t *testing.T) {
 		}
 		if len(reverseCells(view)) != 0 {
 			t.Fatalf("vim=%v: block still drawn once loaded", vimMode)
+		}
+	}
+}
+
+// assertBarOnChar fails unless the bar is visible and sits on the cell where
+// the view draws the character at the buffer's cursor.
+func assertBarOnChar(t *testing.T, name string, a *App, buf *noteBuffer, view string) {
+	t.Helper()
+	cur := buf.ed.Cursor()
+	want := string(buf.ed.LineRunes(cur.Line)[cur.Col])
+	if !a.cursor.visible || a.cursor.shape != cursorShapeBar {
+		t.Fatalf("%s: cursor = %+v, want a visible bar", name, a.cursor)
+	}
+	if got := cellText(view, a.cursor.x, a.cursor.y); got != want {
+		t.Fatalf("%s: bar at (%d,%d) sits on %q, want %q", name, a.cursor.x, a.cursor.y, got, want)
+	}
+	if cells := reverseCells(view); len(cells) != 0 {
+		t.Fatalf("%s: reverse-video cells drawn: %v", name, cells)
+	}
+}
+
+func TestInsertCursorLayoutFollowsEditing(t *testing.T) {
+	a, buf := cursorApp(t, "first line\nsecond line\nthird line\n", 80)
+	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 0})
+	a.View()
+	start := a.cursor
+
+	a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("xyz")})
+	view := a.View()
+	if a.cursor.x != start.x+3 || a.cursor.y != start.y {
+		t.Fatalf("after typing the bar is %+v, want 3 cells right of %+v", a.cursor, start)
+	}
+	if got := cellText(view, a.cursor.x, a.cursor.y); got != "f" {
+		t.Fatalf("after typing the bar sits on %q, want f", got)
+	}
+
+	a.Update(tea.KeyMsg{Type: tea.KeyDown})
+	a.View()
+	if a.cursor.y != start.y+1 {
+		t.Fatalf("after Down the bar row is %d, want %d", a.cursor.y, start.y+1)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyRight})
+	view = a.View()
+	assertBarOnChar(t, "after arrows", a, buf, view)
+
+	a.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	view = a.View()
+	assertBarOnChar(t, "after a deletion", a, buf, view)
+
+	target := screenCell{x: start.x + 5, y: start.y + 2}
+	a.Update(tea.MouseMsg{X: target.x, Y: target.y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	view = a.View()
+	if a.cursor.x != target.x || a.cursor.y != target.y {
+		t.Fatalf("after a click the bar is %+v, want %+v", a.cursor, target)
+	}
+	assertBarOnChar(t, "after a click", a, buf, view)
+}
+
+func TestInsertCursorLayoutAcrossLayouts(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(a *App)
+	}{
+		{"single pane", func(a *App) {}},
+		{"vertical split", func(a *App) { a.splitPane(true) }},
+		{"horizontal split", func(a *App) { a.splitPane(false) }},
+		{"sidebar open", func(a *App) { a.sidebarOpen = true }},
+		{"side panel open", func(a *App) { a.outlineOpen = true }},
+		{"tabs hidden", func(a *App) { a.prefs.TabsOff = true }},
+		{"zen mode", func(a *App) { a.zen = true }},
+		{"split note mode", func(a *App) { a.setPaneMode(modeSplit) }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a, buf := cursorApp(t, "alpha beta\nline with Qcursor here\nomega\n", 100)
+			c.setup(a)
+			a.layout()
+			buf.ed.SetCursor(vim.Pos{Line: 1, Col: 10})
+			assertBarOnChar(t, c.name, a, buf, a.View())
+		})
+	}
+}
+
+func TestInsertCursorLayoutSecondPaneFocused(t *testing.T) {
+	for _, vertical := range []bool{true, false} {
+		a, buf := cursorApp(t, "alpha beta\nline with Qcursor here\nomega\n", 100)
+		first := a.activePane
+		a.splitPane(vertical)
+		if a.activePane == first {
+			t.Fatalf("vertical=%v: split did not move focus", vertical)
+		}
+		a.openNote("Alpha.md", true)
+		a.layout()
+		buf = a.activeBuffer()
+		buf.ed.Feed("i")
+		buf.ed.SetCursor(vim.Pos{Line: 1, Col: 10})
+		assertBarOnChar(t, "second pane", a, buf, a.View())
+		if rc := a.contentRect(a.activePane); a.cursor.x < rc.x || a.cursor.y < rc.y {
+			t.Fatalf("vertical=%v: bar %+v outside the focused pane %+v", vertical, a.cursor, rc)
+		}
+	}
+}
+
+func TestInsertCursorLayoutFollowsResize(t *testing.T) {
+	text := strings.Repeat("abcdefghi ", 10) + "\n"
+	a, buf := cursorApp(t, text, 120)
+	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 95})
+	view := a.View()
+	assertBarOnChar(t, "wide", a, buf, view)
+	wide := a.cursor
+
+	a.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	view = a.View()
+	if a.cursor == wide {
+		t.Fatalf("bar stayed at %+v after the line rewrapped", wide)
+	}
+	if a.cursor.y <= wide.y {
+		t.Fatalf("bar row %d, want below %d once the line rewraps", a.cursor.y, wide.y)
+	}
+	assertBarOnChar(t, "narrow", a, buf, view)
+}
+
+// With the same note open in two panes of different sizes, the bar belongs to
+// the focused pane's own wrapping whichever pane is painted first.
+func TestInsertCursorLayoutFirstPaneFocusedUnequalPanes(t *testing.T) {
+	text := strings.Repeat("abcdefghi ", 20) + "\n"
+	for _, vertical := range []bool{true, false} {
+		for _, focusFirst := range []bool{true, false} {
+			a, _ := cursorApp(t, text, 100)
+			first := a.activePane
+			a.splitPane(vertical)
+			if a.activePane == first {
+				t.Fatalf("vertical=%v: split did not move focus", vertical)
+			}
+			a.openNote("Alpha.md", true)
+			a.resizePane(0.3)
+			a.layout()
+			if focusFirst {
+				a.activePane = first
+			}
+			buf := a.activeBuffer()
+			buf.ed.Feed("i")
+			buf.ed.SetCursor(vim.Pos{Line: 0, Col: 85})
+			name := "first pane"
+			if !focusFirst {
+				name = "second pane"
+			}
+			assertBarOnChar(t, name, a, buf, a.View())
 		}
 	}
 }

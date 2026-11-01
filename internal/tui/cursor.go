@@ -35,12 +35,13 @@ func (a *App) terminalCursorOwns(buf *noteBuffer) bool {
 
 // insertionCell is the screen cell where the next typed character in buf
 // lands: the pane's content origin, the gutter, and the width of the text
-// before the cursor on its wrapped row.
+// before the cursor on its wrapped row, all taken from the focused pane's own
+// layout.
 func (a *App) insertionCell(buf *noteBuffer) (x, y int, ok bool) {
 	cur := buf.ed.Cursor()
 	line := buf.ed.LineRunes(cur.Line)
 	rc := a.contentRect(a.activePane)
-	for _, row := range buf.rows {
+	for _, row := range buf.focusRows {
 		if row.line != cur.Line || cur.Col < row.segStart || cur.Col > row.segEnd {
 			continue
 		}
