@@ -597,11 +597,23 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   `g` regroups by status, priority, due date, folder or `field:<key>`.
   `:boardoptions` (also F2 → Board options) sets the folder root, column labels,
   custom statuses and card order. Folder boards keep cross-folder moves
-  disabled. On the calendar Enter lists a day's tasks and `o` opens its
-  daily note. Filters match the desktop's substring search over task text,
+  disabled. Filters match the desktop's substring search over task text,
   note titles, `!priority`, `#tags` and `@fields`. `:filters` / `:savefilter`
   manage shared named queries. Prefix terminal operators with `where:`,
   for example `where: is:open due:today -meeting`.
+  The calendar has month, week and day views; `Esc` cycles them, and a
+  start in `calendar` mode always opens the month grid. On a narrow
+  terminal the month shows a compact grid with a count per day and the
+  selected day's tasks under it. `h`/`j`/`k`/`l`
+  move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
+  by half a view, and `o` opens the day's daily note. In week and day view
+  each day is a column of its tasks, and `j`/`k` scroll a busy day's
+  column. `Enter` and `Tab` move focus
+  between the day grid, the selected day's items and the No-date strip. On
+  a focused item or strip task, `T` moves it to today and `@` opens a
+  due-date menu, as in the desktop calendar. Unlike the
+  desktop calendar, the terminal calendar also places a task on its
+  scheduled date (marked) as well as its due date.
 - **Tags**: `Tab` multi-selects, `a` toggles any/all, `r`/`x` rename or
   remove a tag everywhere.
 - **Databases**: every `.base` folder and every loose `.csv` file, with

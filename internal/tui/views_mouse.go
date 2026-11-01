@@ -41,29 +41,7 @@ func (v *tasksView) click(a *App, p *pane, x, y int, m tea.MouseMsg, double bool
 			a.openTaskSource(t)
 		}
 	case "calendar":
-		gridX := x - 1
-		gridY := y - 1
-		if day, ok := dayAtCell(v.calFirst, v.calWeeks, gridX, gridY, a.prefs.CalendarShowWeekNumbers); ok {
-			v.selectDay(a, day)
-			v.dayFocus = false
-			if double {
-				v.calendarKey(a, vim.KeyEnter)
-			}
-			return
-		}
-		listTop := 1 + 2 + v.calWeeks + 1
-		idx := y - listTop
-		if idx >= 0 && idx < len(v.dayTasks) {
-			v.dayFocus = true
-			v.dayCursor = idx
-			t := v.dayTasks[idx]
-			switch {
-			case right:
-				a.taskMenu(t)
-			case double:
-				a.openTaskSource(t)
-			}
-		}
+		v.calc().click(a, v, x, y-1, right, double)
 	default:
 		idx := v.list.scroll + y - 1
 		if idx < 0 || idx >= len(v.rows) || v.rows[idx].task == nil {
@@ -170,10 +148,8 @@ func (v *tasksView) selectionPos(a *App, p *pane) (int, int, bool) {
 		}
 		return a.contentRect(p).x + v.col*(colW+1) + 2, top + 1 + 2 + (v.card-start)*3 + 1, true
 	case "calendar":
-		if v.dayFocus {
-			return a.contentRect(p).x + 4, top + 1 + 2 + v.calWeeks + 1 + v.dayCursor + 1, true
-		}
-		return a.contentRect(p).x + 8, top + 1 + 2 + 1, true
+		cx, cy := v.calc().selectionCell(v.day)
+		return a.contentRect(p).x + cx, top + 1 + cy, true
 	}
 	return a.contentRect(p).x + 4, top + 1 + (v.list.cursor - v.list.scroll) + 1, true
 }

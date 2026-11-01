@@ -9,7 +9,14 @@ func (v *tasksView) hintPairs(a *App) []hintPair {
 	case "kanban":
 		return append([]hintPair{{"key:h/l", "column"}, {"key:j/k", "card"}, {"key:H/L", "move card"}, {"nav.toggleTask", "toggle"}, {"key:Enter", "open"}, {"key:g", "group by"}, {"key:m", "menu"}}, common...)
 	case "calendar":
-		return append([]hintPair{{"key:h/j/k/l", "day"}, {"key:[/]", "month"}, {"key:t", "today"}, {"key:Enter", "day tasks"}, {"key:o", "daily note"}}, common...)
+		c := v.calc()
+		if c.focus != calFocusGrid {
+			return append([]hintPair{{"key:j/k", "task"}, {"nav.toggleTask", "toggle"}, {"key:Enter", "open"}, {"key:T", "due today"}, {"key:@", "due date"}, {"key:</>", "shift due"}, {"nav.contextMenu", "menu"}, {"key:Tab", "focus"}, {"key:Esc", "back"}}, common...)
+		}
+		if c.sub != calMonth {
+			return append([]hintPair{{"key:h/l", "day"}, {"key:j/k", "scroll"}, {"key:[/]", "month"}, {"key:t", "today"}, {"key:Esc", "month/week/day"}, {"key:Tab", "focus"}, {"key:Enter", "day tasks"}, {"key:o", "daily note"}}, common...)
+		}
+		return append([]hintPair{{"key:h/j/k/l", "day"}, {"key:[/]", "month"}, {"key:t", "today"}, {"key:Esc", "month/week/day"}, {"key:Tab", "focus"}, {"key:Enter", "day tasks"}, {"key:o", "daily note"}}, common...)
 	}
 	return append([]hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"nav.toggleTask", "toggle"}, {"nav.openResult", "open"}, {"key:p", "priority"}, {"key:d", "due"}, {"key:w", "waiting"}, {"key:c", "cancel"}, {"key:/", "in progress"}, {"key:e", "edit"}, {"key:s", "field"}, {"key:</>", "shift due"}, {"tasks.moveTaskUp|tasks.moveTaskDown", "reorder"}, {"nav.contextMenu", "menu"}}, common...)
 }

@@ -508,8 +508,13 @@ func (a *App) mouseRight(m tea.MouseMsg) {
 			return
 		}
 		if t.view != nil {
+			inner := a.contentRect(hit.pane)
+			x, y := m.X-inner.x, m.Y-inner.y
+			if x < 0 || y < 0 || x >= inner.w || y >= inner.h {
+				return
+			}
 			if c, ok := t.view.(clicker); ok {
-				c.click(a, hit.pane, m.X-hit.pane.rect.x, m.Y-hit.pane.rect.y-a.tabBarHeight(), m, false)
+				c.click(a, hit.pane, x, y, m, false)
 			}
 			return
 		}
