@@ -150,3 +150,41 @@ func TestHeldKeyIsDroppedWhenVimModeTurnsOff(t *testing.T) {
 	typeKeys(a, "b")
 	requireDropped(t, a, pv)
 }
+
+func TestCalendarBracketsChangeTheMonthAtOnce(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	if err := a.openTasksMode("calendar"); err != nil {
+		t.Fatal(err)
+	}
+	tv := a.activeTab().view.(*tasksView)
+	month := tv.month
+	typeKeys(a, "]")
+	if want := month.AddDate(0, 1, 0); !tv.month.Equal(want) {
+		t.Fatalf("Tasks calendar ]: month = %v, want %v", tv.month, want)
+	}
+	a.toggleSidePanel(&a.calendarOpen, focusCalendar)
+	month = a.calendar.month
+	typeKeys(a, "[")
+	if want := month.AddDate(0, -1, 0); !a.calendar.month.Equal(want) {
+		t.Fatalf("calendar panel [: month = %v, want %v", a.calendar.month, want)
+	}
+}
+
+func TestKanbanGChangesTheGroupingAtOnce(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	a.openNote("note.md", true)
+	if err := a.openTasksMode("kanban"); err != nil {
+		t.Fatal(err)
+	}
+	board := a.activePane.active
+	tv := a.activeTab().view.(*tasksView)
+	before := tv.groupBy
+	typeKeys(a, "g")
+	if tv.groupBy == before {
+		t.Fatalf("g on the board: still grouped by %q", tv.groupBy)
+	}
+	typeKeys(a, "]b")
+	if a.activePane.active == board {
+		t.Fatal("]b from the board did not switch tabs")
+	}
+}

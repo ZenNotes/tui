@@ -329,6 +329,10 @@ func (p *calendarPanel) render(a *App, w, h int) string {
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
 
+func (p *calendarPanel) ownsKey(a *App, k vim.Key) bool {
+	return k.IsRune('[') || k.IsRune(']')
+}
+
 func (p *calendarPanel) handleKey(a *App, k vim.Key) {
 	if k.Is("esc") {
 		a.focus = focusPane

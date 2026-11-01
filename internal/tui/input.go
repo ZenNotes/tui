@@ -155,6 +155,9 @@ func (a *App) tabSequenceKey(k vim.Key, held []vim.Key) bool {
 		a.surfaceKey(seq[0])
 		return false
 	}
+	if a.surfaceOwnsKey(k) {
+		return false
+	}
 	for _, id := range seqIDs {
 		keys := bindingKeys(a.keymap.Binding(id))
 		if len(keys) > 1 && sameKey(k, keys[0]) {
@@ -167,6 +170,27 @@ func (a *App) tabSequenceKey(k vim.Key, held []vim.Key) bool {
 		}
 	}
 	return false
+}
+
+// keyOwner is a surface that binds a key on its own, such as the calendars'
+// `[` and `]` for the month or the Kanban board's `g` for its grouping. A
+// buffer or tab sequence does not hold that key back, so it acts at once.
+type keyOwner interface {
+	ownsKey(a *App, k vim.Key) bool
+}
+
+func (a *App) surfaceOwnsKey(k vim.Key) bool {
+	var s any
+	switch a.focus {
+	case focusCalendar:
+		s = a.calendar
+	case focusPane:
+		if t := a.activeTab(); t != nil && t.view != nil {
+			s = t.view
+		}
+	}
+	o, ok := s.(keyOwner)
+	return ok && o.ownsKey(a, k)
 }
 
 // completionKey takes the keys insert-mode completion owns: the ones that
