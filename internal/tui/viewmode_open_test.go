@@ -1,9 +1,16 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/ZenNotes/tui/internal/periodic"
+	"github.com/ZenNotes/tui/internal/templates"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 const fmPreviewNote = "---\nview-mode: preview\npage-status: done\n---\n# Body\n"
@@ -352,5 +359,213 @@ func TestReferencePaneStaysPreview(t *testing.T) {
 				t.Fatalf("modes %v, want preview", modesOf(ts))
 			}
 		})
+	}
+}
+
+const (
+	fmPreviewBody = "---\nview-mode: preview\n---\n# New\n"
+	fmRuleBody    = "---\npage-status: done\n---\n# New\n"
+)
+
+// previewEverywhere makes every frontmatter and default route point at preview
+// so only the new-note handling can keep a note in edit.
+func previewEverywhere(a *App, defaultMode string) {
+	enableViewModeField(a)
+	a.prefs.ViewModeRules = map[string]string{"page-status=done": "preview"}
+	a.prefs.DefaultPaneMode = defaultMode
+	a.deferReads = true
+}
+
+func activeNotePath(t *testing.T, a *App) string {
+	t.Helper()
+	tb := a.activePane.activeTab()
+	if tb == nil {
+		t.Fatal("no active tab")
+	}
+	return tb.path
+}
+
+// wantEditBeforeAndAfterLoad checks the active note's mode across the load.
+func wantEditBeforeAndAfterLoad(t *testing.T, a *App) string {
+	t.Helper()
+	p := activeNotePath(t, a)
+	if got := modeOf(t, a, p); got != modeEdit {
+		t.Fatalf("before load: %q, want edit", got)
+	}
+	loadDeferred(t, a, p)
+	if got := modeOf(t, a, p); got != modeEdit {
+		t.Fatalf("after load: %q, want edit", got)
+	}
+	if len(a.newNotes) != 0 {
+		t.Fatalf("new-note mark left behind: %v", a.newNotes)
+	}
+	return p
+}
+
+func TestNewNoteFromTemplateOpensInEdit(t *testing.T) {
+	for _, body := range []string{fmPreviewBody, fmRuleBody} {
+		for _, def := range []string{"preview", "split"} {
+			a, _ := newFeatureTestApp(t)
+			previewEverywhere(a, def)
+			tpl := templates.Template{ID: "custom:x", Name: "X", Body: body}
+			a.createFromTemplate(tpl)
+			typeText(a, "From Template")
+			a.overlay.handleKey(a, enterKey())
+			wantEditBeforeAndAfterLoad(t, a)
+		}
+	}
+}
+
+func TestNewBlankNoteOpensInEditWithFeatureOn(t *testing.T) {
+	for _, def := range []string{"preview", "split"} {
+		for _, body := range []string{fmPreviewBody, fmRuleBody} {
+			a, _ := newFeatureTestApp(t)
+			previewEverywhere(a, def)
+			b := body
+			a.createNote(vault.FolderInbox, "Blank", "", &b, true)
+			wantEditBeforeAndAfterLoad(t, a)
+		}
+	}
+}
+
+func useDailyTemplate(t *testing.T, a *App, body string) {
+	t.Helper()
+	raw := templates.ComposeFile(templates.ComposeInput{Name: "Daily FM", Body: body})
+	if _, err := a.backend.WriteTemplate(context.Background(), vault.WriteTemplateInput{Slug: "dailyfm", Raw: raw}); err != nil {
+		t.Fatal(err)
+	}
+	a.idx.settings.DailyNotes.Enabled = true
+	a.idx.settings.DailyNotes.TemplateID = "custom:dailyfm"
+}
+
+func TestNewPeriodicNoteOpensInEdit(t *testing.T) {
+	for _, body := range []string{fmPreviewBody, fmRuleBody} {
+		a, _ := newFeatureTestApp(t)
+		useDailyTemplate(t, a, body)
+		previewEverywhere(a, "preview")
+		a.openPeriodicOn(periodic.Daily, time.Now())
+		wantEditBeforeAndAfterLoad(t, a)
+	}
+}
+
+func TestExistingPeriodicNoteFollowsFrontmatter(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	useDailyTemplate(t, a, fmPreviewBody)
+	previewEverywhere(a, "edit")
+	a.openPeriodicOn(periodic.Daily, time.Now())
+	p := activeNotePath(t, a)
+	loadDeferred(t, a, p)
+	a.closeTab(a.activePane, a.activePane.findTab(p))
+	a.openPeriodicOn(periodic.Daily, time.Now())
+	if got := modeOf(t, a, p); got != modeEdit {
+		t.Fatalf("before load: %q", got)
+	}
+	loadDeferred(t, a, p)
+	if got := modeOf(t, a, p); got != modePreview {
+		t.Fatalf("existing daily note: %q, want preview", got)
+	}
+}
+
+func TestNewTaskFileOpensInEdit(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	previewEverywhere(a, "preview")
+	a.prefs.ViewModeRules = map[string]string{"status=open": "preview"}
+	if err := a.newTaskFile(""); err != nil {
+		t.Fatal(err)
+	}
+	typeText(a, "Write it")
+	a.overlay.handleKey(a, enterKey())
+	wantEditBeforeAndAfterLoad(t, a)
+}
+
+func TestRolloverCreatedDailyNoteOpensInEdit(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	useDailyTemplate(t, a, fmPreviewBody)
+	previewEverywhere(a, "preview")
+	if err := a.rolloverNow(); err != nil {
+		t.Fatal(err)
+	}
+	wantEditBeforeAndAfterLoad(t, a)
+}
+
+func TestNotesCreatedWithoutOpeningLeaveNoMark(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	useDailyTemplate(t, a, fmRuleBody)
+	previewEverywhere(a, "edit")
+	before := map[string]bool{}
+	for _, n := range a.idx.notes {
+		before[n.Path] = true
+	}
+
+	a.addTaskToDaily("one", time.Now())
+	a.saveCapture("Captured\nbody")
+	if len(a.newNotes) != 0 {
+		t.Fatalf("mark set: %v", a.newNotes)
+	}
+	var created []string
+	for _, n := range a.idx.notes {
+		if !before[n.Path] {
+			created = append(created, n.Path)
+		}
+	}
+	if len(created) == 0 {
+		t.Fatal("no notes were created")
+	}
+	// A note created without opening follows its frontmatter on a later open.
+	daily := ""
+	for _, p := range created {
+		if strings.Contains(p, time.Now().Format("2006-01-02")) {
+			daily = p
+		}
+	}
+	if daily == "" {
+		t.Fatalf("daily note not found in %v", created)
+	}
+	a.openNote(daily, true)
+	loadDeferred(t, a, daily)
+	if got := modeOf(t, a, daily); got != modePreview {
+		t.Fatalf("later open: %q, want preview", got)
+	}
+
+	// Without daily notes the task goes to an Inbox "Tasks" note.
+	a.idx.settings.DailyNotes.Enabled = false
+	a.addTaskToDaily("two", time.Now())
+	if len(a.newNotes) != 0 {
+		t.Fatalf("mark set: %v", a.newNotes)
+	}
+}
+
+// With the feature off, a new note's mode is whatever note creation already
+// gives it; its frontmatter plays no part, and nothing is left waiting.
+func TestNewNoteWithFeatureOffIgnoresFrontmatter(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	a.prefs.DefaultPaneMode = "split"
+	b := fmPreviewBody
+	a.createNote(vault.FolderInbox, "Plain", "", &b, true)
+	p := activeNotePath(t, a)
+	if got := modeOf(t, a, p); got == modePreview {
+		t.Fatalf("mode %q: frontmatter applied with the feature off", got)
+	}
+	for _, tb := range tabsOf(a, p) {
+		if tb.frontmatterPending {
+			t.Fatal("tab left waiting for frontmatter with the feature off")
+		}
+	}
+	if len(a.newNotes) != 0 {
+		t.Fatalf("mark left: %v", a.newNotes)
+	}
+}
+
+func TestReopenedNewNoteFollowsFrontmatter(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	previewEverywhere(a, "edit")
+	b := fmPreviewBody
+	a.createNote(vault.FolderInbox, "Again", "", &b, true)
+	p := wantEditBeforeAndAfterLoad(t, a)
+	a.closeTab(a.activePane, a.activePane.findTab(p))
+	a.openNote(p, true)
+	loadDeferred(t, a, p)
+	if got := modeOf(t, a, p); got != modePreview {
+		t.Fatalf("reopened: %q, want preview", got)
 	}
 }

@@ -529,6 +529,7 @@ func (a *App) rolloverNow() error {
 	}
 	today := time.Now()
 	_, _, title, rel := a.periodicLocation(periodic.Daily, today)
+	created := false
 	if _, ok := a.noteMeta(rel); !ok {
 		body := a.periodicBody(periodic.Daily, title, today)
 		meta, err := a.backend.CreateNote(a.ctx, vault.FolderInbox, title, "", &body)
@@ -538,10 +539,14 @@ func (a *App) rolloverNow() error {
 		a.ignoreChange(meta.Path)
 		a.addNoteToIndex(meta)
 		rel = meta.Path
+		created = true
 	}
 	n := a.rolloverInto(rel, today)
 	if n == 0 {
 		a.notify("Nothing to roll over")
+	}
+	if created {
+		a.markNewNote(rel)
 	}
 	a.openNote(rel, true)
 	return nil
@@ -906,6 +911,7 @@ func (a *App) newTaskFile(target string) error {
 		}
 		a.ignoreChange(meta.Path)
 		a.addNoteToIndex(meta)
+		a.markNewNote(meta.Path)
 		a.openNote(meta.Path, true)
 		a.afterTaskChange()
 	})

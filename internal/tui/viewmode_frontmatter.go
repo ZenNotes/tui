@@ -100,3 +100,19 @@ func (a *App) applyFrontmatterMode(buf *noteBuffer) {
 	a.layout()
 	a.markSessionDirty()
 }
+
+// markNewNote records that path was just created and is about to be opened,
+// so the open starts in the editor instead of taking a mode from frontmatter.
+func (a *App) markNewNote(path string) {
+	a.newNotes[path] = true
+}
+
+// consumeNewNote reports whether path carried a new-note mark and clears it,
+// so a later open of the same note is an ordinary one.
+func (a *App) consumeNewNote(path string) bool {
+	if !a.newNotes[path] {
+		return false
+	}
+	delete(a.newNotes, path)
+	return true
+}

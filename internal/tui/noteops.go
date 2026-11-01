@@ -25,6 +25,9 @@ func (a *App) createNote(folder vault.NoteFolder, title, subpath string, body *s
 		a.notifyError(err.Error())
 		return
 	}
+	if open {
+		a.markNewNote(meta.Path)
+	}
 	a.ignoreChange(meta.Path)
 	a.addNoteToIndex(meta)
 	if open {
@@ -602,6 +605,7 @@ func (a *App) openPeriodicOn(kind periodic.Kind, date time.Time) {
 	if kind == periodic.Daily {
 		a.rolloverUnfinishedTasks(meta.Path, date)
 	}
+	a.markNewNote(meta.Path)
 	a.openNote(meta.Path, true)
 	a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.GotoLine(buf.ed.LineCount()) })
 	a.refreshIndex()
@@ -675,6 +679,7 @@ func (a *App) createFromTemplate(t templates.Template) {
 		}
 		a.ignoreChange(meta.Path)
 		a.addNoteToIndex(meta)
+		a.markNewNote(meta.Path)
 		a.openNote(meta.Path, true)
 		if rendered.CursorOffset >= 0 {
 			a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.SetCursor(posForOffset(buf.ed.Text(), rendered.CursorOffset)) })
@@ -906,6 +911,7 @@ func (a *App) openTextSearch(initial string) {
 func (a *App) openNoteQuiet(path string) {
 	a.forgetEmbedTimeouts()
 	pane := a.activePane
+	justCreated := a.consumeNewNote(path)
 	if idx := pane.findTab(path); idx >= 0 {
 		pane.active = idx
 		return
@@ -918,10 +924,15 @@ func (a *App) openNoteQuiet(path string) {
 	if mode == "" {
 		mode = modeEdit
 	}
+	if justCreated && a.frontmatterModeOn() {
+		mode = modeEdit
+	}
 	t := &tab{path: path, mode: mode}
 	pane.tabs = append(pane.tabs, t)
 	pane.active = len(pane.tabs) - 1
-	a.watchFrontmatterMode(t)
+	if !justCreated {
+		a.watchFrontmatterMode(t)
+	}
 	a.touchRecent(path)
 	a.markSessionDirty()
 }

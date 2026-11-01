@@ -87,6 +87,7 @@ type App struct {
 	buffers        map[string]*noteBuffer
 	registers      vim.RegisterStore
 	noteModes      map[string]paneMode
+	newNotes       map[string]bool
 	panes          *paneNode
 	activePane     *pane
 	focus          focusTarget
@@ -216,6 +217,7 @@ func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bo
 		mouseEnabled: prefs.TerminalMouse,
 		buffers:      map[string]*noteBuffer{},
 		noteModes:    map[string]paneMode{},
+		newNotes:     map[string]bool{},
 		panes:        newPaneTree(),
 		sidebarOpen:  true,
 		sidebarWidth: 32,

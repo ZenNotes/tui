@@ -226,6 +226,7 @@ func (a *App) openNote(path string, focus bool) {
 	if pane == nil {
 		return
 	}
+	justCreated := a.consumeNewNote(path)
 	if idx := pane.findTab(path); idx >= 0 {
 		pane.active = idx
 	} else {
@@ -240,10 +241,15 @@ func (a *App) openNote(path string, focus bool) {
 		if remembered, ok := a.noteModes[path]; ok && !a.prefs.KeepViewModeAcrossNotes() {
 			mode = remembered
 		}
+		if justCreated && a.frontmatterModeOn() {
+			mode = modeEdit
+		}
 		t := &tab{path: path, mode: mode}
 		pane.tabs = append(pane.tabs, t)
 		pane.active = len(pane.tabs) - 1
-		a.watchFrontmatterMode(t)
+		if !justCreated {
+			a.watchFrontmatterMode(t)
+		}
 	}
 	if cur := a.activeBuffer(); cur != nil && cur.path != path {
 		a.pushJump(cur.path, cur.ed.Cursor())
