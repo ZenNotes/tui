@@ -116,24 +116,14 @@ func planRoll(m []string, dialect TaskDialect, action RollAction, now time.Time,
 	}
 	_, periods := ParseSkipItems(strings.Join(tokens.skip, ","))
 
-	today := TodayISO(now)
 	field := tokens.scheduled
 	if field == "" {
 		field = tokens.due
 	}
-	base := field
-	if base == "" || (rule.FromCompletion && action == RollComplete) {
-		base = today
-	}
-	following, found := NextOccurrence(rule, base, today, weekStart, periods)
+	days, following, found := nextRollDate(rule, field, action, periods, now, weekStart)
 	if !found {
 		return nil, "", false
 	}
-	from := field
-	if from == "" {
-		from = today
-	}
-	days := daysBetween(from, following)
 
 	shift = func(text string) string {
 		text = shiftTokenDate(text, inlineDueRe, days)
@@ -145,6 +135,27 @@ func planRoll(m []string, dialect TaskDialect, action RollAction, now time.Time,
 	return shift, scheduled, true
 }
 
+// nextRollDate finds where a repeating task goes next. field is the date the
+// rule counts from, `scheduled:` else `due:`, or empty for a task with
+// neither. It returns that date, and how many days the task's dates move to
+// get there: the distance from field, or from today when field is empty.
+func nextRollDate(rule RepeatRule, field string, action RollAction, periods []SkipPeriod, now time.Time, weekStart time.Weekday) (days int, following string, found bool) {
+	today := TodayISO(now)
+	base := field
+	if base == "" || (rule.FromCompletion && action == RollComplete) {
+		base = today
+	}
+	following, found = NextOccurrence(rule, base, today, weekStart, periods)
+	if !found {
+		return 0, "", false
+	}
+	from := field
+	if from == "" {
+		from = today
+	}
+	return daysBetween(from, following), following, true
+}
+
 // shiftTokenDate moves the date of the first token re matches by days. The
 // token's `THH:MM` suffix stays as written. A value whose date is not real is
 // left alone.
@@ -153,16 +164,22 @@ func shiftTokenDate(text string, re *regexp.Regexp, days int) string {
 	if loc == nil || loc[2] < 0 {
 		return text
 	}
-	value := text[loc[2]:loc[3]]
+	return text[:loc[2]] + shiftDateTime(text[loc[2]:loc[3]], days) + text[loc[3]:]
+}
+
+// shiftDateTime moves the date of a `YYYY-MM-DD[THH:MM]` value by days and
+// keeps whatever follows the date as written. A value whose date is not real
+// is returned unchanged.
+func shiftDateTime(value string, days int) string {
 	date, _ := SplitDateTime(value)
 	if date == "" {
-		return text
+		return value
 	}
 	moved, err := time.Parse(isoDay, date)
 	if err != nil {
-		return text
+		return value
 	}
-	return text[:loc[2]] + moved.AddDate(0, 0, days).Format(isoDay) + value[len(date):] + text[loc[3]:]
+	return moved.AddDate(0, 0, days).Format(isoDay) + value[len(date):]
 }
 
 // daysBetween counts whole calendar days from one `YYYY-MM-DD` date to a
