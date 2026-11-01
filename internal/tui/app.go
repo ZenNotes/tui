@@ -200,17 +200,21 @@ func Run(ctx context.Context, opts Options) error {
 	if prefs.TerminalMouse {
 		teaOpts = append(teaOpts, tea.WithMouseCellMotion())
 	}
-	return runProgram(app, os.Stdout, os.Stdin, teaOpts...)
+	return runProgram(app, os.Stdout, nil, teaOpts...)
 }
 
 // runProgram runs app on out and in with the cursor wrapper between Bubble Tea
 // and the terminal. Bubble Tea recovers panics and p.Run returns an error, so
-// the cursor is restored on every path after p.Run returns.
+// the cursor is restored on every path after p.Run returns. A nil in keeps
+// Bubble Tea's own input, which opens the terminal when stdin is redirected.
 func runProgram(app *App, out cursorFile, in io.Reader, teaOpts ...tea.ProgramOption) error {
 	wrapper := newCursorOut(out)
 	app.cursorOut = wrapper
 	defer wrapper.Reset()
-	teaOpts = append([]tea.ProgramOption{tea.WithOutput(wrapper), tea.WithInput(in)}, teaOpts...)
+	teaOpts = append([]tea.ProgramOption{tea.WithOutput(wrapper)}, teaOpts...)
+	if in != nil {
+		teaOpts = append(teaOpts, tea.WithInput(in))
+	}
 	p := tea.NewProgram(app, teaOpts...)
 	app.program = p
 	_, err := p.Run()
