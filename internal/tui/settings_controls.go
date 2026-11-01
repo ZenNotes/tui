@@ -17,7 +17,6 @@ type settingRow struct {
 }
 type settingsView struct {
 	scroll, rows int
-	dscroll      int
 	lines        []string
 	filter       string
 	list         listCursor
@@ -76,24 +75,25 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 		v.refresh(a)
 	}
 	v.rows = max(1, h-2)
-	v.list.ensureVisible(v.rows)
-	v.scroll = v.list.scroll
 	lines := []string{padRight(truncateCells(" Enter edit · / filter · v version · :config external editor", w), w), padRight(" "+v.filter, w)}
 	disp, cur := v.display(w)
-	body := max(1, h-2)
+	// v.scroll counts display lines, headings included. Moving up onto the
+	// first row of a group scrolls its headings (at most the scope and the
+	// prefix) back into view with it, and the page never scrolls past its
+	// last line, so a taller window or a shorter list shows the top again.
 	if cur >= 0 {
 		start := cur
 		for n := 0; n < 2 && start > 0 && disp[start-1].idx < 0; n++ {
 			start--
 		}
-		if start < v.dscroll {
-			v.dscroll = start
-		} else if cur >= v.dscroll+body {
-			v.dscroll = cur - body + 1
+		if start < v.scroll {
+			v.scroll = start
+		} else if cur >= v.scroll+v.rows {
+			v.scroll = cur - v.rows + 1
 		}
 	}
-	v.dscroll = max(0, min(v.dscroll, len(disp)-1))
-	for i := v.dscroll; i < len(disp) && len(lines) < h; i++ {
+	v.scroll = max(0, min(v.scroll, len(disp)-v.rows))
+	for i := v.scroll; i < len(disp) && len(lines) < h; i++ {
 		line := padRight(disp[i].text, w)
 		switch {
 		case disp[i].idx < 0:
@@ -114,7 +114,9 @@ type settingDisplay struct {
 // display lays the settings out under two top-level sections, User and Vault,
 // each split into subsections named by the config prefix (vim, editor,
 // dailyNotes, ...). Rows keep their settings order, so the cursor index maps
-// straight onto v.settings. It returns the cell index of the cursor row.
+// straight onto v.settings. A row shows its filter line less the scope and
+// prefix its headings already name. It returns the display line of the cursor
+// row, or -1.
 func (v *settingsView) display(w int) ([]settingDisplay, int) {
 	out := []settingDisplay{}
 	cur := -1
@@ -138,7 +140,8 @@ func (v *settingsView) display(w int) ([]settingDisplay, int) {
 		if i == v.list.cursor {
 			cur = len(out)
 		}
-		out = append(out, settingDisplay{truncateCells("    "+s.key+" = "+fmt.Sprint(s.value), w), i})
+		text := strings.TrimPrefix(v.lines[i], strings.ToLower(name)+" · "+s.section+".")
+		out = append(out, settingDisplay{truncateCells("    "+text, w), i})
 	}
 	return out, cur
 }

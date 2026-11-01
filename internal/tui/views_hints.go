@@ -67,10 +67,7 @@ func (v *noteListView) scrollBy(a *App, delta int) { v.list.move(delta, len(v.no
 func (v *helpView) scrollBy(a *App, delta int) {
 	v.scroll = max(0, min(max(0, len(v.lines)-v.rows), v.scroll+delta))
 }
-func (v *settingsView) scrollBy(a *App, delta int) {
-	v.list.move(delta, len(v.settings))
-	v.scroll = v.list.scroll
-}
+func (v *settingsView) scrollBy(a *App, delta int) { v.list.move(delta, len(v.settings)) }
 
 func sign(n int) int {
 	if n < 0 {
