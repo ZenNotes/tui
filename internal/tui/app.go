@@ -147,6 +147,9 @@ type App struct {
 	// missing-TeX notice, so only a note's first LaTeX block carries it.
 	latexNoticeShown bool
 
+	// cursor is where the terminal cursor belongs in the last frame drawn.
+	cursor cursorState
+
 	systemDark        bool
 	exHistory         []string
 	mouse             mouseState
@@ -714,6 +717,7 @@ func (a *App) View() string {
 	if len(a.toasts) > 0 {
 		screen = a.renderToasts(screen)
 	}
+	a.cursor = a.computeCursor()
 	return a.theme.paint(screen)
 }
 

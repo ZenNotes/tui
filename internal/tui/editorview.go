@@ -289,6 +289,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	lines := ed.Lines()
 	blocks := computeBlockState(lines)
 	cur := ed.Cursor()
+	drawBlock := focused && !a.terminalCursorOwns(buf)
 	vStart, vEnd, vMode, inVisual := ed.VisualRange()
 	blockLeft, blockRight, blockToEnd := 0, 0, false
 	if inVisual && vMode == vim.ModeVisualBlock {
@@ -382,7 +383,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 						key.search = true
 					}
 				}
-				if focused && line == cur.Line && col == cur.Col {
+				if drawBlock && line == cur.Line && col == cur.Col {
 					key.cursor = true
 				}
 				// Merge runs of identical style.
@@ -403,7 +404,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 							k2.search = true
 						}
 					}
-					if focused && line == cur.Line && j == cur.Col {
+					if drawBlock && line == cur.Line && j == cur.Col {
 						k2.cursor = true
 					}
 					if k2 != key {
@@ -422,7 +423,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 				cells += cellWidth(string(run))
 				col = j
 			}
-			if focused && line == cur.Line && cur.Col >= seg.end && si == len(segs)-1 {
+			if drawBlock && line == cur.Line && cur.Col >= seg.end && si == len(segs)-1 {
 				b.WriteString(a.styleFor(styleKey{cursor: true}).Render(" "))
 				cells++
 			}
