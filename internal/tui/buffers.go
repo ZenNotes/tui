@@ -35,6 +35,9 @@ type noteBuffer struct {
 	focusRows []rowInfo
 	// focusW is the drawn width of that editor, gutter included.
 	focusW int
+	// standalone marks an editor drawn outside the tabs, such as quick
+	// capture's, whose cursor its host places.
+	standalone bool
 
 	words        int
 	wordsVersion int

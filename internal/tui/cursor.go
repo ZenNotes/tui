@@ -28,9 +28,9 @@ func (a *App) bufferCursorShape(buf *noteBuffer) (shape cursorShape, ok bool) {
 
 // terminalCursorOwns reports whether the terminal's own cursor stands in for
 // the drawn block in buf. Only the active tab's buffer is placed that way;
-// other editors, such as quick capture's, keep drawing their block.
+// a standalone editor, such as quick capture's, is placed by its host.
 func (a *App) terminalCursorOwns(buf *noteBuffer) bool {
-	if buf == nil || buf != a.activeBuffer() {
+	if buf == nil || (!buf.standalone && buf != a.activeBuffer()) {
 		return false
 	}
 	_, ok := a.bufferCursorShape(buf)
@@ -40,11 +40,10 @@ func (a *App) terminalCursorOwns(buf *noteBuffer) bool {
 // insertionCell is the screen cell where the next typed character in buf
 // lands: the pane's content origin, the gutter, and the width of the text
 // before the cursor on its wrapped row, all taken from the focused pane's own
-// layout.
-func (a *App) insertionCell(buf *noteBuffer) (x, y int, ok bool) {
+// layout. rc is the origin of the area buf was drawn in.
+func (a *App) insertionCell(buf *noteBuffer, rc rect) (x, y int, ok bool) {
 	cur := buf.ed.Cursor()
 	line := buf.ed.LineRunes(cur.Line)
-	rc := a.contentRect(a.activePane)
 	for _, row := range buf.focusRows {
 		if row.line != cur.Line || cur.Col < row.segStart || cur.Col > row.segEnd {
 			continue
@@ -63,7 +62,19 @@ func (a *App) insertionCell(buf *noteBuffer) (x, y int, ok bool) {
 
 // computeCursor picks the cursor for the frame just drawn.
 func (a *App) computeCursor() cursorState {
-	if a.overlay != nil || a.focus != focusPane {
+	if a.overlay != nil {
+		f, ok := a.overlay.(cursorField)
+		if !ok {
+			return cursorState{}
+		}
+		c := f.fieldCursor()
+		if c.visible {
+			c.x += a.overlayRect.x
+			c.y += a.overlayRect.y
+		}
+		return c
+	}
+	if a.focus != focusPane {
 		return cursorState{}
 	}
 	if a.cmdlineOpen {
@@ -78,7 +89,7 @@ func (a *App) computeCursor() cursorState {
 	if !ok {
 		return cursorState{}
 	}
-	x, y, ok := a.insertionCell(buf)
+	x, y, ok := a.insertionCell(buf, a.contentRect(a.activePane))
 	if !ok {
 		return cursorState{}
 	}

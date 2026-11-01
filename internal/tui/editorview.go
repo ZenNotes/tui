@@ -513,13 +513,22 @@ func inVisualRange(line, col int, start, end vim.Pos, mode vim.Mode, bl, br int,
 }
 
 // renderPlainEditor draws a small editor (quick capture) without gutter.
-func renderPlainEditor(a *App, ed *vim.Editor, w, h int, focused bool) string {
-	tmp := &noteBuffer{ed: ed}
+// It also returns the cursor it wants, as a cell inside the drawn block.
+func renderPlainEditor(a *App, ed *vim.Editor, w, h int, focused bool) (string, cursorState) {
+	tmp := &noteBuffer{ed: ed, standalone: true}
 	saved := a.prefs.LineNumberMode
 	a.prefs.LineNumberMode = "off"
 	out := a.renderEditor(tmp, w, h, focused)
 	a.prefs.LineNumberMode = saved
-	return out
+	shape, ok := a.bufferCursorShape(tmp)
+	if !ok {
+		return out, cursorState{}
+	}
+	x, y, ok := a.insertionCell(tmp, rect{})
+	if !ok {
+		return out, cursorState{}
+	}
+	return out, cursorState{visible: true, x: x, y: y, shape: shape}
 }
 
 // editorHintTargets labels every link on the visible rows of a buffer.
