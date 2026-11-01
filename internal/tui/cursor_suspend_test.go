@@ -43,13 +43,23 @@ func assertReleasedWithReset(t *testing.T, a *App, term *fakeTerm, what string) 
 	}
 }
 
+// allowSuspend sets whether the platform can suspend for one test.
+func allowSuspend(t *testing.T, ok bool) {
+	t.Helper()
+	saved := canSuspend
+	canSuspend = ok
+	t.Cleanup(func() { canSuspend = saved })
+}
+
 func TestCursorSuspendCtrlZ(t *testing.T) {
+	allowSuspend(t, true)
 	a, _, term := suspendApp(t)
 	a.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
 	assertReleasedWithReset(t, a, term, "Ctrl+Z")
 }
 
 func TestCursorSuspendExCommand(t *testing.T) {
+	allowSuspend(t, true)
 	a, buf, term := suspendApp(t)
 	if _, err := a.runEx(buf, vim.ExCommand{Name: "suspend"}); err != nil {
 		t.Fatal(err)
@@ -57,7 +67,29 @@ func TestCursorSuspendExCommand(t *testing.T) {
 	assertReleasedWithReset(t, a, term, ":suspend")
 }
 
+// Bubble Tea cannot suspend on Windows and sends no ResumeMsg, so Ctrl+Z and
+// :suspend there must leave the cursor as it is.
+func TestCursorSuspendUnsupportedKeepsCursor(t *testing.T) {
+	allowSuspend(t, false)
+	a, buf, term := suspendApp(t)
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
+	if _, err := a.runEx(buf, vim.ExCommand{Name: "suspend"}); err != nil {
+		t.Fatal(err)
+	}
+	if cursorReleased(a) {
+		t.Fatal("the wrapper was released although nothing will resume it")
+	}
+	if strings.Contains(term.all(), defaultShape) {
+		t.Fatalf("wrote %q, want no reset", term.all())
+	}
+	a.View()
+	if !a.cursor.visible || a.cursor.shape != cursorShapeBar {
+		t.Fatalf("cursor = %+v, want the bar still", a.cursor)
+	}
+}
+
 func TestCursorSuspendResumeWritesBar(t *testing.T) {
+	allowSuspend(t, true)
 	a, _, term := suspendApp(t)
 	a.Update(tea.KeyMsg{Type: tea.KeyCtrlZ})
 	term.clear()

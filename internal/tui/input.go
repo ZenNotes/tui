@@ -264,8 +264,7 @@ func (a *App) chordKey(k vim.Key, editing bool) bool {
 		if editing && !a.prefs.VimMode {
 			return false
 		}
-		a.suspendCursor()
-		a.queue(tea.Suspend)
+		a.suspend()
 	case a.tabSelectChord(k):
 	case editing && a.prefs.VimMode:
 		// Insert mode keeps Ctrl+P/N (completion) and the rest for Vim.

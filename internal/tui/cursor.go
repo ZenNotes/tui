@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os/exec"
+	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -123,6 +124,18 @@ func (a *App) resumeCursor() {
 	if a.cursorOut != nil {
 		a.cursorOut.Hold()
 	}
+}
+
+// canSuspend is false where Bubble Tea cannot suspend: on Windows Suspend
+// does nothing and no ResumeMsg follows, so the cursor must stay zn's.
+var canSuspend = runtime.GOOS != "windows"
+
+// suspend hands the terminal to the shell until `fg`.
+func (a *App) suspend() {
+	if canSuspend {
+		a.suspendCursor()
+	}
+	a.queue(tea.Suspend)
 }
 
 // execOnTerminal hands the terminal to cmd until it exits. Bubble Tea gives
