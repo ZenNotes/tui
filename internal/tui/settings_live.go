@@ -113,7 +113,7 @@ func (a *App) editConfig() error {
 	if err != nil {
 		return err
 	}
-	a.queue(tea.ExecProcess(cmd, func(err error) tea.Msg { return configEditedMsg{err} }))
+	a.execOnTerminal(cmd, func(err error) tea.Msg { return configEditedMsg{err} })
 	return nil
 }
 func (a *App) saveKeymap(id, binding string) error {

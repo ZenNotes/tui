@@ -562,6 +562,13 @@ Vim mode follows `[vim] enabled` in `config.toml`. With it off, the editor
 is a plain editor. Use arrows and Enter in lists, F2 for context actions,
 and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
 
+While you type, zn shows the terminal's own cursor: a bar in insert mode,
+with Vim mode off and in text fields, and an underline in replace mode and
+while `r` waits for its character. Normal and visual mode keep the block.
+zn puts the terminal's default cursor back when it quits, suspends or hands
+the note to `$EDITOR`. A terminal that cannot change the cursor's shape
+shows its usual cursor there instead.
+
 `Ctrl+Space` in insert mode (or `:complete`) completes tags, frontmatter
 tag values, callouts and code-fence languages. With `markdown_snippets`
 enabled, Space after an opening Markdown delimiter adds its closer;

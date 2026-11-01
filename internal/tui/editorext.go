@@ -56,9 +56,9 @@ func (a *App) editActiveInEditor() {
 		return
 	}
 	path := buf.path
-	a.queue(tea.ExecProcess(cmd, func(err error) tea.Msg {
+	a.execOnTerminal(cmd, func(err error) tea.Msg {
 		return editorDoneMsg{path: path, tmp: tmp, err: err}
-	}))
+	})
 }
 
 // finishExternalEdit reloads the note after the editor closed.

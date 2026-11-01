@@ -289,6 +289,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	lines := ed.Lines()
 	blocks := computeBlockState(lines)
 	cur := ed.Cursor()
+	drawBlock := focused && !a.terminalCursorOwns(buf)
 	vStart, vEnd, vMode, inVisual := ed.VisualRange()
 	blockLeft, blockRight, blockToEnd := 0, 0, false
 	if inVisual && vMode == vim.ModeVisualBlock {
@@ -382,7 +383,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 						key.search = true
 					}
 				}
-				if focused && line == cur.Line && col == cur.Col {
+				if drawBlock && line == cur.Line && col == cur.Col {
 					key.cursor = true
 				}
 				// Merge runs of identical style.
@@ -403,7 +404,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 							k2.search = true
 						}
 					}
-					if focused && line == cur.Line && j == cur.Col {
+					if drawBlock && line == cur.Line && j == cur.Col {
 						k2.cursor = true
 					}
 					if k2 != key {
@@ -422,7 +423,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 				cells += cellWidth(string(run))
 				col = j
 			}
-			if focused && line == cur.Line && cur.Col >= seg.end && si == len(segs)-1 {
+			if drawBlock && line == cur.Line && cur.Col >= seg.end && si == len(segs)-1 {
 				b.WriteString(a.styleFor(styleKey{cursor: true}).Render(" "))
 				cells++
 			}
@@ -442,6 +443,10 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	}
 	for len(out) < h {
 		out = append(out, padRight(th.Muted.Render("~"), w))
+	}
+	if focused {
+		buf.focusRows = append(buf.focusRows[:0], buf.rows...)
+		buf.focusW = w
 	}
 	return strings.Join(out, "\n")
 }
@@ -508,13 +513,22 @@ func inVisualRange(line, col int, start, end vim.Pos, mode vim.Mode, bl, br int,
 }
 
 // renderPlainEditor draws a small editor (quick capture) without gutter.
-func renderPlainEditor(a *App, ed *vim.Editor, w, h int, focused bool) string {
-	tmp := &noteBuffer{ed: ed}
+// It also returns the cursor it wants, as a cell inside the drawn block.
+func renderPlainEditor(a *App, ed *vim.Editor, w, h int, focused bool) (string, cursorState) {
+	tmp := &noteBuffer{ed: ed, standalone: true}
 	saved := a.prefs.LineNumberMode
 	a.prefs.LineNumberMode = "off"
 	out := a.renderEditor(tmp, w, h, focused)
 	a.prefs.LineNumberMode = saved
-	return out
+	shape, ok := a.bufferCursorShape(tmp)
+	if !ok {
+		return out, cursorState{}
+	}
+	x, y, ok := a.insertionCell(tmp, rect{})
+	if !ok {
+		return out, cursorState{}
+	}
+	return out, cursorState{visible: true, x: x, y: y, shape: shape}
 }
 
 // editorHintTargets labels every link on the visible rows of a buffer.
