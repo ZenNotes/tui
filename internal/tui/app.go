@@ -1079,21 +1079,6 @@ func (a *App) renderCommandLine() string {
 	return padRight(t.Muted.Render(a.hintLine()), a.width)
 }
 
-func firstCellOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return string([]rune(s)[0])
-}
-
-func restAfterFirst(s string) string {
-	r := []rune(s)
-	if len(r) <= 1 {
-		return ""
-	}
-	return string(r[1:])
-}
-
 func (a *App) renderWildmenu(comps []string, idx int) string {
 	parts := []string{}
 	for i, c := range comps {
