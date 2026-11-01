@@ -546,3 +546,27 @@ func TestSettingsMalformedRuleOffersOnlyRemove(t *testing.T) {
 		a.overlay = nil
 	}
 }
+
+func TestSettingsRuleThenOpenFollowsIt(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultNote(t, root, "n.md", "---\npage-status: done\n---\nbody\n")
+	a.prefs.DefaultPaneMode = "edit"
+
+	v := openAddRule(t, a)
+	submitPrompt(t, a, "page-status")
+	submitPrompt(t, a, "done")
+	pickPalette(t, a, "preview")
+	a.openNote("n.md", true)
+	if got := modeOf(t, a, "n.md"); got != modePreview {
+		t.Fatalf("first open in %q, want preview", got)
+	}
+
+	v.list.cursor = settingsLineIndex(t, v, ruleDoneRow)
+	v.handleKey(a, vim.Key{Name: "enter"})
+	pickPalette(t, a, "split")
+	a.closeTab(a.activePane, a.activePane.findTab("n.md"))
+	a.openNote("n.md", true)
+	if got := modeOf(t, a, "n.md"); got != modeSplit {
+		t.Fatalf("reopen in %q, want split", got)
+	}
+}

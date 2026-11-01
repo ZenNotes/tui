@@ -11,6 +11,7 @@ import (
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 const fmPreviewNote = "---\nview-mode: preview\npage-status: done\n---\n# Body\n"
@@ -567,5 +568,71 @@ func TestReopenedNewNoteFollowsFrontmatter(t *testing.T) {
 	loadDeferred(t, a, p)
 	if got := modeOf(t, a, p); got != modePreview {
 		t.Fatalf("reopened: %q, want preview", got)
+	}
+}
+
+// vaultSnapshot maps every file under root, hidden directories included, to its bytes.
+func vaultSnapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		out[rel] = string(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func TestViewModeFeatureWritesNoVaultFiles(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultNote(t, root, "n.md", fmPreviewNote)
+	writeVaultNote(t, root, "m.md", "---\nkind: journal\n---\nbody\n")
+	writeVaultNote(t, root, "plain.md", "# plain\n")
+	enableViewModeField(a)
+	a.prefs.ViewModeRules = map[string]string{"kind=journal": "split"}
+	before := vaultSnapshot(t, root)
+
+	a.deferReads = true
+	for _, name := range []string{"n.md", "m.md", "plain.md"} {
+		a.openNote(name, true)
+		loadDeferred(t, a, name)
+	}
+	a.setPaneMode(modeSplit)
+	a.splitPane(true)
+	a.setPaneMode(modeEdit)
+	a.openNote("n.md", true)
+	a.closeTab(a.activePane, a.activePane.findTab("n.md"))
+
+	v := openAddRule(t, a)
+	submitPrompt(t, a, "page-status")
+	submitPrompt(t, a, "done")
+	pickPalette(t, a, "preview")
+	v.list.cursor = settingsLineIndex(t, v, ruleDoneRow)
+	v.handleKey(a, vim.Key{Rune: 'd'})
+	if _, ok := a.prefs.ViewModeRules["page-status=done"]; ok {
+		t.Fatalf("rules after add and remove = %v", a.prefs.ViewModeRules)
+	}
+
+	after := vaultSnapshot(t, root)
+	if len(after) != len(before) {
+		t.Fatalf("vault files %d, want %d", len(after), len(before))
+	}
+	for name, body := range before {
+		if after[name] != body {
+			t.Fatalf("%s changed:\n%s\nwas:\n%s", name, after[name], body)
+		}
+	}
+	if _, ok := after[filepath.Join(".zennotes", "vault.json")]; ok {
+		t.Fatal(".zennotes/vault.json appeared")
 	}
 }
