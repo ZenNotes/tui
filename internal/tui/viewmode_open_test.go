@@ -250,3 +250,107 @@ func TestAppliedModeLeavesKeepAcrossAndRememberedAlone(t *testing.T) {
 		t.Fatal("applied mode was remembered")
 	}
 }
+
+func tabsOf(a *App, path string) []*tab {
+	var out []*tab
+	for _, p := range a.panes.leaves() {
+		for _, t := range p.tabs {
+			if t.path == path {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
+}
+
+func modesOf(ts []*tab) []paneMode {
+	var out []paneMode
+	for _, t := range ts {
+		out = append(out, t.mode)
+	}
+	return out
+}
+
+func TestRestoredSessionTabKeepsSavedMode(t *testing.T) {
+	root := newSessionParityVault(t, "n.md")
+	writeVaultNote(t, root, "n.md", fmPreviewNote)
+	a := newSessionParityApp(t, root)
+	a.openNote("n.md", true)
+	a.activeTab().mode = modeEdit
+	a.saveSession()
+
+	restored := newSessionParityApp(t, root)
+	enableViewModeField(restored)
+	restored.deferReads = true
+	restored.restoreSession()
+	if got := modeOf(t, restored, "n.md"); got != modeEdit {
+		t.Fatalf("before load: %q, want edit", got)
+	}
+	loadDeferred(t, restored, "n.md")
+	if got := modeOf(t, restored, "n.md"); got != modeEdit {
+		t.Fatalf("after load: %q, want edit", got)
+	}
+}
+
+func TestSplitCopyFollowsFrontmatterMode(t *testing.T) {
+	for _, preLoad := range []bool{false, true} {
+		name := "after load"
+		if preLoad {
+			name = "before load"
+		}
+		t.Run(name, func(t *testing.T) {
+			a, root := newFeatureTestApp(t)
+			writeVaultNote(t, root, "n.md", fmPreviewNote)
+			enableViewModeField(a)
+			a.deferReads = true
+			a.openNote("n.md", true)
+			if preLoad {
+				a.splitPane(true)
+				loadDeferred(t, a, "n.md")
+			} else {
+				loadDeferred(t, a, "n.md")
+				a.splitPane(true)
+			}
+			ts := tabsOf(a, "n.md")
+			if len(ts) != 2 || ts[0].mode != modePreview || ts[1].mode != modePreview {
+				t.Fatalf("tabs %d, modes %v", len(ts), modesOf(ts))
+			}
+		})
+	}
+}
+
+func TestSplitCopyKeepsManualMode(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultNote(t, root, "n.md", fmPreviewNote)
+	enableViewModeField(a)
+	a.deferReads = true
+	a.openNote("n.md", true)
+	a.setPaneMode(modeEdit)
+	a.splitPane(true)
+	loadDeferred(t, a, "n.md")
+	ts := tabsOf(a, "n.md")
+	if len(ts) != 2 || ts[0].mode != modeEdit || ts[1].mode != modeEdit {
+		t.Fatalf("tabs %d, modes %v", len(ts), modesOf(ts))
+	}
+}
+
+func TestReferencePaneStaysPreview(t *testing.T) {
+	for _, fm := range []string{"edit", "split"} {
+		t.Run(fm, func(t *testing.T) {
+			a, root := newFeatureTestApp(t)
+			writeVaultNote(t, root, "n.md", "---\nview-mode: "+fm+"\n---\nbody\n")
+			writeVaultNote(t, root, "other.md", "# other\n")
+			a.idx = a.loadIndexCmd()().(indexLoadedMsg).idx
+			enableViewModeField(a)
+			a.deferReads = true
+			a.openNote("other.md", true)
+			loadDeferred(t, a, "other.md")
+			a.openReference("n.md")
+			loadDeferred(t, a, "n.md")
+			ts := tabsOf(a, "n.md")
+			if len(ts) != 1 || ts[0].mode != modePreview {
+				t.Fatalf("modes %v, want preview", modesOf(ts))
+			}
+		})
+	}
+}

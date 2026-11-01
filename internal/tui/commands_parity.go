@@ -722,6 +722,7 @@ func (a *App) openReference(path string) {
 		return
 	}
 	t.mode = modePreview
+	t.frontmatterPending = false
 	if !t.pinned {
 		a.togglePin(p, p.active)
 	}

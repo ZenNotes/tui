@@ -113,7 +113,7 @@ func (n *paneNode) split(target *pane, vertical bool) *pane {
 	if n.leaf == target {
 		newPane := &pane{}
 		if t := target.activeTab(); t != nil {
-			copyTab := &tab{path: t.path, mode: t.mode, view: t.view}
+			copyTab := &tab{path: t.path, mode: t.mode, view: t.view, frontmatterPending: t.frontmatterPending}
 			if t.preview != nil {
 				pv := *t.preview
 				copyTab.preview = &pv

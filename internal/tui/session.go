@@ -261,6 +261,8 @@ func (a *App) restoreSessionPane(s *sessionPane, depth int) *paneNode {
 				tab.preview = &previewState{}
 			}
 		}
+		// The saved mode stands; the note's frontmatter must not override it.
+		tab.frontmatterPending = false
 	}
 	if idx := n.leaf.findTab(selected); idx >= 0 {
 		n.leaf.active = idx
