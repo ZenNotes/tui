@@ -62,6 +62,12 @@ func (a *App) insertionCell(buf *noteBuffer, rc rect) (x, y int, ok bool) {
 
 // computeCursor picks the cursor for the frame just drawn.
 func (a *App) computeCursor() cursorState {
+	if len(a.toasts) > 0 {
+		return cursorState{} // a toast covers the corner it sits in
+	}
+	if a.leader != nil && a.leader.showHints {
+		return cursorState{} // the which-key popup covers the pane
+	}
 	if a.overlay != nil {
 		f, ok := a.overlay.(cursorField)
 		if !ok {
