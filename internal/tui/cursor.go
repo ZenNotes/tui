@@ -3,7 +3,7 @@ package tui
 import "github.com/ZenNotes/tui/internal/vim"
 
 // bufferCursorShape is the terminal cursor shape the buffer wants while its
-// text is being edited. ok is false when the buffer keeps the drawn block
+// text is being edited, or a normal-mode r waits for its character. ok is false when the buffer keeps the drawn block
 // instead: in normal and visual mode, in the command line, and while the
 // note is still loading.
 func (a *App) bufferCursorShape(buf *noteBuffer) (shape cursorShape, ok bool) {
@@ -17,6 +17,9 @@ func (a *App) bufferCursorShape(buf *noteBuffer) (shape cursorShape, ok bool) {
 	case vim.ModeInsert:
 		return cursorShapeBar, true
 	case vim.ModeReplace:
+		return cursorShapeUnderline, true
+	}
+	if buf.ed.ReplacePending() {
 		return cursorShapeUnderline, true
 	}
 	return 0, false
