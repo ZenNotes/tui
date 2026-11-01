@@ -19,22 +19,23 @@ import (
 // MCP server matches these lines since 2.69.1, and `zn task` and `zn mcp`
 // follow it so an assistant sees the same tasks through either server.
 var (
-	taskFenceRe      = regexp.MustCompile("^(\\s*)(```|~~~)")
-	taskLineRe       = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[)( |x|X|>|-|/)(\].*)$`)
-	cliFenceRe       = regexp.MustCompile("^(\\s{0,3})(`{3,}|~{3,})")
-	inlineDueRe      = regexp.MustCompile(`(?i)(?:^|\s)due:\s*(\S+)`)
-	inlinePriorityRe = regexp.MustCompile(`(?i)(?:^|\s)!(high|med|medium|low|h|m|l)\b`)
-	inlineWaitingRe  = regexp.MustCompile(`(?i)(?:^|\s)@waiting\b`)
-	inlineFieldRe    = regexp.MustCompile(`(?i)(?:^|\s)@([a-z][a-z0-9_-]*):([\p{L}\d][\p{L}\d/_-]*)`)
-	inlineTagRe      = regexp.MustCompile(`(?:^|\s)#([\p{L}\d][\p{L}\d/_-]*)`)
-	isoDateRe        = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-	priorityTokenRe  = regexp.MustCompile(`(?i)(^|\s)!(?:high|med|medium|low|h|m|l)\b`)
-	dueTokenRe       = regexp.MustCompile(`(?i)(^|\s)due:\s*\S+`)
-	waitingTokenRe   = regexp.MustCompile(`(?i)(^|\s)@waiting\b`)
-	fieldKeyRe       = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
-	multiSpaceRe     = regexp.MustCompile(`\s{2,}`)
-	trailingWsRe     = regexp.MustCompile(`\s+$`)
-	leadingWsRe      = regexp.MustCompile(`^[ \t]*`)
+	taskFenceRe       = regexp.MustCompile("^(\\s*)(```|~~~)")
+	taskLineRe        = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[)( |x|X|>|-|/)(\].*)$`)
+	cliFenceRe        = regexp.MustCompile("^(\\s{0,3})(`{3,}|~{3,})")
+	inlineDueRe       = regexp.MustCompile(`(?i)(?:^|\s)due:\s*(\S+)`)
+	inlineScheduledRe = regexp.MustCompile(`(?i)(?:^|\s)scheduled:\s*(\S+)`)
+	inlinePriorityRe  = regexp.MustCompile(`(?i)(?:^|\s)!(high|med|medium|low|h|m|l)\b`)
+	inlineWaitingRe   = regexp.MustCompile(`(?i)(?:^|\s)@waiting\b`)
+	inlineFieldRe     = regexp.MustCompile(`(?i)(?:^|\s)@([a-z][a-z0-9_-]*):([\p{L}\d][\p{L}\d/_-]*)`)
+	inlineTagRe       = regexp.MustCompile(`(?:^|\s)#([\p{L}\d][\p{L}\d/_-]*)`)
+	isoDateRe         = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	priorityTokenRe   = regexp.MustCompile(`(?i)(^|\s)!(?:high|med|medium|low|h|m|l)\b`)
+	dueTokenRe        = regexp.MustCompile(`(?i)(^|\s)due:\s*\S+`)
+	waitingTokenRe    = regexp.MustCompile(`(?i)(^|\s)@waiting\b`)
+	fieldKeyRe        = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+	multiSpaceRe      = regexp.MustCompile(`\s{2,}`)
+	trailingWsRe      = regexp.MustCompile(`\s+$`)
+	leadingWsRe       = regexp.MustCompile(`^[ \t]*`)
 )
 
 func (d TaskDialect) fenceRe() *regexp.Regexp {
@@ -110,6 +111,7 @@ func NoteTasksMode(val string) string {
 
 type noteDefaults struct {
 	Due       string
+	DueTime   string
 	Priority  string
 	Status    string
 	TasksMode string
@@ -134,8 +136,8 @@ func parseNoteDefaults(body string) noteDefaults {
 		val := Unquote(strings.TrimSpace(trimmed[colon+1:]))
 		switch key {
 		case "due":
-			if IsValidISODate(val) {
-				d.Due = val
+			if date, clock := SplitDateTime(val); date != "" {
+				d.Due, d.DueTime = date, clock
 			}
 		case "priority":
 			if p := NormalizePriority(val); p != "" {
@@ -190,6 +192,8 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 	if t := strings.TrimSpace(firstScalar(fm["title"])); t != "" {
 		content = t
 	}
+	due, dueTime := splitFrontmatterDateTime(firstScalar(fm["due"]))
+	scheduled, scheduledTime := splitFrontmatterDateTime(firstScalar(fm["scheduled"]))
 	task := Task{
 		ID:            path + "#task",
 		SourcePath:    path,
@@ -202,14 +206,16 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		Checked:       doneStatuses[status],
 		Cancelled:     cancelledStatuses[status],
 		InProgress:    inProgressStatuses[status],
-		Due:           normalizeDueDate(firstScalar(fm["due"])),
+		Due:           due,
+		DueTime:       dueTime,
 		Priority:      NormalizePriority(firstScalar(fm["priority"])),
 		Waiting:       status == "waiting",
 		Fields:        fields,
 		Status:        status,
 		Tags:          tags,
 		Kind:          "file",
-		Scheduled:     normalizeDueDate(firstScalar(fm["scheduled"])),
+		Scheduled:     scheduled,
+		ScheduledTime: scheduledTime,
 		CompletedDate: normalizeDueDate(firstScalar(fm["completeddate"])),
 	}
 	if dialect == DialectCLI {
@@ -268,9 +274,9 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 		checkedChar := m[2]
 		tail := strings.TrimPrefix(m[3], "]")
 		tokens := extractTaskTokens(tail, opts.Dialect)
-		due := tokens.due
+		due, dueTime := tokens.due, tokens.dueTime
 		if due == "" {
-			due = defaults.Due
+			due, dueTime = defaults.Due, defaults.DueTime
 		}
 		priority := tokens.priority
 		if priority == "" {
@@ -309,11 +315,15 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 			InProgress: checkedChar == "/",
 			Forwarded:  checkedChar == ">",
 			Due:        due,
+			DueTime:    dueTime,
 			Priority:   priority,
 			Waiting:    tokens.waiting,
 			Fields:     fields,
 			Status:     status,
 			Tags:       tokens.tags,
+
+			Scheduled:     tokens.scheduled,
+			ScheduledTime: tokens.scheduledTime,
 		})
 		taskIndex++
 	}
@@ -321,11 +331,12 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 }
 
 type taskTokens struct {
-	due, priority string
-	waiting       bool
-	fields        map[string]string
-	tags          []string
-	stripped      string
+	due, dueTime, priority   string
+	scheduled, scheduledTime string
+	waiting                  bool
+	fields                   map[string]string
+	tags                     []string
+	stripped                 string
 }
 
 // inlineStatus is the `@status:` a checkbox line carries, or the note's
@@ -344,10 +355,14 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 	t := taskTokens{fields: map[string]string{}, tags: []string{}}
 	stripped := tail
 	if dm := inlineDueRe.FindStringSubmatch(stripped); dm != nil {
-		if IsValidISODate(dm[1]) {
-			t.due = dm[1]
-		}
+		t.due, t.dueTime = SplitDateTime(dm[1])
 		stripped = inlineDueRe.ReplaceAllString(stripped, " ")
+	}
+	// The token is stripped in both dialects, so a scheduled date never
+	// lingers in the displayed content.
+	if sm := inlineScheduledRe.FindStringSubmatch(stripped); sm != nil {
+		t.scheduled, t.scheduledTime = SplitDateTime(sm[1])
+		stripped = inlineScheduledRe.ReplaceAllString(stripped, " ")
 	}
 	if pm := inlinePriorityRe.FindStringSubmatch(stripped); pm != nil {
 		t.priority = NormalizePriority(pm[1])

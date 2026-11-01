@@ -109,3 +109,30 @@ func TestTaskListJSONUnchangedForNotesWithoutSchedulingSyntax(t *testing.T) {
 		}
 	}
 }
+
+// A `scheduled:` token is read as a date, so it leaves the content instead of
+// lingering in the task text.
+func TestTaskListJSONStripsScheduledFromContent(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	note := "- [ ] Draft scheduled:2026-11-05 the report\n"
+	if err := os.WriteFile(filepath.Join(root, "todo.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"task", "list", "--json", "--vault", root}
+	out := captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	var tasks []struct {
+		Content   string `json:"content"`
+		Scheduled string `json:"scheduled"`
+	}
+	if err := json.Unmarshal([]byte(out), &tasks); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if len(tasks) != 1 || tasks[0].Content != "Draft the report" || tasks[0].Scheduled != "2026-11-05" {
+		t.Fatalf("got %+v", tasks)
+	}
+}
