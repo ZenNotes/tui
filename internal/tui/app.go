@@ -121,9 +121,11 @@ type App struct {
 	recent     []string
 	closedTabs []closedTab
 
-	message     string
-	messageErr  bool
-	toasts      []toast
+	message    string
+	messageErr bool
+	toasts     []toast
+	// toastRects are the cells the last frame's toasts were drawn over.
+	toastRects  []rect
 	nextToastID int
 
 	watcher      *fswatch.Watcher
@@ -1111,6 +1113,7 @@ func (a *App) renderWildmenu(comps []string, idx int) string {
 func (a *App) renderToasts(screen string) string {
 	lines := strings.Split(screen, "\n")
 	row := 1
+	a.toastRects = a.toastRects[:0]
 	for _, t := range a.toasts {
 		style := a.theme.Overlay
 		if t.isErr {
@@ -1120,13 +1123,17 @@ func (a *App) renderToasts(screen string) string {
 		blockLines := strings.Split(block, "\n")
 		bw := lipgloss.Width(block)
 		left := max(0, a.width-bw-2)
+		drawn := 0
 		for i, bl := range blockLines {
 			if row+i >= len(lines)-2 {
 				break
 			}
 			orig := lines[row+i]
 			lines[row+i] = padRight(truncateAnsi(orig, left), left) + bl
+			drawn++
 		}
+		// The rest of each row past the toast is cut off too.
+		a.toastRects = append(a.toastRects, rect{x: left, y: row, w: max(0, a.width-left), h: drawn})
 		row += len(blockLines)
 	}
 	return strings.Join(lines, "\n")

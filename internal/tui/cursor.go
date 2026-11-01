@@ -67,11 +67,23 @@ func (a *App) insertionCell(buf *noteBuffer, rc rect) (x, y int, ok bool) {
 	return 0, 0, false
 }
 
-// computeCursor picks the cursor for the frame just drawn.
+// computeCursor picks the cursor for the frame just drawn. A toast hides it
+// only when it is drawn over the cursor's cell: toasts take no keys, and the
+// user keeps typing while one shows.
 func (a *App) computeCursor() cursorState {
-	if len(a.toasts) > 0 {
-		return cursorState{} // a toast covers the corner it sits in
+	c := a.uncoveredCursor()
+	if c.visible && len(a.toasts) > 0 {
+		for _, r := range a.toastRects {
+			if c.x >= r.x && c.x < r.x+r.w && c.y >= r.y && c.y < r.y+r.h {
+				return cursorState{}
+			}
+		}
 	}
+	return c
+}
+
+// uncoveredCursor is the cursor for the frame, toasts aside.
+func (a *App) uncoveredCursor() cursorState {
 	if a.leader != nil && a.leader.showHints {
 		return cursorState{} // the which-key popup covers the pane
 	}

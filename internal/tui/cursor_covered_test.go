@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -90,18 +91,48 @@ func TestCursorCoveredWhichKey(t *testing.T) {
 	})
 }
 
-func TestCursorCoveredToast(t *testing.T) {
+// toastOver reports whether a toast in the last frame covers cell c.
+func toastOver(a *App, c cursorState) bool {
+	for _, r := range a.toastRects {
+		if c.x >= r.x && c.x < r.x+r.w && c.y >= r.y && c.y < r.y+r.h {
+			return true
+		}
+	}
+	return false
+}
+
+func expireToasts(a *App) {
+	for i := range a.toasts {
+		a.toasts[i].until = time.Now().Add(-time.Second)
+	}
+	a.expireToasts()
+}
+
+// A toast in its corner takes no keys, so typing elsewhere keeps the bar.
+func TestCursorToastElsewhereKeepsBar(t *testing.T) {
 	coveredModes(t, func(t *testing.T, vimMode bool) {
 		a, want := coveredApp(t, vimMode)
 		a.notify("saved")
 		if len(a.toasts) == 0 {
 			t.Fatal("no toast")
 		}
-		assertCursorHidden(t, a, "a toast")
-		for i := range a.toasts {
-			a.toasts[i].until = time.Now().Add(-time.Second)
+		assertCursorAt(t, a, want, "with a toast in the corner")
+		if toastOver(a, want) {
+			t.Fatalf("the toast %+v covers the cursor %+v; the test needs it elsewhere", a.toastRects, want)
 		}
-		a.expireToasts()
+	})
+}
+
+func TestCursorCoveredToast(t *testing.T) {
+	coveredModes(t, func(t *testing.T, vimMode bool) {
+		a, want := coveredApp(t, vimMode)
+		a.notify(strings.Repeat("saved ", 20))
+		a.View()
+		if !toastOver(a, want) {
+			t.Fatalf("the toast %+v does not cover the cursor %+v", a.toastRects, want)
+		}
+		assertCursorHidden(t, a, "a toast over its cell")
+		expireToasts(a)
 		assertCursorAt(t, a, want, "after the toast expired")
 	})
 }
