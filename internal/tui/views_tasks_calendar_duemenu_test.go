@@ -50,7 +50,7 @@ func calPick(t *testing.T, a *App, m *menu, word string) {
 	a.overlay.handleKey(a, vim.KeyEnter)
 }
 
-func TestDueMenuOpensFromItemPanel(t *testing.T) { // AC88
+func TestDueMenuOpensFromItemPanel(t *testing.T) {
 	_, tv, _, _ := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	requireDay(t, tv, "2026-11-18", "after @")
 	if tv.calc().sub != calMonth {
@@ -59,7 +59,7 @@ func TestDueMenuOpensFromItemPanel(t *testing.T) { // AC88
 	requireFocus(t, tv, calFocusItems, "after @")
 }
 
-func TestDueMenuListsChoicesInOrder(t *testing.T) { // AC89
+func TestDueMenuListsChoicesInOrder(t *testing.T) {
 	_, _, _, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	if len(m.items) != 6 {
 		t.Fatalf("menu has %d items, want 6: %+v", len(m.items), m.items)
@@ -71,7 +71,7 @@ func TestDueMenuListsChoicesInOrder(t *testing.T) { // AC89
 	}
 }
 
-func TestDueMenuArrowsAndEnterRunChoice(t *testing.T) { // AC90
+func TestDueMenuArrowsAndEnterRunChoice(t *testing.T) {
 	a, _, root, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	a.overlay.handleKey(a, vim.KeyDown)
 	if m.cursor != 1 {
@@ -87,7 +87,7 @@ func TestDueMenuArrowsAndEnterRunChoice(t *testing.T) { // AC90
 	}
 }
 
-func TestDueMenuLettersRunNothing(t *testing.T) { // AC91
+func TestDueMenuLettersRunNothing(t *testing.T) {
 	a, _, root, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	for _, it := range m.items {
 		if it.key != "" {
@@ -102,7 +102,7 @@ func TestDueMenuLettersRunNothing(t *testing.T) { // AC91
 	}
 }
 
-func TestDueMenuRelativeChoicesSetDue(t *testing.T) { // AC92
+func TestDueMenuRelativeChoicesSetDue(t *testing.T) {
 	for _, c := range []struct{ word, due string }{
 		{"today", "2026-10-29"}, {"tomorrow", "2026-10-30"}, {"next week", "2026-11-05"},
 	} {
@@ -118,7 +118,7 @@ func TestDueMenuRelativeChoicesSetDue(t *testing.T) { // AC92
 	}
 }
 
-func TestDueMenuSelectedDaySetsDue(t *testing.T) { // AC93
+func TestDueMenuSelectedDaySetsDue(t *testing.T) {
 	a, _, root, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	calPick(t, a, m, "2026-11-18")
 	if got := calReadFile(t, root, "work.md"); !strings.Contains(got, "alpha job due:2026-11-18") {
@@ -126,7 +126,7 @@ func TestDueMenuSelectedDaySetsDue(t *testing.T) { // AC93
 	}
 }
 
-func TestDueMenuClearRemovesDue(t *testing.T) { // AC94
+func TestDueMenuClearRemovesDue(t *testing.T) {
 	a, _, root, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	calPick(t, a, m, "clear")
 	got := calReadFile(t, root, "work.md")
@@ -138,7 +138,7 @@ func TestDueMenuClearRemovesDue(t *testing.T) { // AC94
 	}
 }
 
-func TestDueMenuOtherOpensDuePrompt(t *testing.T) { // AC95
+func TestDueMenuOtherOpensDuePrompt(t *testing.T) {
 	a, _, _, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 	calPick(t, a, m, "other")
 	p, ok := a.overlay.(*prompt)
@@ -150,7 +150,7 @@ func TestDueMenuOtherOpensDuePrompt(t *testing.T) { // AC95
 	}
 }
 
-func TestDueMenuDismissLeavesTaskUnchanged(t *testing.T) { // AC96
+func TestDueMenuDismissLeavesTaskUnchanged(t *testing.T) {
 	for _, k := range []vim.Key{vim.KeyEsc, vim.R('q'), vim.Ctrl('c')} {
 		a, _, root, _ := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
 		a.overlay.handleKey(a, k)
@@ -163,7 +163,7 @@ func TestDueMenuDismissLeavesTaskUnchanged(t *testing.T) { // AC96
 	}
 }
 
-func TestDueMenuOpensFromStrip(t *testing.T) { // AC97
+func TestDueMenuOpensFromStrip(t *testing.T) {
 	calFixToday(t, calDate(2026, time.October, 29))
 	a, tv, root := calVaultApp(t, map[string]string{"work.md": calWorkNote, "loose.md": calLooseNote})
 	calPress(a, tv, vim.KeyTab, vim.KeyTab)
@@ -179,7 +179,7 @@ func TestDueMenuOpensFromStrip(t *testing.T) { // AC97
 	}
 }
 
-func TestDueMenuWithoutVimMode(t *testing.T) { // AC112
+func TestDueMenuWithoutVimMode(t *testing.T) {
 	calFixToday(t, calDate(2026, time.October, 29))
 	a, tv, root := calVaultApp(t, map[string]string{"work.md": calWorkNote})
 	a.prefs.VimMode = false

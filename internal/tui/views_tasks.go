@@ -933,7 +933,7 @@ func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
 }
 
 func (v *tasksView) boardKey(a *App, k vim.Key) bool {
-	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("tab") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
+	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
 		return false
 	}
 	t := v.selectedTask()
