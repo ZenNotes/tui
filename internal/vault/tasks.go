@@ -25,6 +25,7 @@ var (
 	inlineDueRe       = regexp.MustCompile(`(?i)(?:^|\s)due:\s*(\S+)`)
 	inlineScheduledRe = regexp.MustCompile(`(?i)(?:^|\s)scheduled:\s*(\S+)`)
 	inlineRepeatRe    = regexp.MustCompile(`(?i)(?:^|\s)repeat:(\S+)`)
+	inlineSkipRe      = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
 	inlinePriorityRe  = regexp.MustCompile(`(?i)(?:^|\s)!(high|med|medium|low|h|m|l)\b`)
 	inlineWaitingRe   = regexp.MustCompile(`(?i)(?:^|\s)@waiting\b`)
 	inlineFieldRe     = regexp.MustCompile(`(?i)(?:^|\s)@([a-z][a-z0-9_-]*):([\p{L}\d][\p{L}\d/_-]*)`)
@@ -218,6 +219,7 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		Scheduled:     scheduled,
 		ScheduledTime: scheduledTime,
 		Repeat:        frontmatterRepeat(firstScalar(fm["repeat"])),
+		Skip:          frontmatterSkip(fm["skip"]),
 		CompletedDate: normalizeDueDate(firstScalar(fm["completeddate"])),
 	}
 	if dialect == DialectCLI {
@@ -327,6 +329,7 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 			Scheduled:     tokens.scheduled,
 			ScheduledTime: tokens.scheduledTime,
 			Repeat:        tokens.repeat,
+			Skip:          tokens.skip,
 		})
 		taskIndex++
 	}
@@ -337,6 +340,7 @@ type taskTokens struct {
 	due, dueTime, priority   string
 	scheduled, scheduledTime string
 	repeat                   string
+	skip                     []string
 	waiting                  bool
 	fields                   map[string]string
 	tags                     []string
@@ -375,6 +379,15 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 			t.repeat = strings.ToLower(rm[1])
 		}
 		stripped = inlineRepeatRe.ReplaceAllString(stripped, " ")
+	}
+	// Several skip tokens add up. Like repeat, every token leaves the content
+	// and only its valid items are kept.
+	if sm := inlineSkipRe.FindAllStringSubmatch(stripped, -1); sm != nil {
+		for _, m := range sm {
+			items, _ := ParseSkipItems(m[1])
+			t.skip = append(t.skip, items...)
+		}
+		stripped = inlineSkipRe.ReplaceAllString(stripped, " ")
 	}
 	if pm := inlinePriorityRe.FindStringSubmatch(stripped); pm != nil {
 		t.priority = NormalizePriority(pm[1])

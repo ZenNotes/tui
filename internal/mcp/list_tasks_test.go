@@ -89,3 +89,40 @@ func TestListTasksCarriesTimesAndRepeat(t *testing.T) {
 		}
 	}
 }
+
+// list_tasks reports a task's valid skip items, in their written form.
+func TestListTasksCarriesValidSkipItems(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	note := "- [ ] Assignment repeat:1w skip:2027-03-13..2027-03-21,2027-04-02,2027-03-21..2027-03-13\n- [ ] Pay rent\n"
+	if err := os.WriteFile(filepath.Join(root, "inbox", "todo.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := runServer(t, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	text, isErr := callTool(t, cs, "list_tasks", map[string]any{})
+	if isErr {
+		t.Fatalf("list_tasks: %s", text)
+	}
+	var tasks []map[string]any
+	if err := json.Unmarshal([]byte(text), &tasks); err != nil {
+		t.Fatalf("%v\n%s", err, text)
+	}
+	byContent := map[string]map[string]any{}
+	for _, task := range tasks {
+		byContent[task["content"].(string)] = task
+	}
+	assignment, rent := byContent["Assignment"], byContent["Pay rent"]
+	if assignment == nil || rent == nil {
+		t.Fatalf("got %s", text)
+	}
+	if got, _ := assignment["skip"].([]any); !reflect.DeepEqual(got, []any{"2027-03-13..2027-03-21", "2027-04-02"}) {
+		t.Fatalf("assignment: %+v", assignment)
+	}
+	if _, present := rent["skip"]; present {
+		t.Fatalf("skip key present on a plain task: %+v", rent)
+	}
+}

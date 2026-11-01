@@ -226,3 +226,14 @@ func frontmatterRepeat(raw string) string {
 	}
 	return v
 }
+
+// frontmatterSkip reads a task note's `skip` value, a scalar or a list, into
+// its valid items. A scalar may also hold several comma-separated items.
+func frontmatterSkip(values []string) []string {
+	var out []string
+	for _, v := range values {
+		items, _ := ParseSkipItems(v)
+		out = append(out, items...)
+	}
+	return out
+}

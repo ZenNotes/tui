@@ -183,3 +183,32 @@ func TestTaskListJSONOmitsSchedulingKeysWhenUnset(t *testing.T) {
 		}
 	}
 }
+
+// The JSON lists a task's valid skip items in their written form and drops
+// the reversed ones.
+func TestTaskListJSONCarriesValidSkipItems(t *testing.T) {
+	tasks := listTaskJSON(t, "- [ ] A repeat:1w skip:2027-03-13..2027-03-21,2027-04-02,2027-03-21..2027-03-13\n")
+	if len(tasks) != 1 {
+		t.Fatalf("got %+v", tasks)
+	}
+	got, _ := tasks[0]["skip"].([]any)
+	if !reflect.DeepEqual(got, []any{"2027-03-13..2027-03-21", "2027-04-02"}) {
+		t.Fatalf("skip: %+v", tasks[0])
+	}
+	if tasks[0]["content"] != "A" {
+		t.Fatalf("content: %+v", tasks[0])
+	}
+}
+
+// A task without a skip token has no skip key in its JSON.
+func TestTaskListJSONOmitsSkipWhenUnset(t *testing.T) {
+	tasks := listTaskJSON(t, "- [ ] A repeat:1w\n- [ ] B skip:@spring-break\n")
+	if len(tasks) != 2 {
+		t.Fatalf("got %+v", tasks)
+	}
+	for _, task := range tasks {
+		if _, present := task["skip"]; present {
+			t.Errorf("skip key present: %+v", task)
+		}
+	}
+}
