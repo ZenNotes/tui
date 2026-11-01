@@ -34,7 +34,11 @@ func (v *helpView) hintPairs(a *App) []hintPair {
 }
 
 func (v *settingsView) hintPairs(a *App) []hintPair {
-	return []hintPair{{"nav.moveDown|nav.moveUp", "select"}, {"key:enter", "edit"}, {"key:/", "filter"}, {"key:v", "version details"}, {"key::config", "config file"}}
+	pairs := []hintPair{{"nav.moveDown|nav.moveUp", "select"}, {"key:enter", "edit"}}
+	if _, ok := v.selectedRuleRow(); ok {
+		pairs = append(pairs, hintPair{"key:d", "remove rule"})
+	}
+	return append(pairs, hintPair{"key:/", "filter"}, hintPair{"key:v", "version details"}, hintPair{"key::config", "config file"})
 }
 
 // Mouse wheel scrolling for the list views.

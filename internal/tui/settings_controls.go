@@ -15,6 +15,38 @@ type settingRow struct {
 	value        any
 	vault        bool
 }
+
+type ruleRowKind int
+
+const (
+	rowSetting ruleRowKind = iota
+	rowRule
+	rowInvalidRule
+	rowAddRule
+)
+
+const viewModeRulesSection = "terminal.view_mode_rules"
+
+// addRuleValue is the value of the row that adds a rule. Its own type keeps
+// that row apart from every rule, whatever key a rule is written under.
+type addRuleValue struct{}
+
+func (addRuleValue) String() string { return "Enter to add a rule" }
+
+// kind tells plain settings from the view-mode rule rows. A rule row's key
+// is the rule's key exactly as written in config.toml.
+func (r settingRow) kind() ruleRowKind {
+	switch {
+	case r.section != viewModeRulesSection:
+		return rowSetting
+	case r.value == addRuleValue{}:
+		return rowAddRule
+	case r.reason() != "":
+		return rowInvalidRule
+	}
+	return rowRule
+}
+
 type settingsView struct {
 	scroll, rows int
 	lines        []string
@@ -34,7 +66,10 @@ func (v *settingsView) refresh(a *App) {
 			scope = "vault"
 		}
 		line := scope + " · " + s.section + "." + s.key + " = " + fmt.Sprint(s.value)
-		if strings.Contains(strings.ToLower(line), strings.ToLower(v.filter)) {
+		if s.kind() == rowInvalidRule {
+			line += " (invalid: " + s.reason() + ")"
+		}
+		if s.kind() == rowAddRule || strings.Contains(strings.ToLower(line), strings.ToLower(v.filter)) {
 			v.settings = append(v.settings, s)
 			v.lines = append(v.lines, line)
 		}
@@ -51,6 +86,9 @@ func (v *settingsView) refresh(a *App) {
 				continue
 			}
 			add(settingRow{section, key, tables[section][key], false})
+		}
+		if section == "terminal" {
+			v.addRuleRows(a, add)
 		}
 	}
 	if a.idx != nil {
@@ -72,6 +110,115 @@ func (v *settingsView) refresh(a *App) {
 	}
 	v.list.clamp(len(v.settings))
 }
+
+// reason is the short explanation for an invalid rule row.
+func (r settingRow) reason() string {
+	_, reason := config.ParseViewModeRule(r.key, fmt.Sprint(r.value))
+	return reason
+}
+
+// addRuleRows lists the view-mode rules after the terminal rows: the valid
+// ones in match order, then the invalid ones, then the row that adds a rule.
+// The add row stays under every filter.
+func (v *settingsView) addRuleRows(a *App, add func(settingRow)) {
+	for _, e := range config.ViewModeRuleEntries(a.prefs.ViewModeRules) {
+		add(settingRow{viewModeRulesSection, e.Key, e.Mode, false})
+	}
+	add(settingRow{viewModeRulesSection, "(add rule)", addRuleValue{}, false})
+}
+
+// addRule asks for the frontmatter field, then the value, then the mode, and
+// writes the rule only after the mode is picked. Esc at any step writes
+// nothing.
+func (v *settingsView) addRule(a *App) {
+	a.promptFor("View-mode rule: frontmatter field", "", "For example page-status · Esc cancels", func(a *App, field string) {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			a.notifyError("Enter a frontmatter field")
+			return
+		}
+		if strings.Contains(field, "=") {
+			a.notifyError("The field cannot contain \"=\"")
+			return
+		}
+		a.promptFor("View-mode rule: value of "+field, "", "For example done · a list field matches any element · Esc cancels", func(a *App, value string) {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				a.notifyError("Enter a value to match")
+				return
+			}
+			key := field + "=" + value
+			rule, _ := config.ParseViewModeRule(key, "edit")
+			for _, e := range config.ViewModeRuleEntries(a.prefs.ViewModeRules) {
+				if e.Valid && e.Rule.Key == rule.Key && e.Rule.Value == rule.Value {
+					a.notifyError("A rule for " + rule.Key + "=" + rule.Value + " already exists")
+					return
+				}
+			}
+			items := []paletteItem{}
+			for _, m := range config.ViewModeModes {
+				items = append(items, paletteItem{label: m, id: m})
+			}
+			a.overlay = &palette{title: "Pane mode for " + key, items: items, filtered: items, onSelect: func(a *App, it paletteItem) {
+				if err := config.SetViewModeRule(key, it.id); err != nil {
+					a.notifyError(err.Error())
+					return
+				}
+				if err := a.reloadPreferences(); err != nil {
+					a.notifyError(err.Error())
+				}
+				v.refresh(a)
+			}}
+		})
+	})
+}
+
+// selectedRuleRow is the rule row under the cursor, valid or invalid.
+func (v *settingsView) selectedRuleRow() (settingRow, bool) {
+	if v.list.cursor < 0 || v.list.cursor >= len(v.settings) {
+		return settingRow{}, false
+	}
+	row := v.settings[v.list.cursor]
+	return row, row.kind() == rowRule || row.kind() == rowInvalidRule
+}
+
+// applyRuleChange reloads preferences after a rule was written or removed and
+// refreshes the rows.
+func (v *settingsView) applyRuleChange(a *App, err error) {
+	if err != nil {
+		a.notifyError(err.Error())
+		return
+	}
+	if err := a.reloadPreferences(); err != nil {
+		a.notifyError(err.Error())
+	}
+	v.refresh(a)
+}
+
+// removeRule deletes a rule by its key exactly as written in config.toml.
+func (v *settingsView) removeRule(a *App, row settingRow) {
+	v.applyRuleChange(a, config.RemoveViewModeRule(row.key))
+}
+
+// editRule opens the mode palette for a rule row. A rule whose key is
+// malformed cannot take a mode, so it only offers remove.
+func (v *settingsView) editRule(a *App, row settingRow) {
+	items := []paletteItem{}
+	if _, reason := config.ParseViewModeRule(row.key, "edit"); reason == "" {
+		for _, m := range config.ViewModeModes {
+			items = append(items, paletteItem{label: m, id: m})
+		}
+	}
+	items = append(items, paletteItem{label: "remove", id: "remove"})
+	a.overlay = &palette{title: "Pane mode for " + row.key, items: items, filtered: items, onSelect: func(a *App, it paletteItem) {
+		if it.id == "remove" {
+			v.removeRule(a, row)
+			return
+		}
+		v.applyRuleChange(a, config.SetViewModeRule(row.key, it.id))
+	}}
+}
+
 func (v *settingsView) render(a *App, w, h int, focused bool) string {
 	if v.lines == nil {
 		v.refresh(a)
@@ -94,12 +241,25 @@ func (v *settingsView) handleKey(a *App, k vim.Key) bool {
 		_ = a.showVersion(vim.ExCommand{Name: "version"})
 		return true
 	}
+	if k.IsRune('d') {
+		if row, ok := v.selectedRuleRow(); ok {
+			v.removeRule(a, row)
+		}
+		return true
+	}
 	if a.listNav(&v.list, k, len(v.settings), v.rows) {
 		return true
 	}
 	if k.Is("enter") {
 		if v.list.cursor < len(v.settings) {
-			v.edit(a, v.settings[v.list.cursor])
+			switch row := v.settings[v.list.cursor]; row.kind() {
+			case rowSetting:
+				v.edit(a, row)
+			case rowAddRule:
+				v.addRule(a)
+			case rowRule, rowInvalidRule:
+				v.editRule(a, row)
+			}
 		}
 		return true
 	}
@@ -175,7 +335,11 @@ func (v *settingsView) edit(a *App, row settingRow) {
 		a.overlay = &palette{title: row.section + "." + row.key, items: items, filtered: items, onSelect: func(a *App, it paletteItem) { save(it.id) }}
 		return
 	}
-	a.promptFor(row.section+"."+row.key, fmt.Sprint(row.value), "Saved immediately · Esc cancels", func(a *App, text string) {
+	help := "Saved immediately · Esc cancels"
+	if row.section == "terminal" && row.key == "view_mode_field" && strings.TrimSpace(fmt.Sprint(row.value)) == "" {
+		help = "Frontmatter field that sets the pane mode, for example view-mode · " + help
+	}
+	a.promptFor(row.section+"."+row.key, fmt.Sprint(row.value), help, func(a *App, text string) {
 		if _, ok := row.value.(int); ok {
 			n, err := strconv.Atoi(strings.TrimSpace(text))
 			if err != nil || n < 0 || n > 10000 {
