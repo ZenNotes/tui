@@ -61,11 +61,21 @@ func TestInvalidViewModeRulesAreIgnoredButReported(t *testing.T) {
 	}
 }
 
-// An empty value part is a rule like any other when read from the file.
-func TestViewModeRuleWithEmptyValueIsValid(t *testing.T) {
-	valid := ValidViewModeRules(map[string]string{"status=": "edit"})
-	if len(valid) != 1 || valid[0].Key != "status" || valid[0].Value != "" {
-		t.Fatalf("got %+v", valid)
+// A rule with nothing after "=" is invalid when read from the file: it is
+// reported with its reason and never matches.
+func TestViewModeRuleWithEmptyValueIsInvalid(t *testing.T) {
+	raw := map[string]string{"status=": "edit", `status=""`: "preview"}
+	if valid := ValidViewModeRules(raw); len(valid) != 0 {
+		t.Fatalf("empty-value rules must not be valid, got %+v", valid)
+	}
+	entries := ViewModeRuleEntries(raw)
+	if len(entries) != 2 {
+		t.Fatalf("want both entries reported, got %+v", entries)
+	}
+	for _, e := range entries {
+		if e.Valid || e.Reason != "empty value" {
+			t.Fatalf("entry %q: want invalid with reason %q, got %+v", e.Key, "empty value", e)
+		}
 	}
 }
 

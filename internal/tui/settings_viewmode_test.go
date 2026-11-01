@@ -532,10 +532,11 @@ func TestSettingsFixInvalidRuleMode(t *testing.T) {
 
 func TestSettingsMalformedRuleOffersOnlyRemove(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
-	writeRules(t, a, map[string]string{"status": "preview", "=x": "edit"})
+	writeRules(t, a, map[string]string{"status": "preview", "=x": "edit", "kind=": "split"})
 	for _, line := range []string{
 		`user · terminal.view_mode_rules.status = preview (invalid: no "=")`,
 		"user · terminal.view_mode_rules.=x = edit (invalid: empty key)",
+		"user · terminal.view_mode_rules.kind= = split (invalid: empty value)",
 	} {
 		v := selectRule(t, a, line)
 		v.handleKey(a, vim.Key{Name: "enter"})

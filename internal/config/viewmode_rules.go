@@ -45,7 +45,8 @@ func normalizeViewModePart(s string) string {
 }
 
 // ParseViewModeRule validates one "<key>=<value>" entry and its mode. The
-// first "=" splits key from value. On failure it returns a short reason.
+// first "=" splits key from value; both must be non-empty, and the mode
+// must be edit, split or preview. On failure it returns a short reason.
 func ParseViewModeRule(key, mode string) (ViewModeRule, string) {
 	k, v, found := strings.Cut(key, "=")
 	if !found {
@@ -55,22 +56,20 @@ func ParseViewModeRule(key, mode string) (ViewModeRule, string) {
 	if k == "" {
 		return ViewModeRule{}, "empty key"
 	}
+	v = normalizeViewModePart(v)
+	if v == "" {
+		return ViewModeRule{}, "empty value"
+	}
 	m, ok := normalizeViewModeMode(mode)
 	if !ok {
 		return ViewModeRule{}, "bad mode"
 	}
-	return ViewModeRule{Key: k, Value: normalizeViewModePart(v), Mode: m}, ""
+	return ViewModeRule{Key: k, Value: v, Mode: m}, ""
 }
 
-// ValidateViewModeRule is the check writers run before storing a rule: the
-// key must hold "=", a non-empty field and a non-empty value, and the mode
-// must be edit, split or preview.
+// ValidateViewModeRule is the check writers run before storing a rule.
 func ValidateViewModeRule(key, mode string) error {
-	rule, reason := ParseViewModeRule(key, mode)
-	if reason == "" && rule.Value == "" {
-		reason = "empty value"
-	}
-	if reason != "" {
+	if _, reason := ParseViewModeRule(key, mode); reason != "" {
 		return &viewModeRuleError{reason}
 	}
 	return nil
