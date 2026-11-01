@@ -252,6 +252,17 @@ func TestHelpMentionsLatexSettings(t *testing.T) {
 	}
 }
 
+func TestHelpMentionsFrontmatterViewMode(t *testing.T) {
+	a := &App{}
+	a.keymap = newTestResolver()
+	help := strings.Join(helpLines(a, ""), "\n")
+	for _, want := range []string{"view_mode_field", "[terminal.view_mode_rules]", "frontmatter"} {
+		if !contains(help, want) {
+			t.Errorf("help does not mention %q", want)
+		}
+	}
+}
+
 // The help row keyed `[terminal] math` names the tools latex needs.
 func TestHelpMathEntryNamesTools(t *testing.T) {
 	a := &App{}
