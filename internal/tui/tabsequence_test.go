@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -186,5 +187,16 @@ func TestKanbanGChangesTheGroupingAtOnce(t *testing.T) {
 	typeKeys(a, "]b")
 	if a.activePane.active == board {
 		t.Fatal("]b from the board did not switch tabs")
+	}
+}
+
+func TestStatusBarShowsAHeldKey(t *testing.T) {
+	a, _ := newFeatureTestApp(t)
+	a.activePane.tabs = append(a.activePane.tabs, &tab{path: "virtual:a", view: &probeView{}})
+	a.activePane.active = len(a.activePane.tabs) - 1
+	a.focus = focusPane
+	typeKeys(a, "]")
+	if !strings.Contains(a.renderStatusBar(), "]") {
+		t.Fatalf("the status bar does not show the held key: %q", a.renderStatusBar())
 	}
 }
