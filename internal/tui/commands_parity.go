@@ -550,7 +550,6 @@ func (a *App) rolloverNow() error {
 	}
 	a.openNote(rel, true)
 	if created {
-		a.showNewNoteInEditor(rel)
 	}
 	return nil
 }
@@ -915,7 +914,6 @@ func (a *App) newTaskFile(target string) error {
 		a.addNoteToIndex(meta)
 		a.markNewNote(meta.Path)
 		a.openNote(meta.Path, true)
-		a.showNewNoteInEditor(meta.Path)
 		a.afterTaskChange()
 	})
 	return nil

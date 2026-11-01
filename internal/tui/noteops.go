@@ -32,7 +32,6 @@ func (a *App) createNote(folder vault.NoteFolder, title, subpath string, body *s
 	a.addNoteToIndex(meta)
 	if open {
 		a.openNote(meta.Path, true)
-		a.showNewNoteInEditor(meta.Path)
 		a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) {
 			buf.ed.GotoLine(buf.ed.LineCount())
 			if a.prefs.VimMode {
@@ -41,17 +40,6 @@ func (a *App) createNote(folder vault.NoteFolder, title, subpath string, body *s
 		})
 	}
 	a.refreshIndex()
-}
-
-// showNewNoteInEditor shows a note just created and opened in the editor,
-// whatever the default view mode: a new note is there to be written in, as
-// on the desktop. Only its tab changes, so the default view mode and the
-// remembered per-note modes stay as they were.
-func (a *App) showNewNoteInEditor(path string) {
-	if t := a.activeTab(); t != nil && t.view == nil && t.path == path {
-		t.mode = modeEdit
-		a.layout()
-	}
 }
 
 // addNoteToIndex makes a fresh note visible before the next full reload.
@@ -619,7 +607,6 @@ func (a *App) openPeriodicOn(kind periodic.Kind, date time.Time) {
 	}
 	a.markNewNote(meta.Path)
 	a.openNote(meta.Path, true)
-	a.showNewNoteInEditor(meta.Path)
 	a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.GotoLine(buf.ed.LineCount()) })
 	a.refreshIndex()
 }
@@ -694,7 +681,6 @@ func (a *App) createFromTemplate(t templates.Template) {
 		a.addNoteToIndex(meta)
 		a.markNewNote(meta.Path)
 		a.openNote(meta.Path, true)
-		a.showNewNoteInEditor(meta.Path)
 		if rendered.CursorOffset >= 0 {
 			a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.SetCursor(posForOffset(buf.ed.Text(), rendered.CursorOffset)) })
 		}
