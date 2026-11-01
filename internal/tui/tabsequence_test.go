@@ -200,3 +200,12 @@ func TestStatusBarShowsAHeldKey(t *testing.T) {
 		t.Fatalf("the status bar does not show the held key: %q", a.renderStatusBar())
 	}
 }
+
+func TestTabSequencesNeedVimMode(t *testing.T) {
+	a, pv := tabSequenceApp()
+	a.prefs.VimMode = false
+	typeKeys(a, "]bgt")
+	if a.activePane.active != 0 || len(pv.keys) != 4 {
+		t.Fatalf("with Vim off: active = %d keys = %v", a.activePane.active, pv.keys)
+	}
+}
