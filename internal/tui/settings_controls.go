@@ -224,17 +224,80 @@ func (v *settingsView) render(a *App, w, h int, focused bool) string {
 		v.refresh(a)
 	}
 	v.rows = max(1, h-2)
-	v.list.ensureVisible(v.rows)
-	v.scroll = v.list.scroll
+	th := a.theme
 	lines := []string{padRight(truncateCells(" Enter edit · / filter · v version · :config external editor", w), w), padRight(" "+v.filter, w)}
-	for i := v.scroll; i < len(v.lines) && len(lines) < h; i++ {
-		line := padRight(" "+truncateCells(v.lines[i], max(1, w-2)), w)
-		if focused && i == v.list.cursor {
-			line = a.theme.SelectedFocus.Render(line)
+	disp, cur := v.display(w)
+	// v.scroll counts display lines, headings included. Moving up onto the
+	// first row of a group scrolls its headings (at most the scope and the
+	// prefix) back into view with it, and the page never scrolls past its
+	// last line, so a taller window or a shorter list shows the top again.
+	if cur >= 0 {
+		start := cur
+		for n := 0; n < 2 && start > 0 && disp[start-1].idx < 0; n++ {
+			start--
 		}
-		lines = append(lines, line)
+		if start < v.scroll {
+			v.scroll = start
+		} else if cur >= v.scroll+v.rows {
+			v.scroll = cur - v.rows + 1
+		}
+	}
+	v.scroll = max(0, min(v.scroll, len(disp)-v.rows))
+	for i := v.scroll; i < len(disp) && len(lines) < h; i++ {
+		d := disp[i]
+		switch {
+		case d.scope != "":
+			lines = append(lines, padRight(" "+sectionHeader(th, d.scope, settingScopeFiles[d.scope], w-2), w))
+		case d.idx < 0:
+			lines = append(lines, th.Bold.Render(padRight(d.text, w)))
+		case focused && d.idx == v.list.cursor:
+			lines = append(lines, th.SelectedFocus.Render(padRight(d.text, w)))
+		default:
+			lines = append(lines, padRight(d.text, w))
+		}
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
+}
+
+// settingScopeFiles names where each scope's settings are saved.
+var settingScopeFiles = map[string]string{"User": "config.toml", "Vault": ".zennotes/vault.json"}
+
+type settingDisplay struct {
+	text  string
+	idx   int    // index into settings; -1 for a heading
+	scope string // set on the heading that opens the User or Vault group
+}
+
+// display lays the settings out under two groups, User (config.toml) and
+// Vault (.zennotes/vault.json), each split into subsections named by the
+// config prefix (vim, editor, dailyNotes, ...). Rows keep their settings
+// order, so the cursor index maps straight onto v.settings. A row shows its
+// filter line less the scope and prefix its headings already name. It
+// returns the display line of the cursor row, or -1.
+func (v *settingsView) display(w int) ([]settingDisplay, int) {
+	out := []settingDisplay{}
+	cur := -1
+	scope, sub := "", ""
+	for i, s := range v.settings {
+		name := "User"
+		if s.vault {
+			name = "Vault"
+		}
+		if name != scope {
+			scope, sub = name, ""
+			out = append(out, settingDisplay{idx: -1, scope: name})
+		}
+		if s.section != sub {
+			sub = s.section
+			out = append(out, settingDisplay{text: truncateCells("  "+sub, w), idx: -1})
+		}
+		if i == v.list.cursor {
+			cur = len(out)
+		}
+		text := strings.TrimPrefix(v.lines[i], strings.ToLower(name)+" · "+s.section+".")
+		out = append(out, settingDisplay{text: truncateCells("    "+text, w), idx: i})
+	}
+	return out, cur
 }
 func (v *settingsView) handleKey(a *App, k vim.Key) bool {
 	if k.IsRune('v') {
