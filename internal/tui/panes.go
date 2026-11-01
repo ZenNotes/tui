@@ -333,9 +333,15 @@ func (a *App) reopenClosedTab() {
 		a.openVirtualByPath(last.path)
 		return
 	}
+	reused := a.activePane != nil && a.activePane.findTab(last.path) >= 0
 	a.openNote(last.path, true)
 	if t := a.activePane.activeTab(); t != nil {
 		t.mode = last.mode
+		// A reopened note follows its frontmatter like any note opened in a
+		// new tab; the closed tab's mode stands only when it asks for none.
+		if !reused {
+			a.watchFrontmatterMode(t)
+		}
 	}
 }
 

@@ -101,6 +101,17 @@ func (a *App) applyFrontmatterMode(buf *noteBuffer) {
 	a.markSessionDirty()
 }
 
+// forceTabMode sets a tab's mode for an explicit request, such as a
+// reference or a peek. The note's frontmatter, still to be read, will not
+// override it.
+func forceTabMode(t *tab, mode paneMode) {
+	t.mode = mode
+	t.frontmatterPending = false
+	if mode != modeEdit && t.preview == nil {
+		t.preview = &previewState{}
+	}
+}
+
 // markNewNote records that path was just created and is about to be opened,
 // so the open starts in the editor instead of taking a mode from frontmatter.
 func (a *App) markNewNote(path string) {

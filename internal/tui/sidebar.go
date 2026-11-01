@@ -584,10 +584,7 @@ func (s *sidebarState) handleKey(a *App, k vim.Key) {
 		if r := s.row(); r != nil && r.kind == "note" {
 			a.openNote(r.path, false)
 			if t := a.activeTab(); t != nil {
-				t.mode = modePreview
-				if t.preview == nil {
-					t.preview = &previewState{}
-				}
+				forceTabMode(t, modePreview)
 			}
 		}
 	default:

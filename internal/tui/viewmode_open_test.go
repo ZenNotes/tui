@@ -636,3 +636,83 @@ func TestViewModeFeatureWritesNoVaultFiles(t *testing.T) {
 		t.Fatal(".zennotes/vault.json appeared")
 	}
 }
+
+// Peeking a note from the sidebar asks for preview; a slow read of the note's
+// frontmatter must not take that back.
+func TestSidebarPeekStaysPreview(t *testing.T) {
+	for _, fm := range []string{"edit", "split"} {
+		t.Run(fm, func(t *testing.T) {
+			a, root := newFeatureTestApp(t)
+			writeVaultNote(t, root, "n.md", "---\nview-mode: "+fm+"\n---\nbody\n")
+			a.idx = a.loadIndexCmd()().(indexLoadedMsg).idx
+			a.sidebar.rebuild(a)
+			enableViewModeField(a)
+			found := false
+			for i, row := range a.sidebar.rows {
+				if row.path == "n.md" {
+					a.sidebar.cursor = i
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatal("fixture note is absent from the sidebar")
+			}
+			a.focus = focusSidebar
+			a.deferReads = true
+			a.sidebar.handleKey(a, vim.Key{Rune: 'p'})
+			if got := modeOf(t, a, "n.md"); got != modePreview {
+				t.Fatalf("mode before load %q, want preview", got)
+			}
+			loadDeferred(t, a, "n.md")
+			if got := modeOf(t, a, "n.md"); got != modePreview {
+				t.Fatalf("mode after load %q, want preview", got)
+			}
+		})
+	}
+}
+
+// Reopening a closed tab is an ordinary open in a new tab: the frontmatter
+// mode wins over the mode the tab was closed in, however the read lands.
+func TestReopenedClosedTabFollowsFrontmatter(t *testing.T) {
+	for _, deferred := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sync", true: "deferred"}[deferred], func(t *testing.T) {
+			a, root := newFeatureTestApp(t)
+			writeVaultNote(t, root, "n.md", "---\nview-mode: preview\n---\nbody\n")
+			a.idx = a.loadIndexCmd()().(indexLoadedMsg).idx
+			enableViewModeField(a)
+			a.openNote("n.md", true)
+			a.setPaneMode(modeSplit)
+			a.closeTab(a.activePane, a.activePane.findTab("n.md"))
+			if len(tabsOf(a, "n.md")) != 0 {
+				t.Fatal("tab did not close")
+			}
+			a.deferReads = deferred
+			a.reopenClosedTab()
+			if deferred {
+				loadDeferred(t, a, "n.md")
+			}
+			if got := modeOf(t, a, "n.md"); got != modePreview {
+				t.Fatalf("mode %q, want preview from frontmatter", got)
+			}
+		})
+	}
+}
+
+// A reopened note whose frontmatter asks for nothing keeps the mode its tab
+// was closed in.
+func TestReopenedClosedTabWithoutFrontmatterKeepsMode(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultNote(t, root, "n.md", "# plain\n")
+	a.idx = a.loadIndexCmd()().(indexLoadedMsg).idx
+	enableViewModeField(a)
+	a.openNote("n.md", true)
+	a.setPaneMode(modeSplit)
+	a.closeTab(a.activePane, a.activePane.findTab("n.md"))
+	a.deferReads = true
+	a.reopenClosedTab()
+	loadDeferred(t, a, "n.md")
+	if got := modeOf(t, a, "n.md"); got != modeSplit {
+		t.Fatalf("mode %q, want split", got)
+	}
+}

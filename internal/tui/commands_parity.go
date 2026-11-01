@@ -726,8 +726,7 @@ func (a *App) openReference(path string) {
 	if t == nil {
 		return
 	}
-	t.mode = modePreview
-	t.frontmatterPending = false
+	forceTabMode(t, modePreview)
 	if !t.pinned {
 		a.togglePin(p, p.active)
 	}
