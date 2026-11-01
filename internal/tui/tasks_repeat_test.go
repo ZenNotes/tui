@@ -1,0 +1,183 @@
+package tui
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/vault"
+)
+
+// repeatTasksApp opens a vault holding inbox/note.md with the given body, in
+// an App whose task clock reads noon on date.
+func repeatTasksApp(t *testing.T, body, date string) (*App, string) {
+	t.Helper()
+	root := newSessionParityVault(t)
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "inbox", "note.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := newSessionParityApp(t, root)
+	day, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.taskNow = func() time.Time { return day.Add(12 * time.Hour) }
+	return a, path
+}
+
+// repeatTaskAt is the first task the note holds: its first checkbox, or the
+// note itself when it is a task note.
+func repeatTaskAt(t *testing.T, path string) vault.Task {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := vault.ParseTasksOptions{IncludeExcluded: true, Dialect: vault.DialectApp}
+	tasks := vault.ParseTasks("inbox/note.md", "note", vault.FolderInbox, string(raw), opts)
+	if len(tasks) == 0 {
+		t.Fatalf("note holds no task: %q", raw)
+	}
+	return tasks[0]
+}
+
+func readRepeatNote(t *testing.T, path string) string {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+const repeatingLine = "- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+
+func wantRolled(mark string) string {
+	return "- [ ] Water plants scheduled:2026-11-05 repeat:mon,thu\n" +
+		"- [" + mark + "] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+}
+
+func TestTasksViewToggleInsertsNextOccurrence(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	a.toggleTask(repeatTaskAt(t, path))
+	if got := readRepeatNote(t, path); got != wantRolled("x") {
+		t.Errorf("note = %q, want %q", got, wantRolled("x"))
+	}
+}
+
+func TestTasksBoardDoneColumnInsertsNextOccurrence(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
+	if got := readRepeatNote(t, path); got != wantRolled("x") {
+		t.Errorf("note = %q, want %q", got, wantRolled("x"))
+	}
+}
+
+func TestTasksViewCancelInsertsNextOccurrence(t *testing.T) {
+	t.Run("tasks view", func(t *testing.T) {
+		a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
+		a.setTaskCancelled(repeatTaskAt(t, path), true)
+		if got := readRepeatNote(t, path); got != wantRolled("-") {
+			t.Errorf("note = %q, want %q", got, wantRolled("-"))
+		}
+	})
+	t.Run("editor command", func(t *testing.T) {
+		a, _ := repeatTasksApp(t, repeatingLine, "2026-11-02")
+		a.openNote("inbox/note.md", true)
+		buf := a.activeBuffer()
+		if buf == nil {
+			t.Fatal("note did not open")
+		}
+		if err := a.setTaskStateAtCursor(buf, "cancel"); err != nil {
+			t.Fatal(err)
+		}
+		if got := buf.ed.Text(); got != wantRolled("-") {
+			t.Errorf("buffer = %q, want %q", got, wantRolled("-"))
+		}
+	})
+	t.Run("reopening inserts nothing", func(t *testing.T) {
+		in := "- [-] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+		a, path := repeatTasksApp(t, in, "2026-11-02")
+		a.setTaskCancelled(repeatTaskAt(t, path), false)
+		want := "- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+		if got := readRepeatNote(t, path); got != want {
+			t.Errorf("note = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestTasksViewInProgressDoesNotRoll(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	a.setTaskInProgress(repeatTaskAt(t, path), true)
+	want := "- [/] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("note = %q, want %q", got, want)
+	}
+}
+
+func TestForwardingRepeatingTaskInsertsNoOccurrence(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	a.forwardTask(repeatTaskAt(t, path))
+	got := readRepeatNote(t, path)
+	if strings.Contains(got, "scheduled:2026-11-05") {
+		t.Errorf("forwarding computed an occurrence: %q", got)
+	}
+}
+
+const repeatingTaskNote = "---\ntags: [task]\nstatus: open\nscheduled: 2026-11-02\ndue: 2026-11-04\nrepeat: 3d\n---\n"
+
+func TestTasksViewToggleAdvancesRepeatingTaskNote(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingTaskNote, "2026-11-02")
+	a.toggleTask(repeatTaskAt(t, path))
+	got := readRepeatNote(t, path)
+	for _, want := range []string{"scheduled: 2026-11-05", "due: 2026-11-07", "status: open", "lastCompleted: 2026-11-02"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "status: done") {
+		t.Errorf("note was finished:\n%s", got)
+	}
+}
+
+func TestTasksViewCancelAdvancesRepeatingTaskNote(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingTaskNote, "2026-11-02")
+	a.setTaskCancelled(repeatTaskAt(t, path), true)
+	got := readRepeatNote(t, path)
+	for _, want := range []string{"scheduled: 2026-11-05", "due: 2026-11-07", "status: open"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "cancelled") {
+		t.Errorf("note was cancelled:\n%s", got)
+	}
+}
+
+func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
+	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	a.backend = remoteRefreshBackend{Backend: a.backend}
+	a.opts.Backend = a.backend
+	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: "https://remote-vault.invalid"}
+	task := repeatTaskAt(t, path)
+	a.toggleTask(task)
+	want := "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("toggle: note = %q, want %q", got, want)
+	}
+	if err := os.WriteFile(path, []byte(repeatingLine), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.setTaskCancelled(task, true)
+	want = "- [-] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("cancel: note = %q, want %q", got, want)
+	}
+}

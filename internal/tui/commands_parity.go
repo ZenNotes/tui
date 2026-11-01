@@ -248,7 +248,7 @@ func (a *App) switchTarget(target backend.Target) {
 			return
 		}
 	}
-	b, err := backend.New(target, backend.Options{SyncTitleHeading: a.prefs.SyncTitleHeadingOnRename})
+	b, err := backend.New(target, backend.Options{SyncTitleHeading: a.prefs.SyncTitleHeadingOnRename, WeekStartSunday: a.prefs.CalendarWeekStart == "sunday"})
 	if err != nil {
 		a.notifyError(err.Error())
 		return
@@ -668,6 +668,10 @@ func (a *App) setTaskStateAtCursor(buf *noteBuffer, state string) error {
 		var next string
 		switch state {
 		case "cancel":
+			if !t.Cancelled && a.rollsRepeatingTasks() {
+				next = a.rollTaskBody(body, t, vault.RollCancel)
+				break
+			}
 			next = vault.SetTaskCancelled(body, t.TaskIndex, !t.Cancelled)
 		default:
 			next = vault.SetTaskInProgress(body, t.TaskIndex, !t.InProgress)

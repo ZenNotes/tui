@@ -59,6 +59,9 @@ type remotePollMsg struct{}
 
 // App is the whole terminal UI.
 type App struct {
+	// taskNow is the clock the task paths read; nil means time.Now. Tests set
+	// it to fix the date a repeating task rolls from.
+	taskNow            func() time.Time
 	remoteWatchCancel  context.CancelFunc
 	remoteState        string
 	remoteRefreshArmed bool

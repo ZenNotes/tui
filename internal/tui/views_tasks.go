@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
@@ -1229,8 +1230,56 @@ func (a *App) openTaskSource(t vault.Task) {
 	}
 }
 
+// taskClock is the time the task paths read: the App's clock seam, else the
+// wall clock.
+func (a *App) taskClock() time.Time {
+	if a.taskNow != nil {
+		return a.taskNow()
+	}
+	return time.Now()
+}
+
+// taskWeekStart is the first day of the week that `repeat:` rules counted in
+// weeks use, taken from the calendar preference.
+func (a *App) taskWeekStart() time.Weekday {
+	if a.prefs.CalendarWeekStart == "sunday" {
+		return time.Sunday
+	}
+	return time.Monday
+}
+
+// rollsRepeatingTasks reports whether completing a repeating task also writes
+// its next occurrence. A remote server parses the note itself, so a remote
+// target keeps the plain change and never inserts a line.
+func (a *App) rollsRepeatingTasks() bool {
+	if a.backend != nil && a.backend.Kind() == backend.KindRemote {
+		return false
+	}
+	return a.opts.Target.Kind != backend.KindRemote
+}
+
+// rollTaskBody completes or cancels t in body, writing the next occurrence of
+// a repeating task or moving a task note's dates forward. A task that does
+// not repeat gets the plain change.
+func (a *App) rollTaskBody(body string, t vault.Task, action vault.RollAction) string {
+	now, weekStart := a.taskClock(), a.taskWeekStart()
+	if t.Kind == "file" {
+		next, _ := vault.RollTaskFileInBody(body, action, now, weekStart)
+		return next
+	}
+	next, _, ok := vault.RollTaskInBody(body, t.TaskIndex, vault.DialectApp, action, now, weekStart)
+	if !ok {
+		return body
+	}
+	return next
+}
+
 func (a *App) toggleTask(t vault.Task) {
 	err := a.mutateNote(t.SourcePath, func(body string) (string, bool) {
+		if a.rollsRepeatingTasks() {
+			next := a.rollTaskBody(body, t, vault.RollComplete)
+			return next, next != body
+		}
 		if t.Kind == "file" {
 			return vault.ToggleFileTaskInBody(body, t.Checked, time.Now()), true
 		}
@@ -1293,6 +1342,9 @@ func (a *App) setTaskWaiting(t vault.Task, waiting bool) {
 
 func (a *App) setTaskCancelled(t vault.Task, cancelled bool) {
 	a.editTaskLine(t, func(body string) string {
+		if cancelled && !t.Cancelled && a.rollsRepeatingTasks() {
+			return a.rollTaskBody(body, t, vault.RollCancel)
+		}
 		if t.Kind == "file" {
 			return vault.SetTaskFileCancelled(body, cancelled)
 		}
@@ -1322,6 +1374,10 @@ func (a *App) setTaskField(t vault.Task, key, value string) {
 func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 	a.editTaskLine(t, func(body string) string {
 		checked := func(v bool) {
+			if v && !t.Checked && !t.Cancelled && a.rollsRepeatingTasks() {
+				body = a.rollTaskBody(body, t, vault.RollComplete)
+				return
+			}
 			if t.Kind == "file" {
 				body = vault.SetTaskFileStatus(body, v, time.Now())
 			} else {
