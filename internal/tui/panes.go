@@ -241,7 +241,7 @@ func (a *App) openNote(path string, focus bool) {
 		if remembered, ok := a.noteModes[path]; ok && !a.prefs.KeepViewModeAcrossNotes() {
 			mode = remembered
 		}
-		if justCreated && a.frontmatterModeOn() {
+		if justCreated {
 			mode = modeEdit
 		}
 		t := &tab{path: path, mode: mode}

@@ -571,6 +571,45 @@ func TestReopenedNewNoteFollowsFrontmatter(t *testing.T) {
 	}
 }
 
+// A new note is for typing, so it opens in the editor with the frontmatter
+// feature off too, whatever the default view mode.
+func TestNewNoteOpensInEditWithFeatureOff(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		create func(t *testing.T, a *App)
+	}{
+		{"blank", func(t *testing.T, a *App) {
+			a.createNote(vault.FolderInbox, "Blank", "", nil, true)
+		}},
+		{"template", func(t *testing.T, a *App) {
+			a.createFromTemplate(templates.Template{ID: "custom:x", Name: "X", Body: "# New\n"})
+			typeText(a, "From Template")
+			a.overlay.handleKey(a, enterKey())
+		}},
+		{"periodic", func(t *testing.T, a *App) {
+			useDailyTemplate(t, a, "# Daily\n")
+			a.openPeriodicOn(periodic.Daily, time.Now())
+		}},
+		{"task file", func(t *testing.T, a *App) {
+			if err := a.newTaskFile(""); err != nil {
+				t.Fatal(err)
+			}
+			typeText(a, "Write it")
+			a.overlay.handleKey(a, enterKey())
+		}},
+	} {
+		for _, def := range []string{"preview", "split"} {
+			t.Run(tc.name+" "+def, func(t *testing.T) {
+				a, _ := newFeatureTestApp(t)
+				a.prefs.DefaultPaneMode = def
+				a.deferReads = true
+				tc.create(t, a)
+				wantEditBeforeAndAfterLoad(t, a)
+			})
+		}
+	}
+}
+
 // vaultSnapshot maps every file under root, hidden directories included, to its bytes.
 func vaultSnapshot(t *testing.T, root string) map[string]string {
 	t.Helper()

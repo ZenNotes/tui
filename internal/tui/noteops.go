@@ -924,7 +924,7 @@ func (a *App) openNoteQuiet(path string) {
 	if mode == "" {
 		mode = modeEdit
 	}
-	if justCreated && a.frontmatterModeOn() {
+	if justCreated {
 		mode = modeEdit
 	}
 	t := &tab{path: path, mode: mode}

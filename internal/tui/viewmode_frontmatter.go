@@ -113,7 +113,8 @@ func forceTabMode(t *tab, mode paneMode) {
 }
 
 // markNewNote records that path was just created and is about to be opened,
-// so the open starts in the editor instead of taking a mode from frontmatter.
+// so the open starts in the editor instead of taking a mode from the default
+// view mode, a remembered mode or frontmatter, as the desktop app does.
 func (a *App) markNewNote(path string) {
 	a.newNotes[path] = true
 }
