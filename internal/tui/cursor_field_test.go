@@ -63,6 +63,32 @@ func TestTextFieldCursorSecretPrompt(t *testing.T) {
 	}
 }
 
+const wrappingTitle = "New note in Projects/Work/Clients/Acme Corporation/Meetings"
+
+func TestTextFieldCursorWrappedTitle(t *testing.T) {
+	open := map[string]func(a *App){
+		"prompt": func(a *App) { a.promptFor(wrappingTitle, "", "", func(*App, string) {}) },
+		"palette": func(a *App) {
+			a.overlay = &palette{title: wrappingTitle, input: newTextInput("")}
+		},
+		"picker": func(a *App) {
+			a.overlay = newPickOverlay(wrappingTitle, "", []pickItem{{id: "a", label: "a"}}, nil)
+		},
+	}
+	for name, fn := range open {
+		t.Run(name, func(t *testing.T) {
+			a, _ := cursorApp(t, "hello\n", 80)
+			fn(a)
+			typeText(a, "ab")
+			view := a.View()
+			assertFieldBar(t, a, view, " ")
+			if got := cellText(view, a.cursor.x-1, a.cursor.y); got != "b" {
+				t.Fatalf("cell before the bar is %q, want the last typed rune", got)
+			}
+		})
+	}
+}
+
 func TestTextFieldCursorClampedToFieldWidth(t *testing.T) {
 	a, _ := cursorApp(t, "hello\n", 40)
 	a.promptFor("Name", "", "", func(*App, string) {})

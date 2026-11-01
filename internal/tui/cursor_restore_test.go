@@ -3,12 +3,15 @@ package tui
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -102,6 +105,7 @@ func TestCursorRestoreError(t *testing.T) {
 	a, _ := cursorApp(t, "hello", 80)
 	a.ctx = ctx
 	r := startRestoreRun(t, a, tea.WithContext(ctx))
+	waitFor(t, func() bool { return strings.Contains(r.term.all(), steadyBar) })
 	cancel()
 	if err := r.wait(t); err == nil {
 		t.Fatal("expected an error from the cancelled run")
@@ -114,10 +118,20 @@ type panicOverlay struct{}
 func (panicOverlay) handleKey(*App, vim.Key)      { panic("boom") }
 func (panicOverlay) render(*App, int, int) string { return "" }
 
+// inLoop is an exec command whose body runs on the program's event loop, so a
+// test can change the app without racing the loop.
+type inLoop func()
+
+func (f inLoop) Run() error        { f(); return nil }
+func (inLoop) SetStdin(io.Reader)  {}
+func (inLoop) SetStdout(io.Writer) {}
+func (inLoop) SetStderr(io.Writer) {}
+
 func TestCursorRestorePanic(t *testing.T) {
 	a, _ := cursorApp(t, "hello", 80)
-	a.overlay = panicOverlay{}
 	r := startRestoreRun(t, a)
+	waitFor(t, func() bool { return strings.Contains(r.term.all(), steadyBar) })
+	a.program.Send(tea.Exec(inLoop(func() { a.overlay = panicOverlay{} }), nil)())
 	a.program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	if err := r.wait(t); err == nil {
 		t.Fatal("expected an error from the recovered panic")
@@ -125,17 +139,29 @@ func TestCursorRestorePanic(t *testing.T) {
 	assertRestored(t, r.term.all())
 }
 
-func TestCursorRestoreDefaultPrefsGiveBar(t *testing.T) {
-	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+func TestCursorDefaultConfigGivesBar(t *testing.T) {
+	root := newSessionParityVault(t, "Alpha.md")
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ZENNOTES_CONFIG_DIR", dir)
 	prefs, _, err := config.LoadPrefs()
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, buf := cursorApp(t, "hello", 40)
-	a.rawPref, a.prefs = prefs, prefsView{Prefs: prefs, TabsOff: !prefs.TabsEnabled}
-	buf.ed.Feed("i")
+	target := backend.Target{Kind: backend.KindLocal, Root: root}
+	b, err := backend.New(target, backend.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := newApp(context.Background(), Options{Backend: b, Target: target}, prefs, true)
+	a.openNote("Alpha.md", true)
+	a.sidebarOpen = false
+	a.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	a.activeBuffer().ed.Feed("i")
 	a.View()
 	if !a.cursor.visible || a.cursor.shape != cursorShapeBar {
-		t.Fatalf("insert mode with default prefs: cursor = %+v", a.cursor)
+		t.Fatalf("insert mode with an empty config: cursor = %+v", a.cursor)
 	}
 }

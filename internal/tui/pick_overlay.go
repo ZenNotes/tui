@@ -195,7 +195,7 @@ func (p *pickOverlay) render(a *App, w, h int) string {
 	prompt := "› "
 	fieldW := inner - cellWidth(prompt)
 	lines = append(lines, prompt+p.input.render(fieldW))
-	p.cur = a.fieldAt(cellWidth(prompt)+p.input.cell(fieldW), 1)
+	p.cur = a.fieldAt(cellWidth(prompt)+p.input.cell(fieldW), titleRows(p.title, inner))
 	if p.input.String() == "" && p.placeholder != "" {
 		lines[len(lines)-1] = prompt + " " + th.Muted.Render(padRight(p.placeholder, inner-3))
 	}

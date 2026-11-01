@@ -121,6 +121,11 @@ func (a *App) overlayInset() (x, y int) {
 	return s.GetBorderLeftSize() + s.GetPaddingLeft(), s.GetBorderTopSize() + s.GetPaddingTop()
 }
 
+// titleRows is how many rows an overlay title takes once it wraps at inner cells.
+func titleRows(title string, inner int) int {
+	return lipgloss.Height(lipgloss.NewStyle().Width(inner).Render(title))
+}
+
 // fieldAt is the bar for a field whose first cell is at column col of the
 // given content row of an overlay.
 func (a *App) fieldAt(col, row int) cursorState {
@@ -290,7 +295,7 @@ func (p *palette) render(a *App, w, h int) string {
 	prompt := "› "
 	fieldW := inner - lipgloss.Width(prompt)
 	lines = append(lines, prompt+p.input.render(fieldW))
-	p.cur = a.fieldAt(lipgloss.Width(prompt)+p.input.cell(fieldW), 1)
+	p.cur = a.fieldAt(lipgloss.Width(prompt)+p.input.cell(fieldW), titleRows(p.title, inner))
 	if p.input.String() == "" && p.placeholder != "" {
 		lines[len(lines)-1] = prompt + " " + th.Muted.Render(padRight(p.placeholder, inner-3))
 	}
@@ -393,11 +398,11 @@ func (p *prompt) render(a *App, w, h int) string {
 	width := min(w-4, max(40, w/2))
 	inner := width - 2
 	field := p.input.render(inner)
-	p.cur = a.fieldAt(p.input.cell(inner), 1)
+	p.cur = a.fieldAt(p.input.cell(inner), titleRows(p.title, inner))
 	if p.masked {
 		dots := strings.Repeat("•", len(p.input.runes))
 		field = padRight(dots+" ", inner)
-		p.cur = a.fieldAt(min(len(p.input.runes), max(inner-1, 0)), 1)
+		p.cur = a.fieldAt(min(len(p.input.runes), max(inner-1, 0)), titleRows(p.title, inner))
 	}
 	lines := []string{th.OverlayTitle.Render(p.title), field}
 	if p.help != "" {
