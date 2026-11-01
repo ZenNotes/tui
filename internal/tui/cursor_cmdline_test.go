@@ -77,3 +77,12 @@ func TestCmdlineCursorClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestCmdlineCursorWiderThanTerminal(t *testing.T) {
+	a, buf := cursorApp(t, "hello\n", 40)
+	buf.ed.Feed("<Esc>:" + strings.Repeat("a", 100))
+	a.View()
+	if a.cursor.visible && (a.cursor.x < 0 || a.cursor.x >= a.width) {
+		t.Fatalf("cursor = %+v, want a column inside the %d-wide terminal", a.cursor, a.width)
+	}
+}

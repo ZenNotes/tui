@@ -407,3 +407,67 @@ func TestInsertCursorLayoutFirstPaneFocusedUnequalPanes(t *testing.T) {
 		}
 	}
 }
+
+// The bar never leaves the editor's drawn text area: with word wrap off, a
+// long line runs past the pane, and with it on, an exactly full row puts the
+// end-of-line cell one past the text.
+func TestInsertCursorLayoutStaysInsideEditor(t *testing.T) {
+	cases := []struct {
+		name  string
+		wrap  bool
+		setup func(a *App)
+		col   int
+	}{
+		{"wrap off, single pane", false, func(a *App) {}, 150},
+		{"wrap off, vertical split", false, func(a *App) { a.splitPane(true) }, 150},
+		{"wrap off, split note mode", false, func(a *App) { a.setPaneMode(modeSplit) }, 150},
+		{"wrap off, side panel", false, func(a *App) { a.outlineOpen = true }, 150},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			a, buf := cursorApp(t, strings.Repeat("x", 200)+"\n", 100)
+			a.prefs.WordWrap = c.wrap
+			c.setup(a)
+			a.layout()
+			buf.ed.SetCursor(vim.Pos{Line: 0, Col: c.col})
+			a.View()
+			assertCursorInEditor(t, a)
+		})
+	}
+	t.Run("wrap on, exact width row", func(t *testing.T) {
+		for _, split := range []bool{false, true} {
+			a, buf := cursorApp(t, "x\n", 100)
+			a.prefs.WordWrap = true
+			if split {
+				a.setPaneMode(modeSplit)
+			}
+			a.layout()
+			a.View()
+			rc := a.contentRect(a.activePane)
+			w := rc.w
+			if split {
+				w /= 2
+			}
+			textW := w - a.gutterWidth(buf)
+			buf.ed.SetText(strings.Repeat("x", textW) + "\n")
+			buf.ed.SetCursor(vim.Pos{Line: 0, Col: textW})
+			a.View()
+			assertCursorInEditor(t, a)
+		}
+	})
+}
+
+func assertCursorInEditor(t *testing.T, a *App) {
+	t.Helper()
+	if !a.cursor.visible {
+		return // hidden is acceptable
+	}
+	rc := a.contentRect(a.activePane)
+	w := rc.w
+	if t2 := a.activeTab(); t2 != nil && t2.mode == modeSplit {
+		w /= 2
+	}
+	if a.cursor.x < rc.x || a.cursor.x >= rc.x+w {
+		t.Fatalf("bar x %d outside the editor columns [%d,%d)", a.cursor.x, rc.x, rc.x+w)
+	}
+}

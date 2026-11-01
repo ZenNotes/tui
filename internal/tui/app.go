@@ -1027,7 +1027,7 @@ func (a *App) renderCommandLine() string {
 			if cursor < len(runes) {
 				after = string(runes[cursor:])
 			}
-			a.cmdlineX, a.cmdlineOpen = cellWidth(string(kind)+before), true
+			a.cmdlineX, a.cmdlineOpen = min(cellWidth(string(kind)+before), max(0, a.width-1)), true
 			line := string(kind) + before + after
 			if comps, idx := buf.ed.Completions(); len(comps) > 0 {
 				line += "   " + a.renderWildmenu(comps, idx)

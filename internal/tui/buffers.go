@@ -33,6 +33,8 @@ type noteBuffer struct {
 	// focusRows is the wrapping of the pane that last drew this buffer with
 	// focus; rows belongs to whichever pane drew it last.
 	focusRows []rowInfo
+	// focusW is the drawn width of that editor, gutter included.
+	focusW int
 
 	words        int
 	wordsVersion int
