@@ -779,8 +779,9 @@ creates it with comments when it is missing. On Windows, it normally lives
 under `%APPDATA%\zennotes`. `XDG_CONFIG_HOME` and `ZENNOTES_CONFIG_DIR` can
 override the portable location.
 
-`:settings` is searchable and editable. Supported user preferences persist
-to `config.toml`; periodic-note and task-exclusion controls update the vault.
+`:settings` is searchable and editable, its rows grouped by where they are
+saved: User rows persist to `config.toml`, and Vault rows (periodic notes,
+Task folders, the template folder) to the vault's `.zennotes/vault.json`.
 `:config` opens the file in an external editor, and `:reloadconfig` reloads
 it immediately. External edits are otherwise picked up within a second.
 `:bind` / `:unbind` persist, and `:keymaps` can edit bindings interactively.
