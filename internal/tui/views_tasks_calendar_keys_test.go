@@ -368,3 +368,29 @@ func TestItemPanelArrowsWithoutVimMode(t *testing.T) {
 		t.Errorf("Left left focus on %v, want the grid", tv.calc().focus)
 	}
 }
+
+// The key hints name only the keys that work where the calendar's focus is.
+func TestCalendarHintsFollowFocus(t *testing.T) {
+	a, tv, _ := calVaultApp(t, map[string]string{"work.md": calWorkNote})
+	month := stripAnsi(tv.hint(a))
+	for _, absent := range []string{"hour step", "due today", "due date"} {
+		if strings.Contains(month, absent) {
+			t.Errorf("month grid hint names %q: %s", absent, month)
+		}
+	}
+	calToSub(t, a, tv, calWeek)
+	if week := stripAnsi(tv.hint(a)); !strings.Contains(week, "z hour step") || strings.Contains(week, "due today") {
+		t.Errorf("week grid hint = %s", week)
+	}
+	calPress(a, tv, vim.KeyTab)
+	requireFocus(t, tv, calFocusItems, "Tab")
+	task := stripAnsi(tv.hint(a))
+	for _, want := range []string{"T due today", "@ due date", "Esc back"} {
+		if !strings.Contains(task, want) {
+			t.Errorf("focused task hint lacks %q: %s", want, task)
+		}
+	}
+	if strings.Contains(task, "hour step") || strings.Contains(task, "month/week/day") {
+		t.Errorf("focused task hint names grid keys: %s", task)
+	}
+}
