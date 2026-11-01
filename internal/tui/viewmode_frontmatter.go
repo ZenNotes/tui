@@ -52,3 +52,51 @@ func frontmatterPaneMode(text, field string, rules []config.ViewModeRule) (paneM
 	}
 	return "", false
 }
+
+// frontmatterModeOn reports whether the configuration asks notes to pick
+// their pane mode from frontmatter.
+func (a *App) frontmatterModeOn() bool {
+	return strings.TrimSpace(a.prefs.TerminalViewModeField) != "" ||
+		len(config.ValidViewModeRules(a.prefs.ViewModeRules)) > 0
+}
+
+// watchFrontmatterMode marks a newly opened note tab so that its frontmatter
+// sets the pane mode once the note text is available. It does nothing when
+// the feature is off, so the default open path is unchanged.
+func (a *App) watchFrontmatterMode(t *tab) {
+	if !a.frontmatterModeOn() || isVirtualPath(t.path) {
+		return
+	}
+	t.frontmatterPending = true
+	a.withLoadedBuffer(t.path, a.applyFrontmatterMode)
+}
+
+// applyFrontmatterMode sets the pane mode of every still-pending tab on the
+// loaded note. It writes the tab only: the remembered per-note modes and the
+// keep-across default stay as the user left them.
+func (a *App) applyFrontmatterMode(buf *noteBuffer) {
+	var pending []*tab
+	for _, p := range a.panes.leaves() {
+		for _, t := range p.tabs {
+			if t.path == buf.path && t.frontmatterPending {
+				t.frontmatterPending = false
+				pending = append(pending, t)
+			}
+		}
+	}
+	if len(pending) == 0 {
+		return
+	}
+	mode, ok := frontmatterPaneMode(buf.ed.Text(), a.prefs.TerminalViewModeField, config.ValidViewModeRules(a.prefs.ViewModeRules))
+	if !ok {
+		return
+	}
+	for _, t := range pending {
+		t.mode = mode
+		if mode != modeEdit && t.preview == nil {
+			t.preview = &previewState{}
+		}
+	}
+	a.layout()
+	a.markSessionDirty()
+}

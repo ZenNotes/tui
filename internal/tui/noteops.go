@@ -918,8 +918,10 @@ func (a *App) openNoteQuiet(path string) {
 	if mode == "" {
 		mode = modeEdit
 	}
-	pane.tabs = append(pane.tabs, &tab{path: path, mode: mode})
+	t := &tab{path: path, mode: mode}
+	pane.tabs = append(pane.tabs, t)
 	pane.active = len(pane.tabs) - 1
+	a.watchFrontmatterMode(t)
 	a.touchRecent(path)
 	a.markSessionDirty()
 }

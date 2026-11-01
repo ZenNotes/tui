@@ -43,6 +43,10 @@ type tab struct {
 	preview *previewState
 	view    view
 	pinned  bool
+	// frontmatterPending is set while a freshly opened tab still waits for
+	// its note to load, so the frontmatter can pick the pane mode. A manual
+	// mode switch clears it.
+	frontmatterPending bool
 }
 
 // pane is a leaf of the split tree holding tabs.
@@ -239,6 +243,7 @@ func (a *App) openNote(path string, focus bool) {
 		t := &tab{path: path, mode: mode}
 		pane.tabs = append(pane.tabs, t)
 		pane.active = len(pane.tabs) - 1
+		a.watchFrontmatterMode(t)
 	}
 	if cur := a.activeBuffer(); cur != nil && cur.path != path {
 		a.pushJump(cur.path, cur.ed.Cursor())
