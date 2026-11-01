@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"io"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -86,6 +88,24 @@ func TestCursorSuspendOpenConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertReleasedWithReset(t, a, term, "open config")
+}
+
+func TestCursorExternalProgramWritesToTheTerminal(t *testing.T) {
+	a, _, term := suspendApp(t)
+	cmd := exec.Command("true")
+	a.execOnTerminal(cmd, nil)
+	if cmd.Stdout != io.Writer(term) {
+		t.Fatalf("the program writes to %T, want the terminal itself", cmd.Stdout)
+	}
+	assertReleasedWithReset(t, a, term, "an external program")
+
+	own := &strings.Builder{}
+	cmd = exec.Command("true")
+	cmd.Stdout = own
+	a.execOnTerminal(cmd, nil)
+	if cmd.Stdout != io.Writer(own) {
+		t.Fatal("a stdout the command already had was replaced")
+	}
 }
 
 func returnMsgs() map[string]tea.Msg {

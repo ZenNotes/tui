@@ -129,6 +129,10 @@ func (w *cursorOut) Hold() {
 	_, _ = w.dst.Write([]byte(w.want.sequence()))
 }
 
+// terminal is the file the wrapper writes to, for a program that takes the
+// terminal over and has to see it as one.
+func (w *cursorOut) terminal() cursorFile { return w.dst }
+
 func (w *cursorOut) Read(p []byte) (int, error) { return w.dst.Read(p) }
 func (w *cursorOut) Close() error               { return w.dst.Close() }
 func (w *cursorOut) Fd() uintptr                { return w.dst.Fd() }

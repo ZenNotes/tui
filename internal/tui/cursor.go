@@ -1,6 +1,12 @@
 package tui
 
-import "github.com/ZenNotes/tui/internal/vim"
+import (
+	"os/exec"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ZenNotes/tui/internal/vim"
+)
 
 // bufferCursorShape is the terminal cursor shape the buffer wants while its
 // text is being edited, or a normal-mode r waits for its character. ok is false
@@ -117,4 +123,17 @@ func (a *App) resumeCursor() {
 	if a.cursorOut != nil {
 		a.cursorOut.Hold()
 	}
+}
+
+// execOnTerminal hands the terminal to cmd until it exits. Bubble Tea gives
+// the program it runs the program's own output, which is the cursor wrapper,
+// and a writer that is not a file reaches the child as a pipe: Vim then warns
+// that its output is not a terminal and Neovim draws nothing. So cmd writes
+// to the terminal itself.
+func (a *App) execOnTerminal(cmd *exec.Cmd, done tea.ExecCallback) {
+	if cmd.Stdout == nil && a.cursorOut != nil {
+		cmd.Stdout = a.cursorOut.terminal()
+	}
+	a.suspendCursor()
+	a.queue(tea.ExecProcess(cmd, done))
 }
