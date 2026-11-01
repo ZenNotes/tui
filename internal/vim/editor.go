@@ -1703,3 +1703,13 @@ func (e *Editor) PendingCount() (int, bool) {
 	}
 	return n, true
 }
+
+// ReplacePending reports whether a normal-mode `r` (with an optional
+// register and count before it) is waiting for the character to put in.
+func (e *Editor) ReplacePending() bool {
+	if e.mode != ModeNormal || len(e.pending) == 0 {
+		return false
+	}
+	_, _, _, rest, status := splitPrefix(e.pending)
+	return status == parseComplete && len(rest) == 1 && rest[0].IsRune('r')
+}

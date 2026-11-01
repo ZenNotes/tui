@@ -493,3 +493,39 @@ func TestReplaceAtCursorJoinsTheInsert(t *testing.T) {
 		t.Fatalf("after undo: %q", got)
 	}
 }
+
+func TestReplacePending(t *testing.T) {
+	cases := []struct {
+		name     string
+		text     string
+		keys     string
+		pending  bool
+		wantText string
+	}{
+		{"r waits", "abc", "r", true, "abc"},
+		{"count then r waits", "abcd", "3r", true, "abcd"},
+		{"register then r waits", "abc", "\"ar", true, "abc"},
+		{"r then character", "abc", "rx", false, "xbc"},
+		{"r then esc", "abc", "r<Esc>", false, "abc"},
+		{"visual r", "abc", "vr", false, "abc"},
+		{"insert mode", "abc", "i", false, "abc"},
+		{"typed r in insert mode", "abc", "ir", false, "rabc"},
+		{"other pending key", "abc", "d", false, "abc"},
+		{"nothing pending", "abc", "", false, "abc"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.TextReplacementsEnabled = false
+			e := New(c.text, opts, Hooks{})
+			e.SetViewport(10)
+			e.Feed(c.keys)
+			if got := e.ReplacePending(); got != c.pending {
+				t.Fatalf("ReplacePending: got %v want %v", got, c.pending)
+			}
+			if got := e.Text(); got != c.wantText {
+				t.Fatalf("text: got %q want %q", got, c.wantText)
+			}
+		})
+	}
+}
