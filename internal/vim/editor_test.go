@@ -417,6 +417,101 @@ func TestToggleCheckbox(t *testing.T) {
 	}
 }
 
+// completionHook records its calls and, when insert is set, answers with the
+// note text plus that line placed above the ticked one.
+type completionHook struct {
+	calls  []int
+	texts  []string
+	insert string
+}
+
+func (h *completionHook) hooks() Hooks {
+	return Hooks{CompleteCheckbox: func(text string, line int) (string, bool) {
+		h.calls = append(h.calls, line)
+		h.texts = append(h.texts, text)
+		if h.insert == "" {
+			return "", false
+		}
+		lines := strings.Split(text, "\n")
+		lines[line] = strings.Replace(lines[line], "[ ]", "[x]", 1)
+		out := append([]string{}, lines[:line]...)
+		out = append(out, h.insert)
+		out = append(out, lines[line:]...)
+		return strings.Join(out, "\n"), true
+	}}
+}
+
+func TestToggleCheckboxCallsCompletionHookWhenTicking(t *testing.T) {
+	h := &completionHook{insert: "- [ ] next"}
+	e := New("intro\n- [ ] open\n- [/] doing", DefaultOptions(), h.hooks())
+	e.SetCursor(Pos{1, 0})
+	e.ToggleCheckboxAtCursor()
+	if len(h.calls) != 1 || h.calls[0] != 1 || h.texts[0] != "intro\n- [ ] open\n- [/] doing" {
+		t.Fatalf("hook calls = %v, texts = %q", h.calls, h.texts)
+	}
+	if want := "intro\n- [ ] next\n- [x] open\n- [/] doing"; e.Text() != want {
+		t.Fatalf("got %q, want %q", e.Text(), want)
+	}
+	if e.Cursor().Line != 2 {
+		t.Errorf("cursor stays on the ticked line: got line %d, want 2", e.Cursor().Line)
+	}
+	e.Feed("u")
+	if want := "intro\n- [ ] open\n- [/] doing"; e.Text() != want {
+		t.Errorf("one undo must revert the tick and the insertion: got %q", e.Text())
+	}
+}
+
+func TestToggleCheckboxHookDeclinedTicksPlainly(t *testing.T) {
+	h := &completionHook{}
+	e := New("- [ ] open\n- [/] doing", DefaultOptions(), h.hooks())
+	e.ToggleCheckboxAtCursor()
+	e.SetCursor(Pos{1, 0})
+	e.ToggleCheckboxAtCursor()
+	if want := "- [x] open\n- [x] doing"; e.Text() != want {
+		t.Fatalf("got %q, want %q", e.Text(), want)
+	}
+	if len(h.calls) != 2 {
+		t.Errorf("hook calls = %v, want one per ticked line", h.calls)
+	}
+}
+
+func TestToggleCheckboxSkipsHookWhenUnticking(t *testing.T) {
+	h := &completionHook{insert: "- [ ] next"}
+	e := New("- [x] done\n- [-] dropped\n- [>] moved\nplain\n- bullet", DefaultOptions(), h.hooks())
+	for i := 0; i < 5; i++ {
+		e.SetCursor(Pos{i, 0})
+		e.ToggleCheckboxAtCursor()
+	}
+	if len(h.calls) != 0 {
+		t.Errorf("hook ran for %v, want no call", h.calls)
+	}
+}
+
+func TestToggleCheckboxVisualCallsHookBottomUp(t *testing.T) {
+	h := &completionHook{insert: "- [ ] next"}
+	e := New("- [ ] a\n- [ ] b\n- [ ] c", DefaultOptions(), h.hooks())
+	e.Feed("Vjj")
+	e.ToggleCheckboxAtCursor()
+	if len(h.calls) != 3 || h.calls[0] != 2 || h.calls[1] != 1 || h.calls[2] != 0 {
+		t.Fatalf("hook lines = %v, want [2 1 0]", h.calls)
+	}
+	want := "- [ ] next\n- [x] a\n- [ ] next\n- [x] b\n- [ ] next\n- [x] c"
+	if e.Text() != want {
+		t.Errorf("got %q, want %q", e.Text(), want)
+	}
+}
+
+func TestTypingInsideCheckboxNeverCallsHook(t *testing.T) {
+	h := &completionHook{insert: "- [ ] next"}
+	e := New("- [ ] open", DefaultOptions(), h.hooks())
+	e.Feed("lllxix")
+	e.HandleKey(KeyEsc)
+	e.Feed("0lrx")
+	if len(h.calls) != 0 {
+		t.Errorf("hook ran for %v while typing, want no call", h.calls)
+	}
+}
+
 func TestScrolling(t *testing.T) {
 	lines := make([]string, 50)
 	for i := range lines {

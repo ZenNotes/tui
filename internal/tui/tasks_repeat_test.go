@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // repeatTasksApp opens a vault holding inbox/note.md with the given body, in
@@ -179,5 +180,72 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 	want = "- [-] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("cancel: note = %q, want %q", got, want)
+	}
+}
+
+func openRepeatBuffer(t *testing.T, a *App) *noteBuffer {
+	t.Helper()
+	a.openNote("inbox/note.md", true)
+	buf := a.activeBuffer()
+	if buf == nil {
+		t.Fatal("note did not open")
+	}
+	return buf
+}
+
+func TestEditorToggleCheckboxInsertsNextOccurrence(t *testing.T) {
+	a, _ := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	buf := openRepeatBuffer(t, a)
+	buf.ed.ToggleCheckboxAtCursor()
+	if got := buf.ed.Text(); got != wantRolled("x") {
+		t.Errorf("buffer = %q, want %q", got, wantRolled("x"))
+	}
+	if got := buf.ed.Cursor().Line; got != 1 {
+		t.Errorf("cursor line = %d, want the ticked line, 1", got)
+	}
+}
+
+func TestEditorToggleCheckboxOnPlainTaskTicksOnly(t *testing.T) {
+	a, _ := repeatTasksApp(t, "- [ ] Plain task due:2026-11-02\n", "2026-11-02")
+	buf := openRepeatBuffer(t, a)
+	buf.ed.ToggleCheckboxAtCursor()
+	if got, want := buf.ed.Text(), "- [x] Plain task due:2026-11-02\n"; got != want {
+		t.Errorf("buffer = %q, want %q", got, want)
+	}
+}
+
+func TestEditorToggleOnRemoteTargetDoesNotRoll(t *testing.T) {
+	a, _ := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	buf := openRepeatBuffer(t, a)
+	a.backend = remoteRefreshBackend{Backend: a.backend}
+	a.opts.Backend = a.backend
+	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: "https://remote-vault.invalid"}
+	buf.ed.ToggleCheckboxAtCursor()
+	if got, want := buf.ed.Text(), "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"; got != want {
+		t.Errorf("buffer = %q, want %q", got, want)
+	}
+}
+
+func TestEditorToggleRollUndoesInOneStep(t *testing.T) {
+	a, _ := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	buf := openRepeatBuffer(t, a)
+	buf.ed.ToggleCheckboxAtCursor()
+	if got := buf.ed.Text(); got != wantRolled("x") {
+		t.Fatalf("buffer = %q, want %q", got, wantRolled("x"))
+	}
+	buf.ed.Feed("u")
+	if got := buf.ed.Text(); got != repeatingLine {
+		t.Errorf("after one undo buffer = %q, want %q", got, repeatingLine)
+	}
+}
+
+func TestTypedXInCheckboxDoesNotRoll(t *testing.T) {
+	a, _ := repeatTasksApp(t, repeatingLine, "2026-11-02")
+	buf := openRepeatBuffer(t, a)
+	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 3})
+	buf.ed.Feed("rx")
+	want := "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	if got := buf.ed.Text(); got != want {
+		t.Errorf("buffer = %q, want %q", got, want)
 	}
 }

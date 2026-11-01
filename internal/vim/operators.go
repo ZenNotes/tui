@@ -735,6 +735,12 @@ var bulletOnlyRe = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+)(.*)$`
 // ToggleCheckboxAtCursor turns the current line into a checkbox and toggles
 // it on repeat: plain text becomes `- [ ] text`, a bullet keeps its marker,
 // `[ ]` flips to `[x]` and back, `[/]` checks off, `[>]` and `[-]` stay.
+//
+// When the host sets Hooks.CompleteCheckbox, it is asked about every line this
+// ticks and may write more than the tick. Lines are handled from the bottom
+// up, so a line the host inserts above one never shifts a line still to come.
+// The cursor stays on the line it was on, which moves down by the number of
+// lines inserted above it.
 func (e *Editor) ToggleCheckboxAtCursor() {
 	e.beginChange()
 	lines := []int{e.cursor.Line}
@@ -745,7 +751,10 @@ func (e *Editor) ToggleCheckboxAtCursor() {
 			lines = append(lines, l)
 		}
 	}
-	for _, l := range lines {
+	cursorLine := e.cursor.Line
+	shift := 0
+	for i := len(lines) - 1; i >= 0; i-- {
+		l := lines[i]
 		s := e.buf.LineString(l)
 		switch {
 		case checkboxLineRe.MatchString(s):
@@ -756,6 +765,12 @@ func (e *Editor) ToggleCheckboxAtCursor() {
 			case "x", "X":
 				e.buf.ReplaceLine(l, []rune(m[1]+" "+m[3]))
 			default:
+				if added, ok := e.completeCheckbox(l); ok {
+					if l <= cursorLine {
+						shift += added
+					}
+					continue
+				}
 				e.buf.ReplaceLine(l, []rune(m[1]+"x"+m[3]))
 			}
 		case bulletOnlyRe.MatchString(s):
@@ -769,10 +784,28 @@ func (e *Editor) ToggleCheckboxAtCursor() {
 	if e.inVisual() {
 		e.exitVisual()
 	}
+	e.cursor.Line += shift
 	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(e.cursor)
 	} else {
 		e.cursor = e.buf.clampNormal(e.cursor)
 		e.commitChange()
 	}
+}
+
+// completeCheckbox asks the host to tick the checkbox on line and returns how
+// many lines the host added to the buffer. ok is false when there is no hook
+// or the host declined, and the buffer is then untouched.
+func (e *Editor) completeCheckbox(line int) (added int, ok bool) {
+	if e.hooks.CompleteCheckbox == nil {
+		return 0, false
+	}
+	next, ok := e.hooks.CompleteCheckbox(e.buf.Text(), line)
+	if !ok {
+		return 0, false
+	}
+	lines := strings.Split(next, "\n")
+	added = len(lines) - e.buf.LineCount()
+	e.buf.ReplaceLines(0, e.buf.LineCount()-1, lines)
+	return added, true
 }
