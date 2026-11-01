@@ -136,3 +136,50 @@ func TestTaskListJSONStripsScheduledFromContent(t *testing.T) {
 		t.Fatalf("got %+v", tasks)
 	}
 }
+
+func listTaskJSON(t *testing.T, note string) []map[string]any {
+	t.Helper()
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "todo.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"task", "list", "--json", "--vault", root}
+	out := captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	var tasks []map[string]any
+	if err := json.Unmarshal([]byte(out), &tasks); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	return tasks
+}
+
+// The JSON reports a task's time of day and repeat rule next to its dates.
+func TestTaskListJSONCarriesTimesAndRepeat(t *testing.T) {
+	tasks := listTaskJSON(t, "- [ ] Water plants due:2026-11-03T14:00 scheduled:2026-11-02T09:30 repeat:Mon,Thu\n")
+	if len(tasks) != 1 {
+		t.Fatalf("got %+v", tasks)
+	}
+	got := tasks[0]
+	if got["due"] != "2026-11-03" || got["dueTime"] != "14:00" ||
+		got["scheduled"] != "2026-11-02" || got["scheduledTime"] != "09:30" ||
+		got["repeat"] != "mon,thu" || got["content"] != "Water plants" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+// A task that uses none of the scheduling syntax gains no new JSON keys.
+func TestTaskListJSONOmitsSchedulingKeysWhenUnset(t *testing.T) {
+	tasks := listTaskJSON(t, "- [ ] Pay rent due:2026-11-03\n")
+	if len(tasks) != 1 {
+		t.Fatalf("got %+v", tasks)
+	}
+	for _, key := range []string{"dueTime", "scheduledTime", "repeat"} {
+		if _, present := tasks[0][key]; present {
+			t.Errorf("key %q present: %+v", key, tasks[0])
+		}
+	}
+}
