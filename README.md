@@ -590,8 +590,9 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   by half a view, and `o` opens the day's daily note. Week and day view
   show an hour list: hourly by default, half-hourly after `z` (Vim mode),
   scrolling with `j`/`k` when it does not fit. `Enter` and `Tab` move focus
-  between the day grid, the selected day's items and the No-date strip, and
-  `T` on a focused item or strip task opens a due-date menu. Unlike the
+  between the day grid, the selected day's items and the No-date strip. On
+  a focused item or strip task, `T` moves it to today and `@` opens a
+  due-date menu, as in the desktop calendar. Unlike the
   desktop calendar, the terminal calendar also places a task on its
   scheduled date (marked) as well as its due date.
 - **Tags**: `Tab` multi-selects, `a` toggles any/all, `r`/`x` rename or

@@ -11,17 +11,17 @@ import (
 const calLooseNote = "- [ ] loose end\n"
 
 // calDueMenu focuses the item panel on 2026-11-18 (today fixed to 2026-10-29)
-// and presses T.
+// and presses @.
 func calDueMenu(t *testing.T, files map[string]string, vimOn bool) (*App, *tasksView, string, *menu) {
 	t.Helper()
 	calFixToday(t, calDate(2026, time.October, 29))
 	a, tv, root := calVaultApp(t, files)
 	a.prefs.VimMode = vimOn
 	calPress(a, tv, vim.KeyEnter)
-	calPress(a, tv, vim.R('T'))
+	calPress(a, tv, vim.R('@'))
 	m, ok := a.overlay.(*menu)
 	if !ok {
-		t.Fatalf("overlay after T on an item = %T, want the due-date menu", a.overlay)
+		t.Fatalf("overlay after @ on an item = %T, want the due-date menu", a.overlay)
 	}
 	return a, tv, root, m
 }
@@ -52,11 +52,11 @@ func calPick(t *testing.T, a *App, m *menu, word string) {
 
 func TestDueMenuOpensFromItemPanel(t *testing.T) { // AC88
 	_, tv, _, _ := calDueMenu(t, map[string]string{"work.md": calWorkNote}, true)
-	requireDay(t, tv, "2026-11-18", "after T")
+	requireDay(t, tv, "2026-11-18", "after @")
 	if tv.calc().sub != calMonth {
 		t.Errorf("sub-mode = %v, want month", tv.calc().sub)
 	}
-	requireFocus(t, tv, calFocusItems, "after T")
+	requireFocus(t, tv, calFocusItems, "after @")
 }
 
 func TestDueMenuListsChoicesInOrder(t *testing.T) { // AC89
@@ -168,10 +168,10 @@ func TestDueMenuOpensFromStrip(t *testing.T) { // AC97
 	a, tv, root := calVaultApp(t, map[string]string{"work.md": calWorkNote, "loose.md": calLooseNote})
 	calPress(a, tv, vim.KeyTab, vim.KeyTab)
 	requireFocus(t, tv, calFocusStrip, "second Tab")
-	calPress(a, tv, vim.R('T'))
+	calPress(a, tv, vim.R('@'))
 	m, ok := a.overlay.(*menu)
 	if !ok {
-		t.Fatalf("overlay after T on the strip = %T, want the due-date menu", a.overlay)
+		t.Fatalf("overlay after @ on the strip = %T, want the due-date menu", a.overlay)
 	}
 	calPick(t, a, m, "tomorrow")
 	if got := calReadFile(t, root, "loose.md"); !strings.Contains(got, "loose end due:2026-10-30") {
@@ -193,4 +193,25 @@ func TestDueMenuWithoutVimMode(t *testing.T) { // AC112
 		t.Errorf("letters on a focused task changed the note with Vim off:\n%s", got)
 	}
 	requireFocus(t, tv, calFocusItems, "after the letters")
+}
+
+// T moves a focused task to today, as in the desktop calendar.
+func TestTMovesFocusedTaskToToday(t *testing.T) {
+	calFixToday(t, calDate(2026, time.October, 29))
+	a, tv, root := calVaultApp(t, map[string]string{"work.md": calWorkNote, "loose.md": calLooseNote})
+	calPress(a, tv, vim.KeyEnter, vim.R('T'))
+	if a.overlay != nil {
+		t.Errorf("T on an item opened %T, want no overlay", a.overlay)
+	}
+	if got := calReadFile(t, root, "work.md"); !strings.Contains(got, "alpha job due:2026-10-29") {
+		t.Errorf("T on an item did not move it to today:\n%s", got)
+	}
+
+	a, tv, root = calVaultApp(t, map[string]string{"work.md": calWorkNote, "loose.md": calLooseNote})
+	calPress(a, tv, vim.KeyTab, vim.KeyTab)
+	requireFocus(t, tv, calFocusStrip, "second Tab")
+	calPress(a, tv, vim.R('T'))
+	if got := calReadFile(t, root, "loose.md"); !strings.Contains(got, "loose end due:2026-10-29") {
+		t.Errorf("T on a strip task did not move it to today:\n%s", got)
+	}
 }

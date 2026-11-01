@@ -1091,6 +1091,11 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				a.taskMenu(*t)
 			}
 		case k.IsRune('T'):
+			// As in the desktop calendar: T moves the task to today, @ picks a date.
+			if t != nil {
+				a.setTaskDue(*t, vault.TodayISO(calendarNow()))
+			}
+		case k.IsRune('@'):
 			if t != nil {
 				v.calendarDueMenu(a, *t)
 			}
