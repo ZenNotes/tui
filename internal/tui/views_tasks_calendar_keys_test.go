@@ -333,6 +333,13 @@ func TestItemPanelLeftAndEscReturnToGrid(t *testing.T) {
 				t.Fatalf("vim=%v: Enter did not focus the item panel", vimOn)
 			}
 			calPress(a, tv, back)
+			if !vimOn && back.IsRune('h') {
+				// With Vim off h is a letter, and letters do nothing.
+				if tv.calc().focus != calFocusItems {
+					t.Errorf("h with Vim off moved focus to %v", tv.calc().focus)
+				}
+				continue
+			}
 			if tv.calc().focus != calFocusGrid {
 				t.Errorf("vim=%v: %s left focus on %v, want the grid", vimOn, back, tv.calc().focus)
 			}

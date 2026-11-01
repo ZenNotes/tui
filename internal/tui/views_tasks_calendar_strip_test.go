@@ -305,3 +305,14 @@ func TestStripEscReturnsToGrid(t *testing.T) {
 		}
 	}
 }
+
+func TestStripColonOpensExLine(t *testing.T) {
+	a, tv := calTestApp(t, calManyUndated(2))
+	a.prefs.VimMode = true
+	calPress(a, tv, vim.KeyTab)
+	requireFocus(t, tv, calFocusStrip, "setup")
+	calPress(a, tv, vim.R(':'))
+	if _, ok := a.overlay.(*exPrompt); !ok {
+		t.Errorf(": on a strip task opened %T, want the ex line", a.overlay)
+	}
+}

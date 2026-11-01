@@ -1051,7 +1051,13 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		return true
 	}
 	if v.calc().focus != calFocusGrid {
+		// With Vim off a focused task, like the list, takes no letters.
+		if !a.listKeyAllowed(k) {
+			return false
+		}
 		switch {
+		case k.IsRune(':'):
+			a.openLocalEx()
 		case k.Is("esc") || k.IsRune('h') || k.Is("left"):
 			v.calc().focus = calFocusGrid
 		case k.Is("tab"):

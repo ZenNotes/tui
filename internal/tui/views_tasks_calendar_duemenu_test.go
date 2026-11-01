@@ -180,9 +180,17 @@ func TestDueMenuOpensFromStrip(t *testing.T) { // AC97
 }
 
 func TestDueMenuWithoutVimMode(t *testing.T) { // AC112
-	_, tv, _, m := calDueMenu(t, map[string]string{"work.md": calWorkNote}, false)
-	if len(m.items) != 6 {
-		t.Errorf("menu has %d items, want 6", len(m.items))
+	calFixToday(t, calDate(2026, time.October, 29))
+	a, tv, root := calVaultApp(t, map[string]string{"work.md": calWorkNote})
+	a.prefs.VimMode = false
+	calPress(a, tv, vim.KeyEnter)
+	requireFocus(t, tv, calFocusItems, "after Enter")
+	calPress(a, tv, calRunes("Tcdw/e")...)
+	if a.overlay != nil {
+		t.Errorf("letters on a focused task opened %T with Vim off", a.overlay)
 	}
-	requireDay(t, tv, "2026-11-18", "after T")
+	if got := calReadFile(t, root, "work.md"); got != calWorkNote {
+		t.Errorf("letters on a focused task changed the note with Vim off:\n%s", got)
+	}
+	requireFocus(t, tv, calFocusItems, "after the letters")
 }
