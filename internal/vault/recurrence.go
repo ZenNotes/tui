@@ -2,6 +2,7 @@ package vault
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -236,4 +237,173 @@ func frontmatterSkip(values []string) []string {
 		out = append(out, items...)
 	}
 	return out
+}
+
+// searchYears bounds how far past the base date NextOccurrence looks. A skip
+// range that covers more than this leaves the rule with no occurrence instead
+// of looping without end.
+const searchYears = 400
+
+const isoDay = "2006-01-02"
+
+// NextOccurrence returns the first date of the rule's sequence that lies
+// after base, after today and outside every skip period, as a `YYYY-MM-DD`
+// date. base is the date the rule counts from: the task's own date, or today
+// for a rule counted from completion. weekStart is the first day of the week
+// that `Nw` periods use. It reports false when base or today is not a date,
+// or when no date within the search bound qualifies.
+//
+// A rule without an anchor counts base plus k steps, each counted from base
+// and clamped to the end of a shorter month. A rule with an anchor selects
+// dates in the period that holds base, and in every N-th period after it.
+// All arithmetic is on calendar days, so a daylight saving change never
+// moves a date.
+func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday, skips []SkipPeriod) (string, bool) {
+	if !IsValidISODate(base) || !IsValidISODate(today) || rule.Every < 1 {
+		return "", false
+	}
+	b, err := time.Parse(isoDay, base)
+	if err != nil {
+		return "", false
+	}
+	limit := b.Year() + searchYears
+	after := base
+	if today > after {
+		after = today
+	}
+	for period := 0; ; period++ {
+		dates, beyond := repeatPeriodDates(rule, b, period, weekStart, limit)
+		if beyond {
+			return "", false
+		}
+		for _, d := range dates {
+			s := d.Format(isoDay)
+			if s > after && !inSkipPeriod(s, skips) {
+				return s, true
+			}
+		}
+	}
+}
+
+func inSkipPeriod(day string, skips []SkipPeriod) bool {
+	for _, p := range skips {
+		if day >= p.Start && day <= p.End {
+			return true
+		}
+	}
+	return false
+}
+
+// repeatPeriodDates lists, in ascending order, the dates the rule selects in
+// its period-th step after the base date. For an anchored rule that is the
+// period N*period periods after the one that holds base. For a rule without
+// an anchor it is the single date N*(period+1) units after base. It reports
+// beyond when that lies past the year limit.
+func repeatPeriodDates(rule RepeatRule, base time.Time, period int, weekStart time.Weekday, limit int) (dates []time.Time, beyond bool) {
+	steps := period * rule.Every
+	switch rule.Unit {
+	case RepeatDays:
+		d := civilDate(base.Year(), base.Month(), base.Day()+steps+rule.Every)
+		return []time.Time{d}, d.Year() > limit
+	case RepeatWeeks:
+		if rule.Anchor == AnchorNone {
+			d := civilDate(base.Year(), base.Month(), base.Day()+7*(steps+rule.Every))
+			return []time.Time{d}, d.Year() > limit
+		}
+		first := civilDate(base.Year(), base.Month(), base.Day()-weekdayOffset(base.Weekday(), weekStart)+7*steps)
+		if first.Year() > limit {
+			return nil, true
+		}
+		for _, wd := range rule.Weekdays {
+			dates = append(dates, first.AddDate(0, 0, weekdayOffset(wd, weekStart)))
+		}
+		sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
+		return dates, false
+	case RepeatMonths:
+		return monthPeriodDates(rule, base, monthIndex(base)+steps, steps+rule.Every, limit)
+	case RepeatQuarters:
+		quarterStart := monthIndex(base) - (int(base.Month())-1)%3
+		return monthPeriodDates(rule, base, quarterStart+3*steps, 3*(steps+rule.Every), limit)
+	default:
+		year := base.Year() + steps
+		if rule.Anchor == AnchorNone {
+			year += rule.Every
+		}
+		if year > limit {
+			return nil, true
+		}
+		if rule.Anchor == AnchorMonthDay {
+			return []time.Time{clampedDate(year, time.Month(rule.Month), rule.Day)}, false
+		}
+		return []time.Time{clampedDate(year, base.Month(), base.Day())}, false
+	}
+}
+
+// monthPeriodDates handles the month and quarter units. first is the month
+// index (year*12 + month-1) that the period starts in; unanchored is the
+// number of months past the base date for a rule without an anchor.
+func monthPeriodDates(rule RepeatRule, base time.Time, first, unanchored, limit int) ([]time.Time, bool) {
+	if rule.Anchor == AnchorNone {
+		d := clampedMonths(base, unanchored)
+		return []time.Time{d}, d.Year() > limit
+	}
+	if first/12 > limit {
+		return nil, true
+	}
+	months := 1
+	if rule.Unit == RepeatQuarters {
+		months = 3
+	}
+	y, m := first/12, time.Month(first%12+1)
+	switch rule.Anchor {
+	case AnchorDayOfMonth:
+		return []time.Time{clampedDate(y, m, rule.Day)}, false
+	case AnchorPeriodStart:
+		return []time.Time{civilDate(y, m, 1)}, false
+	case AnchorPeriodEnd:
+		return []time.Time{civilDate(y, m+time.Month(months), 0)}, false
+	case AnchorWeekdayOfMonth:
+		return []time.Time{weekdayOfMonth(y, m, rule.Ordinal, rule.Weekday)}, false
+	}
+	return nil, true
+}
+
+// civilDate builds a calendar day at noon UTC, normalising month and day
+// overflow. Noon in a fixed zone keeps every step on a whole day.
+func civilDate(y int, m time.Month, d int) time.Time {
+	return time.Date(y, m, d, 12, 0, 0, 0, time.UTC)
+}
+
+func monthIndex(t time.Time) int { return t.Year()*12 + int(t.Month()) - 1 }
+
+// clampedDate is day d of the month, or its last day when the month is
+// shorter.
+func clampedDate(y int, m time.Month, d int) time.Time {
+	if last := civilDate(y, m+1, 0).Day(); d > last {
+		d = last
+	}
+	return civilDate(y, m, d)
+}
+
+// clampedMonths is base moved forward by n months, keeping its day of the
+// month unless the target month is shorter.
+func clampedMonths(base time.Time, n int) time.Time {
+	idx := monthIndex(base) + n
+	return clampedDate(idx/12, time.Month(idx%12+1), base.Day())
+}
+
+// weekdayOffset is how many days wd falls after the week's first day.
+func weekdayOffset(wd, weekStart time.Weekday) int {
+	return (int(wd) - int(weekStart) + 7) % 7
+}
+
+// weekdayOfMonth is the ordinal-th weekday of the month, where ordinal -1
+// selects the last one.
+func weekdayOfMonth(y int, m time.Month, ordinal int, wd time.Weekday) time.Time {
+	if ordinal < 0 {
+		last := civilDate(y, m+1, 0)
+		return civilDate(y, m, last.Day()-(int(last.Weekday())-int(wd)+7)%7)
+	}
+	firstOffset := (int(wd) - int(civilDate(y, m, 1).Weekday()) + 7) % 7
+	return civilDate(y, m, 1+firstOffset+7*(ordinal-1))
 }
