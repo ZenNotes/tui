@@ -38,6 +38,8 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 	}
 	a.deferReads = true
 	defer func() { a.deferReads = false }()
+	held := a.tabSeq
+	a.tabSeq = nil
 	if a.message != "" && !(k.Is("esc") && a.overlay == nil) {
 		a.message, a.messageErr = "", false
 	}
@@ -100,6 +102,15 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 			return a.afterKey()
 		}
 	}
+	if a.tabSequenceKey(k, held) {
+		return a.afterKey()
+	}
+	a.surfaceKey(k)
+	return a.afterKey()
+}
+
+// surfaceKey hands a key to the focused surface.
+func (a *App) surfaceKey(k vim.Key) {
 	switch a.focus {
 	case focusSidebar:
 		a.sidebar.handleKey(a, k)
@@ -114,7 +125,48 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 	default:
 		a.paneKey(k)
 	}
-	return a.afterKey()
+}
+
+// tabSequenceKey runs the buffer and tab sequences (`[b`, `]b`, `gt`, `gT`)
+// from every surface that is not a note editor; the editor handles them in
+// editorKey. A started sequence that does not complete is replayed to the
+// surface, so a lone `]` still reaches the view that binds it.
+func (a *App) tabSequenceKey(k vim.Key, held []vim.Key) bool {
+	if !a.prefs.VimMode || len(a.navKeys) > 0 {
+		return false
+	}
+	if a.focus == focusPane {
+		if t := a.activeTab(); t != nil && t.view == nil && a.buffers[t.path] != nil && t.mode != modePreview {
+			return false
+		}
+	}
+	seqIDs := []string{"vim.bufferPrevious", "vim.bufferNext", "vim.tabPrevious", "vim.tabNext"}
+	if len(held) > 0 {
+		if k.Is("esc") {
+			return true
+		}
+		seq := append(append([]vim.Key{}, held...), k)
+		for _, id := range seqIDs {
+			if complete, _ := matchSequence(seq, bindingKeys(a.keymap.Binding(id))); complete {
+				a.runSequenceAction(id, 1, false)
+				return true
+			}
+		}
+		a.surfaceKey(seq[0])
+		return false
+	}
+	for _, id := range seqIDs {
+		keys := bindingKeys(a.keymap.Binding(id))
+		if len(keys) > 1 && sameKey(k, keys[0]) {
+			a.tabSeq = []vim.Key{k}
+			return true
+		}
+		if len(keys) == 1 && sameKey(k, keys[0]) {
+			a.runSequenceAction(id, 1, false)
+			return true
+		}
+	}
+	return false
 }
 
 // completionKey takes the keys insert-mode completion owns: the ones that

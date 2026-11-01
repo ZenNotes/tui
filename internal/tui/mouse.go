@@ -123,6 +123,9 @@ func (a *App) dividerAt(n *paneNode, x, y int) *paneNode {
 
 // handleMouse is the entry point for every mouse event.
 func (a *App) handleMouse(m tea.MouseMsg) {
+	if m.Action != tea.MouseActionMotion {
+		a.tabSeq = nil
+	}
 	switch m.Action {
 	case tea.MouseActionRelease:
 		a.mouse.drag = ""

@@ -107,6 +107,7 @@ type App struct {
 	overlay  overlay
 	leader   *leaderState
 	navKeys  []vim.Key
+	tabSeq   []vim.Key // first key of a buffer/tab sequence typed outside the editor
 	paneKeys bool
 
 	// tagMenu is the tag completion under the cursor; tagDismissed the token
