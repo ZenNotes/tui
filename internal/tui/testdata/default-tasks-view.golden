@@ -1,0 +1,184 @@
+== tasks_list_order note ==
+-- list
+Today (5) · 2 overdue
+  Overdue errand (inbox/errands.md)
+  Today errand (inbox/errands.md)
+  In progress errand (inbox/errands.md)
+  Low today (inbox/work.md)
+  Overdue medium (inbox/work.md)
+Upcoming (3)
+  Soon errand #home (inbox/errands.md)
+  pay-rent (inbox/pay-rent.md)
+  High soon (inbox/work.md)
+No due date (2)
+  Undated errand (inbox/errands.md)
+  Medium undated (inbox/work.md)
+Waiting (1)
+  Waiting errand (inbox/errands.md)
+Done (1)
+  Finished errand (inbox/errands.md)
+Forwarded (1)
+  Forwarded errand (inbox/errands.md)
+Cancelled (1)
+  Cancelled errand (inbox/errands.md)
+-- board by status
+Today (4)
+  Overdue errand
+  Overdue medium
+  Today errand
+  Low today
+Upcoming (3)
+  Soon errand #home
+  pay-rent
+  High soon
+No due date (2)
+  Undated errand
+  Medium undated
+In progress (1)
+  In progress errand
+Waiting (1)
+  Waiting errand
+Done (1)
+  Finished errand
+-- board by priority
+High (3)
+  Overdue errand
+  pay-rent
+  High soon
+Medium (3)
+  Overdue medium
+  Today errand
+  Medium undated
+Low (2)
+  In progress errand
+  Low today
+No priority (3)
+  Waiting errand
+  Soon errand #home
+  Undated errand
+-- board by due
+Overdue (2)
+  Overdue errand
+  Overdue medium
+Today (4)
+  Today errand
+  Waiting errand
+  In progress errand
+  Low today
+Tomorrow (0)
+This week (3)
+  Soon errand #home
+  pay-rent
+  High soon
+Later (0)
+No date (2)
+  Undated errand
+  Medium undated
+-- calendar
+today-1
+  Overdue errand
+  Overdue medium
+today
+  Today errand
+  Waiting errand
+  In progress errand
+  Low today
+today+3
+  Soon errand #home
+  pay-rent
+  High soon
+no date
+  Medium undated
+  Undated errand
+== tasks_list_order priority ==
+-- list
+Today (5) · 2 overdue
+  Overdue errand (inbox/errands.md)
+  Overdue medium (inbox/work.md)
+  Today errand (inbox/errands.md)
+  In progress errand (inbox/errands.md)
+  Low today (inbox/work.md)
+Upcoming (3)
+  pay-rent (inbox/pay-rent.md)
+  High soon (inbox/work.md)
+  Soon errand #home (inbox/errands.md)
+No due date (2)
+  Medium undated (inbox/work.md)
+  Undated errand (inbox/errands.md)
+Waiting (1)
+  Waiting errand (inbox/errands.md)
+Done (1)
+  Finished errand (inbox/errands.md)
+Forwarded (1)
+  Forwarded errand (inbox/errands.md)
+Cancelled (1)
+  Cancelled errand (inbox/errands.md)
+-- board by status
+Today (4)
+  Overdue errand
+  Overdue medium
+  Today errand
+  Low today
+Upcoming (3)
+  Soon errand #home
+  pay-rent
+  High soon
+No due date (2)
+  Undated errand
+  Medium undated
+In progress (1)
+  In progress errand
+Waiting (1)
+  Waiting errand
+Done (1)
+  Finished errand
+-- board by priority
+High (3)
+  Overdue errand
+  pay-rent
+  High soon
+Medium (3)
+  Overdue medium
+  Today errand
+  Medium undated
+Low (2)
+  In progress errand
+  Low today
+No priority (3)
+  Waiting errand
+  Soon errand #home
+  Undated errand
+-- board by due
+Overdue (2)
+  Overdue errand
+  Overdue medium
+Today (4)
+  Today errand
+  Waiting errand
+  In progress errand
+  Low today
+Tomorrow (0)
+This week (3)
+  Soon errand #home
+  pay-rent
+  High soon
+Later (0)
+No date (2)
+  Undated errand
+  Medium undated
+-- calendar
+today-1
+  Overdue errand
+  Overdue medium
+today
+  Today errand
+  Waiting errand
+  In progress errand
+  Low today
+today+3
+  Soon errand #home
+  pay-rent
+  High soon
+no date
+  Medium undated
+  Undated errand
