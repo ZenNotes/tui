@@ -149,6 +149,10 @@ type App struct {
 
 	// cursor is where the terminal cursor belongs in the last frame drawn.
 	cursor cursorState
+	// cmdlineX is the column of the next typed character on the command
+	// line, set by renderCommandLine while a command line is open.
+	cmdlineX    int
+	cmdlineOpen bool
 
 	systemDark        bool
 	exHistory         []string
@@ -1014,6 +1018,7 @@ func (a *App) vaultLabel() string {
 
 func (a *App) renderCommandLine() string {
 	t := a.theme
+	a.cmdlineOpen = false
 	if buf := a.activeBuffer(); buf != nil && a.focus == focusPane {
 		if kind, text, cursor, active := buf.ed.Cmdline(); active {
 			runes := []rune(text)
@@ -1022,7 +1027,8 @@ func (a *App) renderCommandLine() string {
 			if cursor < len(runes) {
 				after = string(runes[cursor:])
 			}
-			line := string(kind) + before + t.Cursor.Render(firstCellOr(after, " ")) + restAfterFirst(after)
+			a.cmdlineX, a.cmdlineOpen = cellWidth(string(kind)+before), true
+			line := string(kind) + before + after
 			if comps, idx := buf.ed.Completions(); len(comps) > 0 {
 				line += "   " + a.renderWildmenu(comps, idx)
 			}

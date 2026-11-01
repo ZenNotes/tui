@@ -61,6 +61,9 @@ func (a *App) computeCursor() cursorState {
 	if a.overlay != nil || a.focus != focusPane {
 		return cursorState{}
 	}
+	if a.cmdlineOpen {
+		return cursorState{visible: true, x: a.cmdlineX, y: a.height - 1, shape: cursorShapeBar}
+	}
 	t := a.activeTab()
 	if t == nil || t.view != nil || t.mode == modePreview {
 		return cursorState{}
