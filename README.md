@@ -773,8 +773,10 @@ zn config set terminal.view_mode_field view-mode
 zn config set terminal.view_mode_rules.page-status=done preview
 ```
 
-Only `zn tui` reads these settings. zn never writes them into the vault, and
-the desktop app ignores them.
+Only `zn tui` reads these settings, and zn never writes them into the vault.
+The desktop app does not use them, and like every `[terminal]` setting they
+do not survive the desktop app saving `config.toml` (see
+[Configuration](#configuration)).
 
 ### Vaults and servers inside the app
 
@@ -856,6 +858,10 @@ it immediately. External edits are otherwise picked up within a second.
 Updates preserve unknown keys/tables and existing symlinks; TOML comments
 and formatting are normalized when the file is written. Invalid supported
 values produce an error while the running preferences remain active.
+The desktop app does not keep the `[terminal]` table: it rewrites
+`config.toml` at launch and whenever you change a setting there, and the
+rewritten file leaves `[terminal]` out. If you use both apps, keep a copy of
+your `[terminal]` settings to put back.
 
 Periodic note paths and named date tokens follow each kind's configured
 locale, including legacy patterns. The TUI keeps a horizontal tab strip
