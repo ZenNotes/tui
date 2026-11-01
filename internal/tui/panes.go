@@ -43,6 +43,10 @@ type tab struct {
 	preview *previewState
 	view    view
 	pinned  bool
+	// frontmatterPending is set while a freshly opened tab still waits for
+	// its note to load, so the frontmatter can pick the pane mode. A manual
+	// mode switch clears it.
+	frontmatterPending bool
 }
 
 // pane is a leaf of the split tree holding tabs.
@@ -109,7 +113,7 @@ func (n *paneNode) split(target *pane, vertical bool) *pane {
 	if n.leaf == target {
 		newPane := &pane{}
 		if t := target.activeTab(); t != nil {
-			copyTab := &tab{path: t.path, mode: t.mode, view: t.view}
+			copyTab := &tab{path: t.path, mode: t.mode, view: t.view, frontmatterPending: t.frontmatterPending}
 			if t.preview != nil {
 				pv := *t.preview
 				copyTab.preview = &pv
@@ -222,6 +226,7 @@ func (a *App) openNote(path string, focus bool) {
 	if pane == nil {
 		return
 	}
+	justCreated := a.consumeNewNote(path)
 	if idx := pane.findTab(path); idx >= 0 {
 		pane.active = idx
 	} else {
@@ -236,9 +241,15 @@ func (a *App) openNote(path string, focus bool) {
 		if remembered, ok := a.noteModes[path]; ok && !a.prefs.KeepViewModeAcrossNotes() {
 			mode = remembered
 		}
+		if justCreated {
+			mode = modeEdit
+		}
 		t := &tab{path: path, mode: mode}
 		pane.tabs = append(pane.tabs, t)
 		pane.active = len(pane.tabs) - 1
+		if !justCreated {
+			a.watchFrontmatterMode(t)
+		}
 	}
 	if cur := a.activeBuffer(); cur != nil && cur.path != path {
 		a.pushJump(cur.path, cur.ed.Cursor())
@@ -322,9 +333,15 @@ func (a *App) reopenClosedTab() {
 		a.openVirtualByPath(last.path)
 		return
 	}
+	reused := a.activePane != nil && a.activePane.findTab(last.path) >= 0
 	a.openNote(last.path, true)
-	if t := a.activePane.activeTab(); t != nil {
+	if t := a.activePane.activeTab(); t != nil && t.path == last.path {
 		t.mode = last.mode
+		// A reopened note follows its frontmatter like any note opened in a
+		// new tab; the closed tab's mode stands only when it asks for none.
+		if !reused {
+			a.watchFrontmatterMode(t)
+		}
 	}
 }
 

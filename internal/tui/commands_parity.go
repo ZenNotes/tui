@@ -545,6 +545,9 @@ func (a *App) rolloverNow() error {
 	if n == 0 {
 		a.notify("Nothing to roll over")
 	}
+	if created {
+		a.markNewNote(rel)
+	}
 	a.openNote(rel, true)
 	if created {
 		a.showNewNoteInEditor(rel)
@@ -726,7 +729,7 @@ func (a *App) openReference(path string) {
 	if t == nil {
 		return
 	}
-	t.mode = modePreview
+	forceTabMode(t, modePreview)
 	if !t.pinned {
 		a.togglePin(p, p.active)
 	}
@@ -910,6 +913,7 @@ func (a *App) newTaskFile(target string) error {
 		}
 		a.ignoreChange(meta.Path)
 		a.addNoteToIndex(meta)
+		a.markNewNote(meta.Path)
 		a.openNote(meta.Path, true)
 		a.showNewNoteInEditor(meta.Path)
 		a.afterTaskChange()

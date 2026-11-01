@@ -27,7 +27,7 @@ func ValidateConfig() error {
 // lenientKeys are checked only when strict (zn doctor): LoadPrefs falls back
 // to their defaults, so a bad value never stops zn from starting.
 var lenientKeys = map[string]map[string]bool{
-	"terminal": {"math": true, "render_timeout": true, "render_concurrency": true},
+	"terminal": {"math": true, "view_mode_field": true, "render_timeout": true, "render_concurrency": true},
 }
 
 func validateKnownValues(doc map[string]any, strict bool) error {

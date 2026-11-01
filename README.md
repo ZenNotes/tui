@@ -717,6 +717,67 @@ files by absolute path, so under `latex` a note can show in the preview the
 contents of any file you can read. Leave latex off for vaults you do not
 trust.
 
+### Open notes in a pane mode from their frontmatter
+
+By default a note opens in the mode `editor.default_view_mode` gives (or the
+mode you last chose, with `keep_view_mode_across_notes`). Two `[terminal]`
+settings, both off by default, let a note's own frontmatter pick the mode when
+it opens in a new tab:
+
+- **`view_mode_field`** names a frontmatter field. It is empty by default;
+  `view-mode` is a good name. A note with `view-mode: preview` (or `edit`, or
+  `split`) opens in that mode. The key and value are not case sensitive. A
+  list, an empty value or any other word is ignored.
+- **`[terminal.view_mode_rules]`** maps a frontmatter `key=value` pair to a mode.
+  A list field matches when any element equals the value.
+
+```toml
+[terminal]
+view_mode_field = "view-mode"
+
+[terminal.view_mode_rules]
+"page-status=done" = "preview"
+"kind=journal" = "edit"
+```
+
+Rules are written `"<key>=<value>" = "<mode>"`, where the mode is `edit`,
+`split` or `preview`. Keys and values are trimmed, unquoted and compared in
+lower case. A rule is invalid, and ignored, when it has no `=`, an empty key,
+an empty value or a mode other than those three. Invalid rules never stop zn
+from starting; `:settings` lists them marked with their reason (`no "="`,
+`empty key`, `empty value` or `bad mode`), and `d` or the mode picker's
+`remove` deletes them.
+
+Precedence:
+
+- A valid `view_mode_field` value beats the rules. Among the rules, the first
+  one in sorted order of the lower-cased `key=value` wins, so
+  `kind=journal` is tried before `page-status=done`.
+- Frontmatter beats the remembered mode and `keep_view_mode_across_notes`.
+  Applying it never changes either of them; a mode you switch to yourself
+  still does.
+- A tab restored from the saved session keeps its saved mode.
+- A note you have just created opens in the editor, whatever its frontmatter
+  says. Reopening it later follows the frontmatter.
+- Reopening a closed tab follows the frontmatter too; the mode the tab was
+  closed in comes back only when the frontmatter asks for none.
+- The pane opened by `:ref`, and a peek from the sidebar, stay in preview.
+- Switching to a tab that is already open never changes its mode, and saving
+  new frontmatter does not either.
+
+Edit them in `:settings` (the `terminal.view_mode_field` row, and the
+`terminal.view_mode_rules` rows with their add row) or with `zn config`:
+
+```bash
+zn config set terminal.view_mode_field view-mode
+zn config set terminal.view_mode_rules.page-status=done preview
+```
+
+Only `zn tui` reads these settings, and zn never writes them into the vault.
+The desktop app does not use them, and like every `[terminal]` setting they
+do not survive the desktop app saving `config.toml` (see
+[Configuration](#configuration)).
+
 ### Vaults and servers inside the app
 
 `:vault` (or `Space v`) lists every saved vault and server, with entries to
@@ -797,6 +858,10 @@ it immediately. External edits are otherwise picked up within a second.
 Updates preserve unknown keys/tables and existing symlinks; TOML comments
 and formatting are normalized when the file is written. Invalid supported
 values produce an error while the running preferences remain active.
+The desktop app does not keep the `[terminal]` table: it rewrites
+`config.toml` at launch and whenever you change a setting there, and the
+rewritten file leaves `[terminal]` out. If you use both apps, keep a copy of
+your `[terminal]` settings to put back.
 
 Periodic note paths and named date tokens follow each kind's configured
 locale, including legacy patterns. The TUI keeps a horizontal tab strip
@@ -810,7 +875,7 @@ layout choices do not change these terminal layouts.
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
-| `[terminal]` | `mouse`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency` (terminal only) |
+| `[terminal]` | `mouse`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
 | `[saved_filters]` | `Important = "!high"` |

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -80,6 +81,12 @@ type Prefs struct {
 	// TerminalMath is typst or latex: the engine for display math. Anything
 	// else loads as typst; zn doctor reports it.
 	TerminalMath string
+	// TerminalViewModeField names the frontmatter field that picks a note's
+	// pane mode when it opens in a new tab. Empty turns the feature off.
+	TerminalViewModeField string
+	// ViewModeRules maps "<key>=<value>" to a pane mode, from
+	// [terminal.view_mode_rules]. Entries are raw; see ViewModeRuleEntries.
+	ViewModeRules map[string]string
 	// RenderTimeout (seconds) bounds one external render; RenderConcurrency
 	// caps how many run at once. Non-positive values load as the defaults.
 	RenderTimeout     int
@@ -115,6 +122,7 @@ func DefaultPrefs() Prefs {
 		PreviewStyle:             "auto",
 		TerminalMouse:            true,
 		TerminalMath:             "typst",
+		ViewModeRules:            map[string]string{},
 		RenderTimeout:            10,
 		RenderConcurrency:        2,
 		UnifiedSidebar:           true,
@@ -236,6 +244,19 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setString(terminal, "images", &p.TerminalImages)
 	setString(terminal, "theme", &p.TerminalTheme)
 	setString(terminal, "math", &p.TerminalMath)
+	setString(terminal, "view_mode_field", &p.TerminalViewModeField)
+	if rules, ok := terminal["view_mode_rules"].(map[string]any); ok {
+		p.ViewModeRules = map[string]string{}
+		for k, v := range rules {
+			// A mode that is not a string is kept as text, so the rule is
+			// listed as invalid and can be removed instead of vanishing.
+			s, isString := v.(string)
+			if !isString {
+				s = fmt.Sprint(v)
+			}
+			p.ViewModeRules[k] = s
+		}
+	}
 	setInt(terminal, "render_timeout", &p.RenderTimeout)
 	setInt(terminal, "render_concurrency", &p.RenderConcurrency)
 	if strings.TrimSpace(p.PreviewStyle) == "" {

@@ -597,6 +597,7 @@ func (a *App) setPaneMode(mode paneMode) {
 		return
 	}
 	t.mode = mode
+	t.frontmatterPending = false
 	if a.prefs.RetainViewMode {
 		a.prefs.DefaultPaneMode = string(mode)
 	}
