@@ -212,3 +212,31 @@ func TestTaskListJSONOmitsSkipWhenUnset(t *testing.T) {
 		}
 	}
 }
+
+// A note marked `page-type: task` is toggled like a tagged task note: the
+// whole note becomes done.
+func TestTaskToggleCompletesPageTypeTaskNote(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "inbox", "rent.md")
+	note := "---\npage-type: task\nstatus: open\n---\n\n# Pay rent\n"
+	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"task", "toggle", "inbox/rent.md#task", "--vault", root}
+	captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "status: done") {
+		t.Fatalf("note not completed:\n%s", got)
+	}
+}
