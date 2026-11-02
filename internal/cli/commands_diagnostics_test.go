@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -158,4 +159,95 @@ func TestDoctorFailsOnUnknownTaskNoteMarker(t *testing.T) {
 		}
 	}
 	t.Fatalf("no configuration check:\n%s", out)
+}
+
+// doctorText runs `zn doctor` on root and returns its text output and exit
+// status.
+func doctorText(t *testing.T, root string) (string, int) {
+	t.Helper()
+	code := 0
+	out := captureOutput(t, func() { code = Main([]string{"doctor", "--vault", root}) })
+	return out, code
+}
+
+// A bad time on a task is a warning with the file and line, and it never
+// changes the exit status that a clean vault gets.
+func TestDoctorWarnsAboutBadTaskTokens(t *testing.T) {
+	isolatedCLI(t)
+	clean := t.TempDir()
+	writeVaultFile(t, clean, "ok.md", "- [ ] fine due:2026-11-03T14:00\n")
+	_, cleanCode := doctorText(t, clean)
+
+	root := t.TempDir()
+	writeVaultFile(t, root, "a.md", "# A\n\n- [ ] late due:2026-11-03T25:00\n")
+	writeVaultFile(t, root, "b.md", "# B\n\n\n\n- [ ] odd repeat:sometimes\n")
+	out, code := doctorText(t, root)
+	if !strings.Contains(out, "WARN") {
+		t.Fatalf("no warning line:\n%s", out)
+	}
+	for _, want := range []string{"a.md:3", "due:2026-11-03T25:00", "b.md:5", "repeat:sometimes"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if code != cleanCode {
+		t.Fatalf("exit status %d with a warning, %d on a clean vault", code, cleanCode)
+	}
+}
+
+// At most ten bad tokens are listed, then how many more there are.
+func TestDoctorListsTenBadTokensThenCount(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	var body strings.Builder
+	for i := 0; i < 12; i++ {
+		fmt.Fprintf(&body, "- [ ] task %d due:2026-11-03T25:%02d\n", i, i)
+	}
+	writeVaultFile(t, root, "many.md", body.String())
+	out, _ := doctorText(t, root)
+	if n := strings.Count(out, "many.md:"); n != 10 {
+		t.Fatalf("%d listed lines, want 10:\n%s", n, out)
+	}
+	if !strings.Contains(out, "+2 more") {
+		t.Fatalf("no \"+2 more\" line:\n%s", out)
+	}
+}
+
+// Only the selected workspace is scanned.
+func TestDoctorScansOnlySelectedWorkspace(t *testing.T) {
+	isolatedCLI(t)
+	selected, other := t.TempDir(), t.TempDir()
+	writeVaultFile(t, selected, "ok.md", "- [ ] fine\n")
+	writeVaultFile(t, other, "elsewhere.md", "- [ ] late due:2026-11-03T25:00\n")
+	out, _ := doctorText(t, selected)
+	if strings.Contains(out, "elsewhere.md") || strings.Contains(out, "WARN") {
+		t.Fatalf("another vault was scanned:\n%s", out)
+	}
+}
+
+// A reversed range and a day that does not exist are listed.
+func TestDoctorListsBadSkipItems(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	writeVaultFile(t, root, "s.md", "- [ ] away repeat:1w skip:2027-03-21..2027-03-13,2027-02-30,2027-04-01\n")
+	out, _ := doctorText(t, root)
+	for _, want := range []string{"s.md:1", "skip:2027-03-21..2027-03-13", "skip:2027-02-30"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "2027-04-01") {
+		t.Fatalf("a valid skip day was reported:\n%s", out)
+	}
+}
+
+// A reserved skip name is never a warning.
+func TestDoctorIgnoresReservedSkipNames(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	writeVaultFile(t, root, "s.md", "- [ ] away repeat:1w skip:@holidays,@school\n")
+	out, _ := doctorText(t, root)
+	if strings.Contains(out, "WARN") || strings.Contains(out, "@holidays") {
+		t.Fatalf("a reserved skip name was reported:\n%s", out)
+	}
 }
