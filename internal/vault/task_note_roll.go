@@ -103,8 +103,16 @@ func setFrontmatterLines(body string, updates []frontmatterLine) string {
 	var out []string
 	dropItems := false
 	for _, line := range strings.Split(block, "\n") {
-		if dropItems && fmListItemRe.MatchString(line) {
-			continue
+		if dropItems {
+			// Blank and comment lines do not end a list, as the frontmatter
+			// reader skips them, so the items after them are dropped too.
+			if trimmed := strings.TrimSpace(line); trimmed == "" || strings.HasPrefix(trimmed, "#") {
+				out = append(out, line)
+				continue
+			}
+			if fmListItemRe.MatchString(line) {
+				continue
+			}
 		}
 		dropItems = false
 		km := fmKeyRe.FindStringSubmatch(line)

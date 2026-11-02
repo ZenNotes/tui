@@ -156,6 +156,14 @@ func TestTaskNoteRollDropsBlockListItemsOfAdvancedKeys(t *testing.T) {
 	}
 }
 
+func TestTaskNoteRollDropsListItemsAfterBlankAndCommentLines(t *testing.T) {
+	in := rollNote("scheduled:", "", "  # next session", "  - 2026-11-02", "repeat: 3d")
+	want := rollNote("scheduled: 2026-11-05", "", "  # next session", "repeat: 3d", "lastCompleted: 2026-11-02")
+	if got := rollNoteAt(t, in, RollComplete, "2026-11-02"); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestTaskNoteCancelCountsFromTodayOnDone(t *testing.T) {
 	in := rollNote("scheduled: 2026-10-01", "due: 2026-10-03", "repeat: 1w/done")
 	want := rollNote("scheduled: 2026-11-18", "due: 2026-11-20", "repeat: 1w/done", "lastCompleted: 2026-11-11")
