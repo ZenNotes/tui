@@ -264,6 +264,85 @@ CSV can be linked right away. A page file already in the database folder
 under a record's name is linked instead of copied, and `--dry-run` lists
 what it would do.
 
+### Task times, repeating tasks, and task notes
+
+A checkbox task can carry a time, a scheduled day, a repeat rule and days to
+skip. All of them are plain text on the task line, and `zn task list --json`
+reports them as `dueTime`, `scheduled`, `scheduledTime`, `repeat` and `skip`
+next to `due`, which stays a plain date.
+
+```markdown
+- [ ] Call the dentist due:2026-11-03T14:00
+- [ ] Water the plants scheduled:2026-11-02 repeat:mon,thu
+- [ ] Pay rent due:2026-12-01 repeat:1m:start skip:2026-12-24..2026-12-26
+```
+
+- **Times.** `due:` and `scheduled:` take `YYYY-MM-DD` or
+  `YYYY-MM-DDTHH:MM` on a 24-hour clock. A time that is not `HH:MM` (for
+  example `T25:00`) is ignored and the date stays. A time orders the tasks of
+  one day, timed tasks first, and never moves a task between groups. The
+  calendar places a task on its due and scheduled dates and does not show
+  the time yet.
+- **`scheduled:`** is the day to work on a task, and zn keeps it out of the
+  task's text. An open task scheduled for today or earlier is listed under
+  Today; only its due date makes it overdue. In the Tasks view, the filter
+  `scheduled:` takes `today`, `overdue`, `none`, `any` or a date prefix such
+  as `scheduled:2026-11`, like `due:`.
+- **`repeat:`** takes `1d`, `2w`, `3m`, `1q` and `1y` (the number runs from 1
+  to 999), `weekdays` for Monday to Friday, a list of days such as `mon,thu`,
+  and these anchored forms:
+
+  | Rule | Lands on |
+  |---|---|
+  | `2w:mon,thu` | those days, in every second week |
+  | `1m:15` | the 15th of each month (a shorter month uses its last day) |
+  | `1m:start`, `1m:end` | the first or last day of the month |
+  | `1m:2-tue`, `1m:last-fri` | the 1st to 4th, or the last, such weekday of the month |
+  | `1q:start`, `1q:end` | the first or last day of the calendar quarter |
+  | `1y:03-14` | that day of each year (`02-29` uses 28 February in other years) |
+
+  Weeks start on `calendar_week_start`. A rule ending in `/done`, for
+  example `repeat:1w/done`, counts from the day you finish the task instead
+  of its own date. Rules are lower-cased before they are read. A rule
+  outside this list is ignored, and the task behaves as if it had none.
+- **`skip:`** lists days (`2027-03-13`) and inclusive ranges
+  (`2027-03-13..2027-03-21`) separated by commas. A repeating task passes
+  over them when it picks its next date. An item that is not a real day, or a
+  range that ends before it starts, is ignored on its own, and `@name` items
+  are reserved and ignored for now.
+
+Completing or cancelling an open, in-progress or waiting task that repeats
+inserts an open copy of the line (and its indented subtasks) directly above
+it, and ticks or cancels the original. The copy's date is the first date of
+the rule after the task's `scheduled:` date, else its `due:` date, else
+today, that is also after today and outside every `skip:` period. The other
+date and the subtasks' dates move by the same number of days and keep their
+times; a task with neither date gets `scheduled:`. This happens in
+`zn task toggle`, in the MCP `toggle_task` tool, in the Tasks view (list and
+board, including a card moved to Done, and cancelling), and with the editor's
+`Ctrl+L` checkbox command, which one undo reverts whole. Typing an `x` inside
+the brackets, unticking, reopening and forwarding never insert a line, and
+neither does a vault on a server, because the server parses the note itself.
+
+Because a roll adds a line, the ids from `task list` of the toggled task and
+of the later tasks in that note change. `task toggle --json` returns the task
+you ticked, not the new copy. List again before the next toggle in a note
+with repeating tasks.
+
+A whole note can be a task too. It is a task note when its frontmatter has
+`tags: [task]` or `page-type: task` (the key and the value in lower case).
+It reads `status`, `due`, `scheduled`, `repeat` and `skip` from its
+frontmatter, where `skip` is a value or a list. A task note whose `repeat`
+rule is valid does not stay done: completing it moves `scheduled` and `due`
+to the next date, sets `status: open` and records `lastCompleted`.
+The `task_note_marker` setting under `[terminal]` (`tag`, the default, or
+`page-type`) chooses which marker the terminal app writes into a new task
+note.
+
+`zn doctor` warns, without failing, about times, repeat rules and skip items
+that zn ignores: one `path:line  token` line each for the first 10, then
+`+N more`.
+
 ### Watching task status
 
 `zn task watch` prints a line each time a task's status changes: a task
@@ -603,7 +682,13 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   disabled. Filters match the desktop's substring search over task text,
   note titles, `!priority`, `#tags` and `@fields`. `:filters` / `:savefilter`
   manage shared named queries. Prefix terminal operators with `where:`,
-  for example `where: is:open due:today -meeting`.
+  for example `where: is:open due:today -meeting`. The `d` prompt takes
+  `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`; a new date alone keeps the task's time.
+  Rows and cards show a task's due time and its scheduled day, and times
+  follow `time_format` (`14:00` or `2:00 PM`). `scheduled:today`, `overdue`,
+  `none`, `any` or a date prefix filter by scheduled day. Completing a
+  repeating task here inserts its next occurrence; see [Task times, repeating
+  tasks, and task notes](#task-times-repeating-tasks-and-task-notes).
   The calendar has month, week and day views; `Esc` cycles them, and a
   start in `calendar` mode always opens the month grid. On a narrow
   terminal the month shows a compact grid with a count per day and the
@@ -903,7 +988,7 @@ layout choices do not change these terminal layouts.
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
-| `[terminal]` | `mouse`, `autosave`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
+| `[terminal]` | `mouse`, `autosave`, `preview_style`, `images`, `theme`, `math`, `task_note_marker`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
 | `[saved_filters]` | `Important = "!high"` |

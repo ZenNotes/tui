@@ -3,6 +3,7 @@ package mcp
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,6 +19,24 @@ func TestInstructionsAreTheDesktopsUnderEitherEngine(t *testing.T) {
 		}
 		if got := ResolveInstructions(); got != DefaultInstructions {
 			t.Fatalf("math = %q serves instructions that differ from DefaultInstructions", engine)
+		}
+	}
+}
+
+func TestInstructionsDocumentTaskScheduling(t *testing.T) {
+	// Line breaks in the served text are not part of a phrase.
+	flat := strings.Join(strings.Fields(DefaultInstructions), " ")
+	for _, want := range []string{
+		"due:YYYY-MM-DD[THH:MM]",
+		"scheduled:YYYY-MM-DD[THH:MM]",
+		"repeat:",
+		"/done",
+		"skip:",
+		"page-type: task",
+		"count a task's position",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("instructions do not mention %q", want)
 		}
 	}
 }

@@ -104,7 +104,7 @@ var (
 	blankRe       = regexp.MustCompile(`^\s*$`)
 	wikiTokenRe   = regexp.MustCompile(`⟦([^⟧]*)⟧`)
 	renderedTagRe = regexp.MustCompile(`(^|[\s(])(#[\p{L}\p{N}_][\p{L}\p{N}_/-]*)`)
-	renderedMeta  = regexp.MustCompile(`(^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`)
+	renderedMeta  = regexp.MustCompile(`(^|\s)((?i:due:\S+|scheduled:\S+|repeat:\S+|skip:\S+)|!(?:high|med|low)\b|@[\w-]+(?::\S+)?)`)
 	sgrRe         = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	taskStateRe   = regexp.MustCompile(`(?m)^(\s*)([-*+]|\d+[.)])\s+\[([/>\-])\]\s?(.*)$`)
 	calloutLineRe = regexp.MustCompile(`(?m)^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
@@ -409,8 +409,9 @@ func (a *App) postStyleRow(row string) string {
 	if strings.Contains(row, "#") {
 		row = styleInline(row, regexp.MustCompile(`(?:^|[\s(])(#[\p{L}\p{N}_][\p{L}\p{N}_/-]*)`), 1, th.Tag, true)
 	}
-	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") {
-		row = styleInline(row, regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
+	if lower := strings.ToLower(row); strings.Contains(lower, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") ||
+		strings.Contains(lower, "scheduled:") || strings.Contains(lower, "repeat:") || strings.Contains(lower, "skip:") {
+		row = styleInline(row, regexp.MustCompile(`(?:^|\s)((?i:due:\S+|scheduled:\S+|repeat:\S+|skip:\S+)|!(?:high|med|low)\b|@[\w-]+(?::\S+)?)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
 	}
 	return strings.ReplaceAll(row, "\u00a0", " ")
 }

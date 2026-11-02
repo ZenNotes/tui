@@ -31,6 +31,18 @@ type helpSection struct {
 	rows    []helpRow
 }
 
+// taskSyntaxRows documents what zn reads on a task line or in a task note's
+// frontmatter. It is not a command list, so it stays out of helpSections, which
+// commandSpecs turns into commands.
+var taskSyntaxRows = []helpRow{
+	{"due:YYYY-MM-DD[THH:MM]", "Due date, with an optional 24-hour time. A time that is not HH:MM is ignored and the date stays. A time orders tasks within a day and never moves a task to another group", ""},
+	{"scheduled:YYYY-MM-DD[THH:MM]", "The day (and time) to work on a task. An open task scheduled for today or earlier is listed under Today; only its due date makes it overdue", ""},
+	{"repeat:<rule>", "Completing or cancelling an open task inserts an open copy above it with the next dates and ticks the original. A task note moves its dates on, goes back to open and records lastCompleted. The next date follows the rule after scheduled:, else due:, else today, and is always after today. Only a local vault rolls: a server never does, and in a note with repeating tasks the ids from `task list` may shift", "1d  2w  3m  1q  1y  weekdays  mon,thu  2w:mon,thu  1m:15  1m:start  1m:end  1m:2-tue  1m:last-fri  1q:start  1q:end  1y:03-14  (add /done to count from the day it is finished)"},
+	{"skip:<items>", "Comma-separated days or ranges that a repeating task passes over when it picks its next date. An item that is not valid is ignored on its own", "2027-03-13  2027-03-13..2027-03-21"},
+	{"page-type: task", "Frontmatter that marks a note as a task note, like tags: [task]. Write the key and the value in lower case. A task note reads status, due, scheduled, repeat and skip from its frontmatter. [terminal] task_note_marker chooses what new task notes made in zn tui get: tag (default) or page-type", ""},
+	{"scheduled:today", "Task filter in zn tui, like due:. Also overdue, none, any or a date prefix such as scheduled:2026-11", ""},
+}
+
 var helpSections = []helpSection{
 	{"NOTES", []helpRow{
 		{"list", "List notes, most recent first", "--folder <f>  --tag <t>  --limit <n>  --json"},
@@ -306,6 +318,8 @@ func RenderHelp(argv []string) string {
 		out = append(out, s.section(sec.heading, sec.rows, width)...)
 		out = append(out, "")
 	}
+	out = append(out, s.section("TASK SYNTAX", taskSyntaxRows, width)...)
+	out = append(out, "")
 	out = append(out, s.section("GLOBAL FLAGS", globalFlags, width)...)
 	out = append(out, "")
 	out = append(out, s.section("ENVIRONMENT", environmentRows, width)...)

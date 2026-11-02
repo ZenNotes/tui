@@ -85,3 +85,30 @@ func TestHelpWrapsLongDescriptionsAtTheColumn(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpDocumentsTaskScheduling(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	out := RenderHelp(nil)
+	for _, want := range []string{
+		"TASK SYNTAX",
+		"due:YYYY-MM-DD[THH:MM]",
+		"scheduled:YYYY-MM-DD[THH:MM]",
+		"repeat:<rule>",
+		"skip:<items>",
+		"weekdays",
+		"2w:mon,thu",
+		"1m:last-fri",
+		"1y:03-14",
+		"/done",
+		"2027-03-13..2027-03-21",
+		"scheduled:today",
+		"page-type: task",
+		"task_note_marker",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help does not mention %q", want)
+		}
+	}
+	checkHelpRows(t, strings.Split(out, "\n"), taskSyntaxRows)
+}

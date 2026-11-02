@@ -198,3 +198,27 @@ func TestGlamourImagePlaceholderKeepsItsBrackets(t *testing.T) {
 		}
 	})
 }
+
+// A task row's repeat:, skip: and timed due: tokens carry the task-metadata
+// colour as whole tokens, and the keys match in any case.
+func TestPreviewStylesRepeatSkipAndTimedDue(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	a.prefs.PreviewStyle = "dark"
+	lines, err := a.renderGlamourLines("- [ ] Call due:2026-11-03T14:00 Repeat:2w:mon,thu SKIP:2027-03-13..2027-03-21 end\n", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) == 0 {
+		t.Fatal("no rows rendered")
+	}
+	row := lines[0].text
+	for _, token := range []string{"due:2026-11-03T14:00", "Repeat:2w:mon,thu", "SKIP:2027-03-13..2027-03-21"} {
+		styled := lipgloss.NewStyle().Foreground(a.theme.Purple).Render(token)
+		if !strings.Contains(row, styled) {
+			t.Errorf("%q is not styled as one task-metadata token in %q", token, row)
+		}
+	}
+}

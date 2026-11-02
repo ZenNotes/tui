@@ -119,7 +119,7 @@ var (
 	strikeRe     = regexp.MustCompile(`~~[^~\n]+~~`)
 	linkRe       = regexp.MustCompile(`!?\[\[[^\]\n]+\]\]|!?\[[^\]\n]*\]\([^)\n]*\)|<?(?:https?://|mailto:)[^\s<>()]+>?`)
 	tagRe        = regexp.MustCompile(`(^|\s)#[\p{L}\p{N}_][\p{L}\p{N}_/-]*`)
-	taskMetaRe   = regexp.MustCompile(`(^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|✅\s?\d{4}-\d{2}-\d{2}|scheduled:\S+)`)
+	taskMetaRe   = regexp.MustCompile(`(^|\s)((?i:due:\S+|scheduled:\S+|repeat:\S+|skip:\S+)|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|✅\s?\d{4}-\d{2}-\d{2})`)
 )
 
 // lineClasses computes a style class for every rune of a line.
