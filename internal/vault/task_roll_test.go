@@ -291,3 +291,13 @@ func TestRollReplacesInvalidScheduledTokenOnCopy(t *testing.T) {
 	got, _ := rollLines(t, in, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, want)
 }
+
+func TestRollCancelCountsFromTodayOnDone(t *testing.T) {
+	in := []string{"- [ ] A scheduled:2026-10-01 repeat:1w/done"}
+	want := []string{
+		"- [ ] A scheduled:2026-11-18 repeat:1w/done",
+		"- [-] A scheduled:2026-10-01 repeat:1w/done",
+	}
+	got, _ := rollLines(t, in, 0, RollCancel, "2026-11-11")
+	equalLines(t, got, want)
+}

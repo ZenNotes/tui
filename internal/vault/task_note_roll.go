@@ -44,7 +44,7 @@ func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart
 	if field == "" {
 		field = task.Due
 	}
-	days, following, found := nextRollDate(rule, field, action, periods, now, weekStart)
+	days, following, found := nextRollDate(rule, field, periods, now, weekStart)
 	if !found {
 		return plainTaskFileRoll(body, action, false, false, now), false
 	}

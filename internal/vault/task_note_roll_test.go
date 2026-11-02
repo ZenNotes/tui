@@ -155,3 +155,11 @@ func TestTaskNoteRollDropsBlockListItemsOfAdvancedKeys(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+func TestTaskNoteCancelCountsFromTodayOnDone(t *testing.T) {
+	in := rollNote("scheduled: 2026-10-01", "due: 2026-10-03", "repeat: 1w/done")
+	want := rollNote("scheduled: 2026-11-18", "due: 2026-11-20", "repeat: 1w/done", "lastCompleted: 2026-11-11")
+	if got := rollNoteAt(t, in, RollCancel, "2026-11-11"); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}

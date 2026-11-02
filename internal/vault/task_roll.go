@@ -54,7 +54,7 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 		return body, 0, false
 	}
 
-	shift, scheduled, rolled := planRoll(m, dialect, action, now, weekStart)
+	shift, scheduled, rolled := planRoll(m, dialect, now, weekStart)
 	if !rolled {
 		if action == RollComplete {
 			plain, found := ToggleTaskInBody(body, targetIndex, dialect)
@@ -113,7 +113,7 @@ func cancelMarker(state string) string {
 // `due:` and `scheduled:` dates in the text after a line's `[ ` (which starts
 // with its `]`) by the offset of the new occurrence, and scheduled is the
 // `scheduled:` date to add to the copy of a task that has neither date.
-func planRoll(m []string, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday) (shift func(string) string, scheduled string, rolled bool) {
+func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Weekday) (shift func(string) string, scheduled string, rolled bool) {
 	switch m[2] {
 	case " ", "/":
 	default:
@@ -130,7 +130,7 @@ func planRoll(m []string, dialect TaskDialect, action RollAction, now time.Time,
 	if field == "" {
 		field = tokens.due
 	}
-	days, following, found := nextRollDate(rule, field, action, periods, now, weekStart)
+	days, following, found := nextRollDate(rule, field, periods, now, weekStart)
 	if !found {
 		return nil, "", false
 	}
@@ -149,10 +149,10 @@ func planRoll(m []string, dialect TaskDialect, action RollAction, now time.Time,
 // rule counts from, `scheduled:` else `due:`, or empty for a task with
 // neither. It returns that date, and how many days the task's dates move to
 // get there: the distance from field, or from today when field is empty.
-func nextRollDate(rule RepeatRule, field string, action RollAction, periods []SkipPeriod, now time.Time, weekStart time.Weekday) (days int, following string, found bool) {
+func nextRollDate(rule RepeatRule, field string, periods []SkipPeriod, now time.Time, weekStart time.Weekday) (days int, following string, found bool) {
 	today := TodayISO(now)
 	base := field
-	if base == "" || (rule.FromCompletion && action == RollComplete) {
+	if base == "" || rule.FromCompletion {
 		base = today
 	}
 	following, found = NextOccurrence(rule, base, today, weekStart, periods)
