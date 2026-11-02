@@ -351,8 +351,8 @@ func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 }
 
 // renderColumns draws the week or day view: a header, the day columns and
-// the strip. Tasks carry a date but no time of day, so a column lists its
-// entries from the top.
+// the strip. A column lists its entries from the top in day order, timed
+// ones first, each led by its time when it has one.
 func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h int, focused bool) string {
 	th := a.theme
 	rows := make([]string, 0, h)
@@ -483,7 +483,7 @@ func (c *taskCalendar) columnLine(a *App, b calDayBox, li int, focusedDay bool, 
 		if e.scheduled {
 			lead = calScheduledMark
 		}
-		text := padRight(lead+truncateCells(e.task.Content, w-2), w)
+		text := padRight(lead+truncateCells(e.label(a.prefs.TimeFormat), w-2), w)
 		if focusedDay && c.focus == calFocusItems && idx == c.cursor {
 			return th.SelectedFocus.Render(text)
 		}
@@ -615,7 +615,7 @@ func (c *taskCalendar) boxLine(a *App, box calDayBox, li int, selected, today, o
 			if e.scheduled {
 				lead = calScheduledMark
 			}
-			text = lead + truncateCells(e.task.Content, w-1)
+			text = lead + truncateCells(e.label(a.prefs.TimeFormat), w-1)
 		case li-1 == shown && shown < len(entries):
 			text = calMoreLabel(len(entries)-shown, w)
 			if !selected {
@@ -662,7 +662,7 @@ func (c *taskCalendar) itemPanel(a *App, day time.Time, lay calLayout, focused b
 			if e.scheduled {
 				lead = calScheduledMark
 			}
-			body := " " + lead + " " + truncateCells(e.task.Content, pw-3-sepW)
+			body := " " + lead + " " + truncateCells(e.label(a.prefs.TimeFormat), pw-3-sepW)
 			if focused && c.focus == calFocusItems && idx == c.cursor {
 				body = th.SelectedFocus.Render(padRight(body, pw-sepW))
 			}
