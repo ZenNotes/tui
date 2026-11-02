@@ -90,6 +90,9 @@ type Prefs struct {
 	// ViewModeRules maps "<key>=<value>" to a pane mode, from
 	// [terminal.view_mode_rules]. Entries are raw; see ViewModeRuleEntries.
 	ViewModeRules map[string]string
+	// TaskNoteMarker is tag or page-type: how a task note that zn creates
+	// says it is a task. Anything else loads as tag; zn doctor reports it.
+	TaskNoteMarker string
 	// RenderTimeout (seconds) bounds one external render; RenderConcurrency
 	// caps how many run at once. Non-positive values load as the defaults.
 	RenderTimeout     int
@@ -127,6 +130,7 @@ func DefaultPrefs() Prefs {
 		Autosave:                 true,
 		TerminalMath:             "typst",
 		ViewModeRules:            map[string]string{},
+		TaskNoteMarker:           "tag",
 		RenderTimeout:            10,
 		RenderConcurrency:        2,
 		UnifiedSidebar:           true,
@@ -262,6 +266,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 			p.ViewModeRules[k] = s
 		}
 	}
+	setString(terminal, "task_note_marker", &p.TaskNoteMarker)
 	setInt(terminal, "render_timeout", &p.RenderTimeout)
 	setInt(terminal, "render_concurrency", &p.RenderConcurrency)
 	if strings.TrimSpace(p.PreviewStyle) == "" {
@@ -271,6 +276,11 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		p.TerminalMath = "latex"
 	} else {
 		p.TerminalMath = "typst"
+	}
+	if strings.EqualFold(strings.TrimSpace(p.TaskNoteMarker), "page-type") {
+		p.TaskNoteMarker = "page-type"
+	} else {
+		p.TaskNoteMarker = "tag"
 	}
 	if p.RenderTimeout <= 0 {
 		p.RenderTimeout = 10
@@ -401,6 +411,9 @@ theme = ""
 # (TeX Live, MacTeX or MiKTeX) and pdftocairo (poppler) yourself; zn doctor
 # prints the commands. Its packages come from preamble.tex next to this file.
 math = "typst"
+# task_note_marker = tag | page-type: how a task note made in zn says it is a
+# task. tag writes tags: [task], as before; page-type writes page-type: task.
+task_note_marker = "tag"
 # Seconds one diagram or math render may take, and how many run at once.
 render_timeout = 10
 render_concurrency = 2

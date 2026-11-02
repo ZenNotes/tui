@@ -142,3 +142,20 @@ func TestLatexInstallHintPerSystem(t *testing.T) {
 		}
 	}
 }
+
+// An unknown task_note_marker fails the configuration check of zn doctor.
+func TestDoctorFailsOnUnknownTaskNoteMarker(t *testing.T) {
+	out, checks := doctorWithTools(t, `task_note_marker = "foo"`)
+	for _, c := range checks {
+		if c.Name == "configuration" {
+			if c.OK {
+				t.Fatalf("configuration check passed with task_note_marker = \"foo\":\n%s", out)
+			}
+			if !strings.Contains(c.Message, "terminal.task_note_marker") {
+				t.Fatalf("the failure does not name terminal.task_note_marker:\n%s", out)
+			}
+			return
+		}
+	}
+	t.Fatalf("no configuration check:\n%s", out)
+}

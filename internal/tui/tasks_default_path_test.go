@@ -200,3 +200,56 @@ func TestNewTaskNoteKeepsTagMarkerByDefault(t *testing.T) {
 		t.Fatalf("new task note = %q, want %q", got, want)
 	}
 }
+
+// newTaskNoteWithMarker writes config.toml with the given [terminal] body,
+// reloads the preferences and creates "Buy milk" through the command.
+func newTaskNoteWithMarker(t *testing.T, terminal string) string {
+	t.Helper()
+	root := defaultTasksVault(t, time.Now())
+	dir := t.TempDir()
+	t.Setenv("ZENNOTES_CONFIG_DIR", dir)
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte("[terminal]\n"+terminal+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := newSessionParityApp(t, root)
+	if err := a.reloadPreferences(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.newTaskFile(""); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := a.overlay.(*prompt)
+	if !ok {
+		t.Fatal("the new-task command did not open its prompt")
+	}
+	p.onSubmit(a, "Buy milk")
+	got, err := os.ReadFile(filepath.Join(root, "inbox", "Buy milk.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(got)
+}
+
+// Choosing the tag marker writes the same note as the default.
+func TestNewTaskNoteUsesTagMarkerWhenChosen(t *testing.T) {
+	got := newTaskNoteWithMarker(t, `task_note_marker = "tag"`)
+	if want := "---\ntags: [task]\nstatus: open\n---\n\n# Buy milk\n\n"; got != want {
+		t.Fatalf("new task note = %q, want %q", got, want)
+	}
+}
+
+// Choosing page-type marks the note with `page-type: task` and no tag.
+func TestNewTaskNoteUsesPageTypeMarker(t *testing.T) {
+	got := newTaskNoteWithMarker(t, `task_note_marker = "page-type"`)
+	if want := "---\npage-type: task\nstatus: open\n---\n\n# Buy milk\n\n"; got != want {
+		t.Fatalf("new task note = %q, want %q", got, want)
+	}
+}
+
+// An unknown marker behaves as the tag marker.
+func TestNewTaskNoteFallsBackToTagForUnknownMarker(t *testing.T) {
+	got := newTaskNoteWithMarker(t, `task_note_marker = "foo"`)
+	if want := "---\ntags: [task]\nstatus: open\n---\n\n# Buy milk\n\n"; got != want {
+		t.Fatalf("new task note = %q, want %q", got, want)
+	}
+}

@@ -87,3 +87,30 @@ func TestPageTypeTaskNoteHonoursTasksFalse(t *testing.T) {
 		t.Fatalf("got %+v, want none", got)
 	}
 }
+
+// With the page-type marker, a composed task note says `page-type: task`,
+// carries no `task` tag and keeps the other tags.
+func TestComposeTaskFileWithPageTypeMarker(t *testing.T) {
+	got := ComposeTaskFile(ComposeTaskFileInput{Title: "Buy milk", Tags: []string{"task", "home"}, Marker: "page-type"})
+	want := "---\ntitle: Buy milk\npage-type: task\nstatus: open\ntags: [home]\n---\n\n"
+	if got != want {
+		t.Fatalf("composed = %q, want %q", got, want)
+	}
+	if n := len(wholeNoteTasks(parseNote(got))); n != 1 {
+		t.Fatalf("the composed note reads as %d task notes, want 1", n)
+	}
+}
+
+// With the tag marker, or none, the composed text is the same as ever.
+func TestComposeTaskFileWithTagMarker(t *testing.T) {
+	want := "---\ntitle: Buy milk\nstatus: open\ntags: [task, home]\n---\n\n"
+	if got := ComposeTaskFile(ComposeTaskFileInput{Title: "Buy milk", Tags: []string{"home"}}); got != want {
+		t.Fatalf("composed = %q, want %q", got, want)
+	}
+	for _, marker := range []string{"tag", "foo"} {
+		got := ComposeTaskFile(ComposeTaskFileInput{Title: "Buy milk", Tags: []string{"home"}, Marker: marker})
+		if got != want {
+			t.Fatalf("marker %q composed = %q, want %q", marker, got, want)
+		}
+	}
+}

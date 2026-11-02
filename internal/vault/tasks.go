@@ -1113,6 +1113,10 @@ func TaskFilePriorityValue(priority string) string {
 	return ""
 }
 
+// TaskMarkerPageType names the setting value that marks a task note with
+// `page-type: task` rather than the `task` tag.
+const TaskMarkerPageType = "page-type"
+
 // ComposeTaskFileInput describes a new whole-note task.
 type ComposeTaskFileInput struct {
 	Title       string
@@ -1123,11 +1127,18 @@ type ComposeTaskFileInput struct {
 	Tags        []string
 	DateCreated string
 	Body        string
+	// Marker is TaskMarkerPageType to write `page-type: task` instead of the
+	// `task` tag. Empty or anything else writes the tag.
+	Marker string
 }
 
 // ComposeTaskFile builds a task-file note in the TaskNotes shape.
 func ComposeTaskFile(in ComposeTaskFileInput) string {
+	pageType := in.Marker == TaskMarkerPageType
 	tags := []string{TaskFileTag}
+	if pageType {
+		tags = nil
+	}
 	for _, t := range in.Tags {
 		if t != "" && t != TaskFileTag {
 			tags = append(tags, t)
@@ -1137,7 +1148,11 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 	if status == "" {
 		status = "open"
 	}
-	lines := []string{"---", "title: " + YAMLValue(in.Title), "status: " + status}
+	lines := []string{"---", "title: " + YAMLValue(in.Title)}
+	if pageType {
+		lines = append(lines, "page-type: "+TaskFileTag)
+	}
+	lines = append(lines, "status: "+status)
 	if p := TaskFilePriorityValue(in.Priority); p != "" {
 		lines = append(lines, "priority: "+p)
 	}
@@ -1147,7 +1162,9 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 	if in.Scheduled != "" {
 		lines = append(lines, "scheduled: "+in.Scheduled)
 	}
-	lines = append(lines, "tags: ["+strings.Join(tags, ", ")+"]")
+	if len(tags) > 0 {
+		lines = append(lines, "tags: ["+strings.Join(tags, ", ")+"]")
+	}
 	if in.DateCreated != "" {
 		lines = append(lines, "dateCreated: "+in.DateCreated)
 	}

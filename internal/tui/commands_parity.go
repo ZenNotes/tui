@@ -912,7 +912,11 @@ func (a *App) newTaskFile(target string) error {
 		if title == "" {
 			return
 		}
-		body := "---\ntags: [" + vault.TaskFileTag + "]\nstatus: open\n---\n\n# " + title + "\n\n"
+		marker := "tags: [" + vault.TaskFileTag + "]"
+		if a.prefs.TaskNoteMarker == vault.TaskMarkerPageType {
+			marker = "page-type: " + vault.TaskFileTag
+		}
+		body := "---\n" + marker + "\nstatus: open\n---\n\n# " + title + "\n\n"
 		meta, err := a.backend.CreateNote(a.ctx, folder, title, sub, &body)
 		if err != nil {
 			a.notifyError(err.Error())
