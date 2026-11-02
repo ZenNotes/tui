@@ -84,6 +84,7 @@ func (v *tasksView) setMode(mode string) {
 		v.mode = "kanban"
 	case "calendar":
 		v.mode = "calendar"
+		v.calc().half = false
 	default:
 		v.mode = "list"
 	}
@@ -795,6 +796,9 @@ func (v *tasksView) handleKey(a *App, k vim.Key) bool {
 		default:
 			v.mode = "list"
 		}
+		if v.mode == "calendar" {
+			v.calc().half = false
+		}
 		a.prefs.TasksViewMode = v.mode
 		v.refresh(a)
 		return true
@@ -1079,6 +1083,10 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 
 func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	t := v.selectedTask()
+	if k.IsRune('z') && a.prefs.VimMode && v.calc().sub != calMonth {
+		v.calc().toggleHalf()
+		return true
+	}
 	if v.calc().focus != calFocusGrid {
 		// With Vim off a focused task, like the list, takes no letters.
 		if !a.listKeyAllowed(k) {
@@ -1136,14 +1144,16 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
 		return false
 	}
-	columns := v.calc().sub != calMonth
+	hourList := v.calc().sub != calMonth
 	switch {
 	case k.Is("esc"):
 		v.calc().sub = (v.calc().sub + 1) % 3
-	case columns && (k.IsRune('j') || k.Is("down")):
-		v.calc().scrollColumn(v.day, 1)
-	case columns && (k.IsRune('k') || k.Is("up")):
-		v.calc().scrollColumn(v.day, -1)
+		// The month and the columns order a day's entries differently.
+		v.calc().cursor = 0
+	case hourList && (k.IsRune('j') || k.Is("down")):
+		v.calc().scrollColumns(v.day, 1)
+	case hourList && (k.IsRune('k') || k.Is("up")):
+		v.calc().scrollColumns(v.day, -1)
 	case k.IsRune('h') || k.Is("left"):
 		v.selectDay(a, v.day.AddDate(0, 0, -1))
 	case k.IsRune('l') || k.Is("right"):

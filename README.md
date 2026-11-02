@@ -281,8 +281,9 @@ next to `due`, which stays a plain date.
   `YYYY-MM-DDTHH:MM` on a 24-hour clock. A time that is not `HH:MM` (for
   example `T25:00`) is ignored and the date stays. A time orders the tasks of
   one day, timed tasks first, and never moves a task between groups. The
-  calendar places a task on its due and scheduled dates and does not show
-  the time yet.
+  calendar places a task on its due and scheduled dates, shows the time
+  before its text, and in week and day view puts it in the row holding
+  that time.
 - **`scheduled:`** is the day to work on a task, and zn keeps it out of the
   task's text. An open task scheduled for today or earlier is listed under
   Today; only its due date makes it overdue. In the Tasks view, the filter
@@ -694,9 +695,12 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   terminal the month shows a compact grid with a count per day and the
   selected day's tasks under it. `h`/`j`/`k`/`l`
   move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
-  by half a view, and `o` opens the day's daily note. In week and day view
-  each day is a column of its tasks, and `j`/`k` scroll a busy day's
-  column. `Enter` and `Tab` move focus
+  by half a view, and `o` opens the day's daily note. Week and day view
+  show an hour list: hourly by default, half-hourly after `z` (Vim mode),
+  scrolling with `j`/`k` when it does not fit. A task with a time sits in
+  the row holding that time, and a task without one is listed in an
+  all-day band above the rows, which `j`/`k` scroll first when it is
+  full. `Enter` and `Tab` move focus
   between the day grid, the selected day's items and the No-date strip. On
   a focused item or strip task, `T` moves it to today and `@` opens a
   due-date menu, as in the desktop calendar. Unlike the

@@ -200,7 +200,7 @@ func helpLines(a *App, filter string) []string {
 		"Board: h l j k\tMove between columns and cards; H L move the card; g cycles the grouping",
 		"Calendar: h j k l [ ] t\tMove days and months, t is today; Esc cycles month, week and day; Enter and Tab move focus to the day's tasks and the No-date strip; o opens the daily note",
 		"Calendar task: T @\tMove the focused task to today; pick its due date from a menu",
-		"Week and day: j k\tScroll a busy day's column",
+		"Week and day: j k z\tScroll the all-day band and then the hour list; z switches hourly and half-hourly rows",
 		"Filter syntax\tDesktop substring matching: task/note text, !high, #tag, @field:value. Terminal operators require where:, e.g. where: is:open due:today -meeting",
 		"Board status\tToday / Upcoming / No due date / In progress / Waiting / Done; custom status uses field:status. Folder boards do not move cards between folders.",
 		"F2 / :boardoptions\tView actions, saved filters, grouping, folder root, labels and persistent card order",

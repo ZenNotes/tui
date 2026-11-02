@@ -92,8 +92,10 @@ func TestCalendarOrdersTimedEntriesEarliestFirst(t *testing.T) {
 	a.prefs.TimeFormat = "24h"
 	calToSub(t, a, tv, calDay)
 	lines := calScreen(a, tv, 120, 40)
+	// Timed entries sit in their hour rows, earliest first, and the untimed
+	// ones are in the all-day band above the rows, in the day's order.
 	prev := -1
-	for _, name := range []string{"early", "sched", "late", "plain1"} {
+	for _, name := range []string{"plain1", "plain3", "plain2", "early", "sched", "late"} {
 		row := calRowOf(lines, name)
 		if row <= prev {
 			t.Errorf("%s is on row %d, not below the previous entry (row %d):\n%s", name, row, prev, calScreenText(lines))
