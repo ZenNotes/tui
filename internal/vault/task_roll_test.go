@@ -281,3 +281,13 @@ func TestPlainToggleNeverInserts(t *testing.T) {
 		t.Fatalf("plain toggle (app): %q ok=%v", next, ok)
 	}
 }
+
+func TestRollReplacesInvalidScheduledTokenOnCopy(t *testing.T) {
+	in := []string{"- [ ] A scheduled:bad repeat:1d"}
+	want := []string{
+		"- [ ] A scheduled:2026-11-03 repeat:1d",
+		"- [x] A scheduled:bad repeat:1d",
+	}
+	got, _ := rollLines(t, in, 0, RollComplete, "2026-11-02")
+	equalLines(t, got, want)
+}

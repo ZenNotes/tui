@@ -72,7 +72,7 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 			inserted++
 			line = cm[1] + " " + shift(cm[3])
 			if i == at && scheduled != "" {
-				line = strings.TrimRight(line, " \t") + " scheduled:" + scheduled
+				line = withScheduled(line, scheduled)
 			}
 		}
 		copied = append(copied, line)
@@ -88,6 +88,16 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 	out = append(out, original)
 	out = append(out, lines[at+1:]...)
 	return strings.Join(out, "\n"), inserted, true
+}
+
+// withScheduled gives line the `scheduled:` date. A `scheduled:` token the
+// line already has, which holds no real date, gets its value replaced, so the
+// parser reads the new date from it; otherwise the token is appended.
+func withScheduled(line, date string) string {
+	if loc := inlineScheduledRe.FindStringSubmatchIndex(line); loc != nil {
+		return line[:loc[2]] + date + line[loc[3]:]
+	}
+	return strings.TrimRight(line, " \t") + " scheduled:" + date
 }
 
 // cancelMarker is the state a plain cancel gives a line: cancelled, or open
