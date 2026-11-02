@@ -249,3 +249,30 @@ func TestTypedXInCheckboxDoesNotRoll(t *testing.T) {
 		t.Errorf("buffer = %q, want %q", got, want)
 	}
 }
+
+func TestPlainTaskChangesKeepCRLF(t *testing.T) {
+	in := "a\r\n- [ ] x\r\nb\r\n"
+	t.Run("tasks view cancel", func(t *testing.T) {
+		a, path := repeatTasksApp(t, in, "2026-11-02")
+		a.setTaskCancelled(repeatTaskAt(t, path), true)
+		if got, want := readRepeatNote(t, path), "a\r\n- [-] x\r\nb\r\n"; got != want {
+			t.Errorf("note = %q, want %q", got, want)
+		}
+	})
+	t.Run("board done column", func(t *testing.T) {
+		a, path := repeatTasksApp(t, in, "2026-11-02")
+		a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
+		if got, want := readRepeatNote(t, path), "a\r\n- [x] x\r\nb\r\n"; got != want {
+			t.Errorf("note = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestBoardDoneColumnChecksForwardedTask(t *testing.T) {
+	a, path := repeatTasksApp(t, "- [>] Water plants scheduled:2026-11-02 repeat:mon,thu\n", "2026-11-02")
+	a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
+	want := "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("note = %q, want %q", got, want)
+	}
+}

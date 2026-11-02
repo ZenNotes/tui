@@ -669,8 +669,10 @@ func (a *App) setTaskStateAtCursor(buf *noteBuffer, state string) error {
 		switch state {
 		case "cancel":
 			if !t.Cancelled && a.rollsRepeatingTasks() {
-				next = a.rollTaskBody(body, t, vault.RollCancel)
-				break
+				if rolledBody, rolled := a.rollTaskBody(body, t, vault.RollCancel); rolled {
+					next = rolledBody
+					break
+				}
 			}
 			next = vault.SetTaskCancelled(body, t.TaskIndex, !t.Cancelled)
 		default:

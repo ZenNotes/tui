@@ -1295,24 +1295,24 @@ func (a *App) rollsRepeatingTasks() bool {
 
 // rollTaskBody completes or cancels t in body, writing the next occurrence of
 // a repeating task or moving a task note's dates forward. A task that does
-// not repeat gets the plain change.
-func (a *App) rollTaskBody(body string, t vault.Task, action vault.RollAction) string {
+// not repeat gets the plain change, which toggleTask applies itself; rolled
+// is false for it, so the other callers can make their own plain change.
+func (a *App) rollTaskBody(body string, t vault.Task, action vault.RollAction) (next string, rolled bool) {
 	now, weekStart := a.taskClock(), a.taskWeekStart()
 	if t.Kind == "file" {
-		next, _ := vault.RollTaskFileInBody(body, action, now, weekStart)
-		return next
+		return vault.RollTaskFileInBody(body, action, now, weekStart)
 	}
-	next, _, ok := vault.RollTaskInBody(body, t.TaskIndex, vault.DialectApp, action, now, weekStart)
+	next, inserted, ok := vault.RollTaskInBody(body, t.TaskIndex, vault.DialectApp, action, now, weekStart)
 	if !ok {
-		return body
+		return body, false
 	}
-	return next
+	return next, inserted > 0
 }
 
 func (a *App) toggleTask(t vault.Task) {
 	err := a.mutateNote(t.SourcePath, func(body string) (string, bool) {
 		if a.rollsRepeatingTasks() {
-			next := a.rollTaskBody(body, t, vault.RollComplete)
+			next, _ := a.rollTaskBody(body, t, vault.RollComplete)
 			return next, next != body
 		}
 		if t.Kind == "file" {
@@ -1378,7 +1378,9 @@ func (a *App) setTaskWaiting(t vault.Task, waiting bool) {
 func (a *App) setTaskCancelled(t vault.Task, cancelled bool) {
 	a.editTaskLine(t, func(body string) string {
 		if cancelled && !t.Cancelled && a.rollsRepeatingTasks() {
-			return a.rollTaskBody(body, t, vault.RollCancel)
+			if next, rolled := a.rollTaskBody(body, t, vault.RollCancel); rolled {
+				return next
+			}
 		}
 		if t.Kind == "file" {
 			return vault.SetTaskFileCancelled(body, cancelled)
@@ -1410,8 +1412,10 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 	a.editTaskLine(t, func(body string) string {
 		checked := func(v bool) {
 			if v && !t.Checked && !t.Cancelled && a.rollsRepeatingTasks() {
-				body = a.rollTaskBody(body, t, vault.RollComplete)
-				return
+				if next, rolled := a.rollTaskBody(body, t, vault.RollComplete); rolled {
+					body = next
+					return
+				}
 			}
 			if t.Kind == "file" {
 				body = vault.SetTaskFileStatus(body, v, time.Now())
