@@ -17,6 +17,8 @@ type Prefs struct {
 	VimMode               bool
 	VimInsertEscape       string
 	VimYankToClipboard    bool
+	Motions               string         // vim or helix: the editing engine (prefs_helix.go)
+	HelixKeys             map[string]any // [keys] tables for the helix engine (prefs_helix.go)
 	WhichKeyHints         bool
 	WhichKeyHintMode      string
 	WhichKeyHintTimeoutMs int
@@ -97,6 +99,7 @@ type Prefs struct {
 func DefaultPrefs() Prefs {
 	return Prefs{
 		VimMode:                  true,
+		Motions:                  "vim",
 		VimWrappedLineMotions:    "display",
 		TabsEnabled:              true,
 		SavedTaskFilters:         map[string]string{},
@@ -163,6 +166,7 @@ func LoadPrefs() (Prefs, string, error) {
 		return prefs, path, err
 	}
 	applyPrefs(&prefs, doc)
+	applyHelixPrefs(&prefs, doc)
 	return prefs, path, nil
 }
 
@@ -338,6 +342,7 @@ const DefaultConfigTOML = `# ZenNotes portable preferences. Shared by the deskto
 
 [vim]
 enabled = true
+motions = "vim" # or "helix": select first, then act
 insert_escape = "jk"
 yank_to_clipboard = true
 which_key_hints = true

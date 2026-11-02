@@ -250,6 +250,7 @@ func helpLines(a *App, filter string) []string {
 		"Workflows, Atlas, sharing, cloud sync, Harper grammar checks and image resizing stay in the desktop app. Optional terminal renderers handle math/diagrams.",
 		"Space l o hands the current note to the desktop app when it is installed.",
 	}
+	all = append(all, helixHelpLines...)
 	if strings.TrimSpace(filter) == "" {
 		return all
 	}

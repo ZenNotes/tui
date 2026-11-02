@@ -228,6 +228,7 @@ func (a *App) openKeyHelp() {
 				hintPair{"vim.bufferNext|vim.bufferPrevious", "next/previous tab"}, hintPair{"key::w :q :qa", "save, close, quit"})
 		}
 	}
+	pairs = a.engineHints(pairs)
 	a.overlay = &keyHelpOverlay{title: title, pairs: pairs, extra: global}
 }
 

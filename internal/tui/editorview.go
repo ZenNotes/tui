@@ -288,7 +288,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 	textW := max(1, w-gutter)
 	lines := ed.Lines()
 	blocks := computeBlockState(lines)
-	cur := ed.Cursor()
+	cur := blockCursor(ed)
 	drawBlock := focused && !a.terminalCursorOwns(buf)
 	vStart, vEnd, vMode, inVisual := ed.VisualRange()
 	blockLeft, blockRight, blockToEnd := 0, 0, false
@@ -514,7 +514,7 @@ func inVisualRange(line, col int, start, end vim.Pos, mode vim.Mode, bl, br int,
 
 // renderPlainEditor draws a small editor (quick capture) without gutter.
 // It also returns the cursor it wants, as a cell inside the drawn block.
-func renderPlainEditor(a *App, ed *vim.Editor, w, h int, focused bool) (string, cursorState) {
+func renderPlainEditor(a *App, ed modalEditor, w, h int, focused bool) (string, cursorState) {
 	tmp := &noteBuffer{ed: ed, standalone: true}
 	saved := a.prefs.LineNumberMode
 	a.prefs.LineNumberMode = "off"

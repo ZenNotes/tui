@@ -141,6 +141,7 @@ func (a *App) tabSequenceKey(k vim.Key, held []vim.Key) bool {
 		}
 	}
 	seqIDs := []string{"vim.bufferPrevious", "vim.bufferNext", "vim.tabPrevious", "vim.tabNext"}
+	seqIDs = a.withEngineSequences(seqIDs)
 	if len(held) > 0 {
 		if k.Is("esc") {
 			return true
@@ -439,6 +440,7 @@ func (a *App) editorKey(buf *noteBuffer, k vim.Key) {
 		return
 	}
 	seqIDs := []string{"vim.bufferPrevious", "vim.bufferNext", "vim.tabPrevious", "vim.tabNext"}
+	seqIDs = a.withEngineSequences(seqIDs)
 	if len(a.navKeys) > 0 {
 		seq := append(append([]vim.Key{}, a.navKeys...), k)
 		a.navKeys = nil
@@ -477,6 +479,9 @@ func (a *App) editorKey(buf *noteBuffer, k vim.Key) {
 func (a *App) runSequenceAction(id string, count int, hasCount bool) {
 	if !hasCount || count < 1 {
 		count = 1
+	}
+	if a.runEngineSequence(id, count) {
+		return
 	}
 	switch id {
 	case "vim.bufferPrevious":

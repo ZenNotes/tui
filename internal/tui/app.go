@@ -898,7 +898,7 @@ func (a *App) renderStatusBar() string {
 	modeStyle := t.StatusMode
 	if buf := a.activeBuffer(); buf != nil && a.focus == focusPane {
 		if a.prefs.VimMode {
-			mode = buf.ed.Mode().Label()
+			mode = modeLabel(buf.ed)
 		} else {
 			mode = "EDIT"
 		}
