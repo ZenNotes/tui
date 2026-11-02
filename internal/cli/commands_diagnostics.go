@@ -195,11 +195,15 @@ func taskTokenCheck(root string) (diagnosticCheck, bool) {
 	if err != nil || len(problems) == 0 {
 		return diagnosticCheck{}, false
 	}
+	message := fmt.Sprintf("%d task times, repeat rules or skip items are not valid and are ignored", len(problems))
+	if len(problems) == 1 {
+		message = "1 task time, repeat rule or skip item is not valid and is ignored"
+	}
 	check := diagnosticCheck{
 		Name:    "task tokens",
 		Warn:    true,
 		OK:      true,
-		Message: fmt.Sprintf("%d task times, repeat rules or skip items are not valid and are ignored", len(problems)),
+		Message: message,
 	}
 	for i, p := range problems {
 		if i == maxTaskTokenLines {
