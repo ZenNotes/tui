@@ -1129,6 +1129,9 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 // but Done. Tasks without a due date have their own group, as in the desktop
 // app since ZenNotes 2.76 (#990): they used to land in Today. A daily-note task
 // is dated by InferDailyTaskDueDates before it gets here, so it stays in Today.
+// An open task scheduled for today or earlier also lands in Today, whatever its
+// due date, and only its due date makes it overdue. A time of day never moves a
+// task between groups: groups are judged by dates alone.
 func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 	todayISO := TodayISO(today)
 	g := TaskGroups{}
@@ -1142,6 +1145,11 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 			g.Done = append(g.Done, task)
 		case task.Waiting:
 			g.Waiting = append(g.Waiting, task)
+		case task.Scheduled != "" && task.Scheduled <= todayISO:
+			g.Today = append(g.Today, task)
+			if task.Due != "" && task.Due < todayISO {
+				g.OverdueCount++
+			}
 		case task.Due == "":
 			g.Undated = append(g.Undated, task)
 		case task.Due < todayISO:
@@ -1164,25 +1172,23 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 		if ad != bd {
 			return ad < bd
 		}
+		if at, bt := timeSortKey(a.DueTime), timeSortKey(b.DueTime); at != bt {
+			return at < bt
+		}
 		if a.SourcePath != b.SourcePath {
 			return a.SourcePath < b.SourcePath
 		}
 		return a.TaskIndex < b.TaskIndex
 	}
-	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
-	byPriorityThenDue := func(a, b Task) bool {
-		if rank[a.Priority] != rank[b.Priority] {
-			return rank[a.Priority] < rank[b.Priority]
-		}
-		return byDueThenPath(a, b)
-	}
+	byPriorityThenDue := func(a, b Task) bool { return lessByPriority(a, b, false) }
+	byPriorityThenDueToday := func(a, b Task) bool { return lessByPriority(a, b, true) }
 	byPath := func(a, b Task) bool {
 		if a.SourcePath != b.SourcePath {
 			return a.SourcePath < b.SourcePath
 		}
 		return a.TaskIndex < b.TaskIndex
 	}
-	sortTasks(g.Today, byPriorityThenDue)
+	sortTasks(g.Today, byPriorityThenDueToday)
 	sortTasks(g.Upcoming, byDueThenPath)
 	sortTasks(g.Undated, byPriorityThenDue)
 	sortTasks(g.Waiting, byPriorityThenDue)
@@ -1195,8 +1201,9 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 // OrderTaskGroups orders each Tasks list group the way the desktop's Order
 // menu says (#989): "note" keeps every group in its notes' line order, which
 // J and K rearrange; "priority" puts high before medium before low before
-// none in the live groups, ties by due date and then line order, and leaves
-// forwarded, done and cancelled in line order.
+// none in the live groups, ties by due date, then by time of day (timed
+// tasks first, earliest first), then line order, and leaves forwarded, done and
+// cancelled in line order. The "note" order ignores times.
 func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
 	byLine := func(a, b Task) bool {
 		if a.SourcePath != b.SourcePath {
@@ -1204,30 +1211,14 @@ func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
 		}
 		return a.TaskIndex < b.TaskIndex
 	}
-	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
-	byPriority := func(a, b Task) bool {
-		if rank[a.Priority] != rank[b.Priority] {
-			return rank[a.Priority] < rank[b.Priority]
-		}
-		ad, bd := a.Due, b.Due
-		if ad == "" {
-			ad = "9999-99-99"
-		}
-		if bd == "" {
-			bd = "9999-99-99"
-		}
-		if ad != bd {
-			return ad < bd
-		}
-		return byLine(a, b)
-	}
-	live := byLine
-	if order == "priority" {
-		live = byPriority
-	}
 	out := g
 	for _, group := range []*[]Task{&out.Today, &out.Upcoming, &out.Undated, &out.Waiting} {
 		*group = append([]Task(nil), (*group)...)
+		live := byLine
+		if order == "priority" {
+			scheduledFirst := group == &out.Today
+			live = func(a, b Task) bool { return lessByPriority(a, b, scheduledFirst) }
+		}
 		sortTasks(*group, live)
 	}
 	for _, group := range []*[]Task{&out.Done, &out.Forwarded, &out.Cancelled} {
@@ -1235,6 +1226,51 @@ func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
 		sortTasks(*group, byLine)
 	}
 	return out
+}
+
+// timeSortKey orders HH:MM values so that an untimed task sorts after every
+// timed one.
+func timeSortKey(hhmm string) string {
+	if hhmm == "" {
+		return "99:99"
+	}
+	return hhmm
+}
+
+// lessByPriority orders high before medium before low before none, then by
+// date, then by time of day with timed tasks first, then by line. In the Today
+// group (scheduledFirst) a task's date and time both come from its scheduled
+// field when it has one, otherwise from its due field; elsewhere from due.
+func lessByPriority(a, b Task, scheduledFirst bool) bool {
+	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
+	if rank[a.Priority] != rank[b.Priority] {
+		return rank[a.Priority] < rank[b.Priority]
+	}
+	ad, bd, at, bt := a.Due, b.Due, a.DueTime, b.DueTime
+	if scheduledFirst {
+		if a.Scheduled != "" {
+			ad, at = a.Scheduled, a.ScheduledTime
+		}
+		if b.Scheduled != "" {
+			bd, bt = b.Scheduled, b.ScheduledTime
+		}
+	}
+	if ad == "" {
+		ad = "9999-99-99"
+	}
+	if bd == "" {
+		bd = "9999-99-99"
+	}
+	if ad != bd {
+		return ad < bd
+	}
+	if ak, bk := timeSortKey(at), timeSortKey(bt); ak != bk {
+		return ak < bk
+	}
+	if a.SourcePath != b.SourcePath {
+		return a.SourcePath < b.SourcePath
+	}
+	return a.TaskIndex < b.TaskIndex
 }
 
 func sortTasks(tasks []Task, less func(a, b Task) bool) {

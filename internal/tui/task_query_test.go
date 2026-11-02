@@ -3,6 +3,7 @@ package tui
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/ZenNotes/tui/internal/vault"
 )
@@ -86,4 +87,66 @@ func assertTaskQueryIDs(t *testing.T, tasks []vault.Task, want []string) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("matched tasks = %v, want %v", got, want)
 	}
+}
+
+func queryDay(t *testing.T, date string) time.Time {
+	t.Helper()
+	d, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.Add(12 * time.Hour)
+}
+
+func TestStructuredFilterDueTodayMatchesTimedTask(t *testing.T) {
+	tasks := []vault.Task{
+		{ID: "timed", Content: "timed", Due: "2026-11-03", DueTime: "14:00"},
+		{ID: "other", Content: "other", Due: "2026-11-04"},
+	}
+	got := filterTasksOn(tasks, "due:today", queryDay(t, "2026-11-03"))
+	assertTaskQueryIDs(t, got, []string{"timed"})
+}
+
+func TestStructuredFilterScheduledValues(t *testing.T) {
+	today := queryDay(t, "2026-11-05")
+	t.Run("today", func(t *testing.T) {
+		tasks := []vault.Task{
+			{ID: "A", Content: "A", Scheduled: "2026-11-05", ScheduledTime: "09:30"},
+			{ID: "B", Content: "B", Scheduled: "2026-11-06"},
+		}
+		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:today", today), []string{"A"})
+	})
+	t.Run("none and any", func(t *testing.T) {
+		tasks := []vault.Task{
+			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
+			{ID: "B", Content: "B", Due: "2026-11-05"},
+		}
+		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:none", today), []string{"B"})
+		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:any", today), []string{"A"})
+	})
+	t.Run("date prefix", func(t *testing.T) {
+		tasks := []vault.Task{
+			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
+			{ID: "B", Content: "B", Scheduled: "2026-12-01"},
+		}
+		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:2026-11", today), []string{"A"})
+	})
+	t.Run("overdue", func(t *testing.T) {
+		tasks := []vault.Task{
+			{ID: "A", Content: "A", Scheduled: "2026-11-04"},
+			{ID: "B", Content: "B", Scheduled: "2026-11-04", Checked: true},
+			{ID: "C", Content: "C", Scheduled: "2026-11-05"},
+			{ID: "D", Content: "D", Due: "2026-11-01"},
+		}
+		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:overdue", today), []string{"A"})
+	})
+	t.Run("through the where prefix", func(t *testing.T) {
+		tasks := []vault.Task{
+			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
+			{ID: "B", Content: "B", Scheduled: "2026-11-06"},
+		}
+		assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "where: scheduled:today", today), []string{"A"})
+		// Without the prefix the words stay a plain substring search.
+		assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "scheduled:today", today), nil)
+	})
 }

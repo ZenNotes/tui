@@ -92,8 +92,8 @@ func (v *tasksView) setMode(mode string) {
 // refresh recomputes rows, columns and calendar buckets.
 func (v *tasksView) refresh(a *App) {
 	all := a.displayTasks()
-	v.tasks = filterTaskQuery(all, v.filter)
-	groups := vault.OrderTaskGroups(vault.GroupTasks(v.tasks, time.Now()), a.prefs.TasksListOrder)
+	v.tasks = filterTaskQueryOn(all, v.filter, a.taskClock())
+	groups := vault.OrderTaskGroups(vault.GroupTasks(v.tasks, a.taskClock()), a.prefs.TasksListOrder)
 	v.rows = nil
 	add := func(name string, tasks []vault.Task, extra string) {
 		if len(tasks) == 0 {
@@ -129,9 +129,15 @@ func (v *tasksView) refresh(a *App) {
 }
 
 // filterTasks applies the cross-view filter: free words match content and
-// note title, `key:value` terms match tag, note, due, priority, status,
-// folder or any custom field.
+// note title, `key:value` terms match tag, note, due, scheduled, priority,
+// status, folder or any custom field.
 func filterTasks(tasks []vault.Task, filter string) []vault.Task {
+	return filterTasksOn(tasks, filter, time.Now())
+}
+
+// filterTasksOn is filterTasks with "today" given, so `due:today`,
+// `due:overdue` and the `scheduled:` values judge against that day.
+func filterTasksOn(tasks []vault.Task, filter string, today time.Time) []vault.Task {
 	terms := strings.Fields(strings.ToLower(strings.TrimSpace(filter)))
 	if len(terms) == 0 {
 		return tasks
@@ -140,7 +146,7 @@ func filterTasks(tasks []vault.Task, filter string) []vault.Task {
 	for _, t := range tasks {
 		ok := true
 		for _, term := range terms {
-			if !taskMatchesTerm(t, term) {
+			if !taskMatchesTerm(t, term, today) {
 				ok = false
 				break
 			}
@@ -152,7 +158,7 @@ func filterTasks(tasks []vault.Task, filter string) []vault.Task {
 	return out
 }
 
-func taskMatchesTerm(t vault.Task, term string) bool {
+func taskMatchesTerm(t vault.Task, term string, today time.Time) bool {
 	negate := false
 	if strings.HasPrefix(term, "-") && len(term) > 1 {
 		negate = true
@@ -172,15 +178,28 @@ func taskMatchesTerm(t vault.Task, term string) bool {
 		case "due":
 			switch val {
 			case "today":
-				match = t.Due == vault.TodayISO(time.Now())
+				match = t.Due == vault.TodayISO(today)
 			case "overdue":
-				match = vault.IsOverdue(t, time.Now())
+				match = vault.IsOverdue(t, today)
 			case "none":
 				match = t.Due == ""
 			case "any":
 				match = t.Due != ""
 			default:
 				match = strings.HasPrefix(t.Due, val)
+			}
+		case "scheduled":
+			switch val {
+			case "today":
+				match = t.Scheduled == vault.TodayISO(today)
+			case "overdue":
+				match = vault.IsTaskOpen(t) && t.Scheduled != "" && t.Scheduled < vault.TodayISO(today)
+			case "none":
+				match = t.Scheduled == ""
+			case "any":
+				match = t.Scheduled != ""
+			default:
+				match = strings.HasPrefix(t.Scheduled, val)
 			}
 		case "priority", "prio", "p":
 			match = t.Priority == val || (val == "none" && t.Priority == "")
