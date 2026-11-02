@@ -1,6 +1,9 @@
 package vault
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func scanOne(t *testing.T, line string, dialect TaskDialect) Task {
 	t.Helper()
@@ -90,5 +93,53 @@ func TestSplitDateTimeRejectsMalformedValues(t *testing.T) {
 		if d, c := SplitDateTime(in); d != "" || c != "" {
 			t.Errorf("%q: got %q %q", in, d, c)
 		}
+	}
+}
+
+func TestSetTaskDueKeepsExistingTime(t *testing.T) {
+	got := SetTaskDue("- [ ] Call Ana due:2026-11-03T14:00 !high\n", 0, "2026-11-10")
+	if want := "- [ ] Call Ana !high due:2026-11-10T14:00\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := SetTaskDue("- [ ] Call Ana\n", 0, "2026-11-10"); got != "- [ ] Call Ana due:2026-11-10\n" {
+		t.Fatalf("untimed: %q", got)
+	}
+	if got := SetTaskDue("- [ ] Call Ana due:2026-11-03T99:00\n", 0, "2026-11-10"); got != "- [ ] Call Ana due:2026-11-10\n" {
+		t.Fatalf("invalid time must not be carried: %q", got)
+	}
+}
+
+func TestSetTaskDueWithTimeReplacesTime(t *testing.T) {
+	got := SetTaskDue("- [ ] Call Ana due:2026-11-03T14:00\n", 0, "2026-11-10T08:15")
+	if want := "- [ ] Call Ana due:2026-11-10T08:15\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	got = SetTaskDue("- [ ] Call Ana due:2026-11-03\n", 0, "2026-11-10T08:15")
+	if want := "- [ ] Call Ana due:2026-11-10T08:15\n"; got != want {
+		t.Fatalf("date-only before: got %q, want %q", got, want)
+	}
+}
+
+func TestSetTaskDueClearRemovesTime(t *testing.T) {
+	got := SetTaskDue("- [ ] Call Ana due:2026-11-03T14:00 !high\n", 0, "")
+	if want := "- [ ] Call Ana !high\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestSetTaskNoteDueKeepsTime(t *testing.T) {
+	body := "---\ntags: [task]\nstatus: open\ndue: 2026-11-03T14:00\n---\n\n# Pay rent\n"
+	if got, want := SetTaskNoteDue(body, "2026-11-10"), strings.Replace(body, "2026-11-03T14:00", "2026-11-10T14:00", 1); got != want {
+		t.Fatalf("date-only: got %q, want %q", got, want)
+	}
+	if got, want := SetTaskNoteDue(body, "2026-11-10T08:15"), strings.Replace(body, "2026-11-03T14:00", "2026-11-10T08:15", 1); got != want {
+		t.Fatalf("date-time: got %q, want %q", got, want)
+	}
+	if got, want := SetTaskNoteDue(body, ""), "---\ntags: [task]\nstatus: open\n---\n\n# Pay rent\n"; got != want {
+		t.Fatalf("clear: got %q, want %q", got, want)
+	}
+	quoted := strings.Replace(body, "2026-11-03T14:00", `"2026-11-03T14:00"`, 1)
+	if got, want := SetTaskNoteDue(quoted, "2026-11-10"), strings.Replace(body, "2026-11-03T14:00", `"2026-11-10T14:00"`, 1); got != want {
+		t.Fatalf("quoted: got %q, want %q", got, want)
 	}
 }

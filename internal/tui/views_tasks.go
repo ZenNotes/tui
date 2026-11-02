@@ -552,12 +552,15 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 	}
 	meta := []string{}
 	if t.Due != "" {
-		due := "due " + t.Due
+		due := "due " + withTaskClock(t.Due, t.DueTime, a.prefs.TimeFormat)
 		if vault.IsOverdue(t, time.Now()) {
 			meta = append(meta, th.Overdue.Render(due))
 		} else {
 			meta = append(meta, th.Dim.Render(due))
 		}
+	}
+	if t.Scheduled != "" {
+		meta = append(meta, th.Dim.Render("scheduled "+withTaskClock(t.Scheduled, t.ScheduledTime, a.prefs.TimeFormat)))
 	}
 	if t.Priority != "" {
 		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority))
@@ -651,10 +654,13 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 			meta := []string{}
 			if c.Due != "" {
 				if vault.IsOverdue(c, time.Now()) {
-					meta = append(meta, th.Overdue.Render(c.Due))
+					meta = append(meta, th.Overdue.Render(withTaskClock(c.Due, c.DueTime, a.prefs.TimeFormat)))
 				} else {
-					meta = append(meta, th.Dim.Render(c.Due))
+					meta = append(meta, th.Dim.Render(withTaskClock(c.Due, c.DueTime, a.prefs.TimeFormat)))
 				}
+			}
+			if c.Scheduled != "" {
+				meta = append(meta, th.Dim.Render("sch "+withTaskClock(c.Scheduled, c.ScheduledTime, a.prefs.TimeFormat)))
 			}
 			if c.Priority != "" {
 				meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))
@@ -1335,7 +1341,7 @@ func (a *App) setTaskPriority(t vault.Task, p string) {
 func (a *App) setTaskDue(t vault.Task, due string) {
 	a.editTaskLine(t, func(body string) string {
 		if t.Kind == "file" {
-			return vault.SetTaskFileField(body, "due", due)
+			return vault.SetTaskNoteDue(body, due)
 		}
 		return vault.SetTaskDue(body, t.TaskIndex, due)
 	})
@@ -1423,7 +1429,7 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 		}
 		due := func(v string) {
 			if t.Kind == "file" {
-				body = vault.SetTaskFileField(body, "due", v)
+				body = vault.SetTaskNoteDue(body, v)
 			} else {
 				body = vault.SetTaskDue(body, t.TaskIndex, v)
 			}
@@ -1485,8 +1491,8 @@ func (a *App) taskPriorityMenu(t vault.Task) {
 }
 
 func (a *App) taskDuePrompt(t vault.Task) {
-	a.promptFor("Due date", t.Due, "YYYY-MM-DD, today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
-		due, err := parseDueInput(strings.TrimSpace(text), time.Now())
+	a.promptFor("Due date", t.Due, "YYYY-MM-DD[THH:MM], today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
+		due, err := parseDueInput(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.notifyError(err.Error())
 			return
@@ -1526,6 +1532,9 @@ func parseDueInput(text string, now time.Time) (string, error) {
 	}
 	if vault.IsValidISODate(text) {
 		return text, nil
+	}
+	if date, clock := vault.SplitDateTime(strings.ToUpper(text)); date != "" && clock != "" {
+		return date + "T" + clock, nil
 	}
 	return "", fmt.Errorf("not a date: %s", text)
 }

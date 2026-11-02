@@ -661,12 +661,18 @@ func SetTaskPriority(markdown string, taskIndex int, priority string) string {
 	return out
 }
 
-// SetTaskDue replaces, inserts or removes the `due:YYYY-MM-DD` token.
+// SetTaskDue replaces, inserts or removes the `due:` token. A date-only value
+// keeps the time the task already has, a `YYYY-MM-DDTHH:MM` value replaces
+// date and time together, and an empty value removes the token and its time.
 func SetTaskDue(markdown string, taskIndex int, due string) string {
 	out, _ := editTaskAtIndex(markdown, taskIndex, func(m []string) (string, bool) {
 		tail, ok := taskTail(m)
 		if !ok {
 			return "", false
+		}
+		if sm := inlineDueRe.FindStringSubmatch(tail); sm != nil {
+			_, existing := SplitDateTime(sm[1])
+			due = dueKeepingTime(due, existing)
 		}
 		cleaned := multiSpaceRe.ReplaceAllString(dueTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
@@ -676,6 +682,30 @@ func SetTaskDue(markdown string, taskIndex int, due string) string {
 		return m[1] + m[2] + "]" + next, true
 	})
 	return out
+}
+
+// dueKeepingTime appends the existing time to a date-only value. A value that
+// already carries a time, or is empty, is returned as it is.
+func dueKeepingTime(due, existingTime string) string {
+	if due == "" || existingTime == "" || len(due) != len("2006-01-02") {
+		return due
+	}
+	return due + "T" + existingTime
+}
+
+// SetTaskNoteDue sets the frontmatter `due` of a task note with the same time
+// rules as SetTaskDue: a date-only value keeps the note's current time, a
+// date-time value replaces it, and an empty value removes the key.
+func SetTaskNoteDue(body, due string) string {
+	if block, _, ok := Frontmatter(body); ok {
+		_, existing := splitFrontmatterDateTime(firstScalar(ParseFrontmatterFields(block)["due"]))
+		due = dueKeepingTime(due, existing)
+	}
+	var value *string
+	if due != "" {
+		value = StrPtr(due)
+	}
+	return setFrontmatterLines(body, []frontmatterLine{{key: "due", value: value}})
 }
 
 // SetTaskField replaces, inserts or removes an inline `@key:value` token.
