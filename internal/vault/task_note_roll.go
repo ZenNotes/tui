@@ -85,8 +85,10 @@ type frontmatterLine struct {
 	value *string
 }
 
-// setFrontmatterLines sets or removes scalar frontmatter lines in place. Unlike
-// UpdateFrontmatterFields it writes a value as given, so a date-time such as
+// setFrontmatterLines sets or removes scalar frontmatter lines in place. A key
+// that was written as a block list loses its list item lines too, so the new
+// value is not left above stale items. Unlike UpdateFrontmatterFields it
+// writes a value as given, so a date-time such as
 // `2026-11-09T09:30` is not quoted, and it keeps the quotes a value already
 // had. Keys match case-insensitively and keep the casing they were written
 // with. A key the block lacks is appended, and a note without frontmatter is
@@ -99,7 +101,12 @@ func setFrontmatterLines(body string, updates []frontmatterLine) string {
 	}
 	pending := append([]frontmatterLine(nil), updates...)
 	var out []string
+	dropItems := false
 	for _, line := range strings.Split(block, "\n") {
+		if dropItems && fmListItemRe.MatchString(line) {
+			continue
+		}
+		dropItems = false
 		km := fmKeyRe.FindStringSubmatch(line)
 		hit := -1
 		if km != nil {
@@ -116,6 +123,7 @@ func setFrontmatterLines(body string, updates []frontmatterLine) string {
 		}
 		u := pending[hit]
 		pending = append(pending[:hit], pending[hit+1:]...)
+		dropItems = true
 		if u.value == nil {
 			continue
 		}

@@ -147,3 +147,11 @@ func TestTaskNoteRollUntickReopensWithoutAdvancing(t *testing.T) {
 		t.Fatalf("reopen: rolled=%v\n%s", rolled, next)
 	}
 }
+
+func TestTaskNoteRollDropsBlockListItemsOfAdvancedKeys(t *testing.T) {
+	in := rollNote("scheduled:", "  - 2026-11-02", "due:", "  - 2026-11-04", "repeat: 3d")
+	want := rollNote("scheduled: 2026-11-05", "due: 2026-11-07", "repeat: 3d", "lastCompleted: 2026-11-02")
+	if got := rollNoteAt(t, in, RollComplete, "2026-11-02"); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
