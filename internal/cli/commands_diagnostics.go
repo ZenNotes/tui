@@ -113,6 +113,65 @@ type diagnosticCheck struct {
 	Name    string `json:"name"`
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
+	// Hint is what to run to fix a failed check, one command or line each.
+	Hint []string `json:"hint,omitempty"`
+}
+
+// latexPackages are the LaTeX packages zn's render document and default
+// preamble.tex load; a basic TeX install lacks some of them.
+const latexPackages = "standalone varwidth preview xcolor amsmath amsfonts mhchem pgf"
+
+// latexInstallHint is how to install what math = "latex" runs, for this
+// system: zn ships no TeX. distro is /etc/os-release's ID and ID_LIKE.
+// Each Linux line was checked in a clean container of that distribution.
+func latexInstallHint(goos, distro string) []string {
+	like := func(names ...string) bool {
+		for _, f := range strings.Fields(distro) {
+			for _, n := range names {
+				if f == n {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	switch {
+	case goos == "darwin":
+		return []string{
+			"brew install --cask basictex",
+			"brew install poppler",
+			`eval "$(/usr/libexec/path_helper)"    # or open a new terminal`,
+			"sudo tlmgr update --self",
+			"sudo tlmgr install " + latexPackages,
+		}
+	case goos == "windows":
+		return []string{
+			"Install MiKTeX (https://miktex.org); it fetches missing LaTeX packages on first use.",
+			"Install poppler for pdftocairo, for example: scoop install poppler",
+		}
+	case like("debian", "ubuntu"):
+		return []string{"sudo apt install texlive-latex-extra texlive-science texlive-pictures poppler-utils"}
+	case like("fedora", "rhel", "centos"):
+		return []string{"sudo dnf install texlive-scheme-basic texlive-standalone texlive-varwidth texlive-preview texlive-xcolor texlive-amsmath texlive-amsfonts texlive-mhchem texlive-pgf poppler-utils"}
+	case like("arch"):
+		return []string{"sudo pacman -S texlive-basic texlive-latex texlive-latexextra texlive-science texlive-pictures poppler"}
+	}
+	return []string{"Install TeX Live with the packages " + latexPackages + ", and poppler for pdftocairo."}
+}
+
+// osDistro is /etc/os-release's ID and ID_LIKE, space separated, or "".
+func osDistro() string {
+	b, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	ids := []string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		if k, v, ok := strings.Cut(line, "="); ok && (k == "ID" || k == "ID_LIKE") {
+			ids = append(ids, strings.Trim(v, `"'`))
+		}
+	}
+	return strings.Join(ids, " ")
 }
 
 func cmdDoctor(ctx context.Context, args Args) error {
@@ -125,6 +184,22 @@ func cmdDoctor(ctx context.Context, args Args) error {
 		checks = append(checks, diagnosticCheck{Name: name, OK: err == nil, Message: message})
 	}
 	add("configuration", config.ConfigTomlPath(), config.ValidateConfig())
+	if prefs, _, err := config.LoadPrefs(); err == nil && prefs.TerminalMath == "latex" {
+		missing := []string{}
+		for _, tool := range []struct{ name, from string }{{"pdftex", "TeX Live or MacTeX"}, {"pdftocairo", "poppler"}} {
+			if _, err := exec.LookPath(tool.name); err != nil {
+				missing = append(missing, tool.name+" (from "+tool.from+")")
+			}
+		}
+		var err error
+		if len(missing) > 0 {
+			err = fmt.Errorf("math = \"latex\" needs %s on PATH; zn does not include them, so install them on this computer", strings.Join(missing, " and "))
+		}
+		add("latex tools", "pdftex and pdftocairo are available", err)
+		if err != nil {
+			checks[len(checks)-1].Hint = latexInstallHint(runtime.GOOS, osDistro())
+		}
+	}
 	ws, wsErr := config.LoadWorkspacesFile()
 	add("saved vaults", fmt.Sprintf("%d vaults and %d servers in %s", len(ws.Vaults), len(ws.Servers), config.WorkspacesPath()), wsErr)
 	if installation, err := selfupdate.Current(); err == nil {
@@ -186,6 +261,9 @@ func cmdDoctor(ctx context.Context, args Args) error {
 				state = "FAIL"
 			}
 			emitLine(fmt.Sprintf("%s  %s: %s", state, check.Name, check.Message))
+			for _, line := range check.Hint {
+				emitLine("      " + line)
+			}
 		}
 	}
 	if failed != 0 {

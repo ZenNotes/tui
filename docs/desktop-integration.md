@@ -79,6 +79,17 @@ again before every tool call and follows a desktop switch once `vault_info`
 confirms it. Until then every other tool stops with a message naming the old and
 new workspace, so a switch never redirects in-flight edits.
 
+`zn mcp --allow-path`, `--deny-path`, `--read-only` and `--access` (ZenNotes/tui#21)
+apply to whichever workspace the server follows. Entries are vault-relative, so a
+switch applies the same paths to the new vault; a `--deny-path` the new vault does
+not have shares nothing there. The desktop's bundled MCP server (`out/main/mcp.js`
+and the desktop's own `zn mcp`) takes the same flags with the same rules, from
+`packages/shared-domain/src/mcp-scope.ts` in ZenNotes/zennotes, and both engines
+answer the shared fixture `internal/mcp/testdata/mcp-scope.json` the same way, so a
+client is scoped whichever runtime Settings → MCP installed for it. Settings → MCP
+shows a client with hand-added flags as needing an update; updating it there drops
+them.
+
 ## Creation dates
 
 Linux reads filesystem birth time using `statx` where supported; ctime is only a

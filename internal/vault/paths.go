@@ -2,6 +2,7 @@ package vault
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,100 @@ func FolderForRelativePath(rel string, paths map[string]string) (NoteFolder, boo
 		return "", false
 	}
 	return FolderInbox, true
+}
+
+// isHiddenTopName reports whether a top-level name is one the root walk
+// hides: the internal dir, an attachments dir or another bucket's directory.
+// A different spelling still is one when it names the same directory on
+// disk, as a case variant does on macOS and Windows.
+func (v *Vault) isHiddenTopName(name string, paths map[string]string) bool {
+	hidden := hiddenPrimaryRootNames(paths)
+	if _, ok := hidden[name]; ok {
+		return true
+	}
+	info, err := os.Lstat(filepath.Join(v.root, name))
+	if err != nil {
+		return false
+	}
+	for h := range hidden {
+		if !strings.EqualFold(h, name) {
+			continue
+		}
+		if hInfo, err := os.Lstat(filepath.Join(v.root, h)); err == nil && os.SameFile(info, hInfo) {
+			return true
+		}
+	}
+	return false
+}
+
+// classifyPath is the bucket a vault-relative note (isDir false) or folder
+// (isDir true) belongs to as the listings see it. They never descend into a
+// dot directory at any depth, nor show the internal dir, an attachments dir
+// or another bucket's directory as part of the inbox, so neither does this.
+func (v *Vault) classifyPath(rel string, isDir bool) (NoteFolder, bool) {
+	rel = NormalizeRelPath(ToPosix(rel))
+	if rel == "" || rel == "." {
+		return "", false
+	}
+	segments := strings.Split(rel, "/")
+	dirs := segments
+	if !isDir {
+		dirs = segments[:len(segments)-1]
+	}
+	for _, segment := range dirs {
+		if strings.HasPrefix(segment, ".") {
+			return "", false
+		}
+	}
+	paths := v.Settings().SystemFolderPaths
+	folder, ok := FolderForRelativePath(rel, paths)
+	if !ok {
+		return "", false
+	}
+	if folder == FolderInbox && v.isHiddenTopName(segments[0], paths) {
+		return "", false
+	}
+	return folder, true
+}
+
+// notePath resolves a note a tool reads, edits, moves or deletes, refusing
+// one outside the note folders before anything touches it.
+func (v *Vault) notePath(rel string) (string, NoteFolder, error) {
+	abs, err := v.AbsPath(rel)
+	if err != nil {
+		return "", "", err
+	}
+	folder, ok := v.classifyPath(v.relPosix(abs), false)
+	if !ok {
+		return "", "", errNotInFolder(rel)
+	}
+	return abs, folder, nil
+}
+
+// bucketDir resolves the directory a create, move, rename or delete names by
+// bucket and subpath. It must be a folder the listings show in that bucket:
+// a subpath through a dot directory, or one that reaches the internal dir, an
+// attachments dir or another bucket (in root primary mode the inbox IS the
+// vault root, so all of them sit one level down) is refused. A subpath that
+// cleans to nothing, `x/..` included, is the bucket root itself, which
+// callers that need a subfolder refuse.
+func (v *Vault) bucketDir(folder NoteFolder, subpath string) (string, error) {
+	base := v.FolderRoot(folder)
+	clean := cleanSubpath(subpath)
+	if clean == "" {
+		return base, nil
+	}
+	abs, err := SafeJoin(base, clean)
+	if err != nil {
+		return "", fmt.Errorf("Path escapes vault: %s", clean)
+	}
+	if abs == base {
+		return base, nil
+	}
+	if got, ok := v.classifyPath(v.relPosix(abs), true); !ok || got != folder {
+		return "", fmt.Errorf("Not a note folder: %s", clean)
+	}
+	return abs, nil
 }
 
 // FolderSubpathOf is the note's directory relative to its bucket root, or ""

@@ -112,11 +112,12 @@ type tagCount struct {
 	Count int    `json:"count"`
 }
 
-// TagCounts tallies every tag across live notes, most used first.
-func TagCounts(notes []vault.NoteMeta) []tagCount {
+// TagCounts tallies every tag across live notes, most used first. A note in
+// templateFolder contributes no tags (ZenNotes/zennotes#1024).
+func TagCounts(notes []vault.NoteMeta, templateFolder string) []tagCount {
 	counts := map[string]int{}
 	for _, n := range notes {
-		if n.Folder == vault.FolderTrash {
+		if n.Folder == vault.FolderTrash || vault.IsPathInTemplateFolder(n.Path, templateFolder) {
 			continue
 		}
 		for _, t := range n.Tags {
@@ -141,7 +142,7 @@ func cmdTagList(ctx context.Context, b backend.Backend, args Args) error {
 	if err != nil {
 		return err
 	}
-	ordered := TagCounts(all)
+	ordered := TagCounts(all, backend.TemplateFolder(ctx, b))
 	if args.Bool("json") {
 		emitJSON(ordered)
 		return nil
@@ -174,9 +175,12 @@ func cmdTagFind(ctx context.Context, b backend.Backend, args Args) error {
 	if err != nil {
 		return err
 	}
+	// A template's tags are placeholders, so tag search skips the template
+	// folder (ZenNotes/zennotes#1024).
+	templateFolder := backend.TemplateFolder(ctx, b)
 	matches := []vault.NoteMeta{}
 	for _, n := range all {
-		if n.Folder != vault.FolderTrash && hasTag(n.Tags, tag) {
+		if n.Folder != vault.FolderTrash && hasTag(n.Tags, tag) && !vault.IsPathInTemplateFolder(n.Path, templateFolder) {
 			matches = append(matches, n)
 		}
 	}

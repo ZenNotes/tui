@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
-// TestMotionsOptionPicksTheEngine checks [helix] motions: "vim" restores the
+// TestMotionsOptionPicksTheEngine checks [vim] motions: "vim" restores the
 // vim model (dw deletes a word, w just moves) while the default helix model
 // selects as it moves (w leaves a spanning selection, wd deletes a word).
 func TestMotionsOptionPicksTheEngine(t *testing.T) {
@@ -34,7 +34,7 @@ func TestMotionsOptionPicksTheEngine(t *testing.T) {
 			t.Fatalf("%s %q: selection active = %t, want %t", tc.motions, tc.move, active, tc.wantSel)
 		}
 		// the delete runs from a fresh cursor, the way the user would type it
-		fresh := a.newModalEditor("one two three\n", helix.Hooks{}, &a.registers)
+		fresh := a.newModalEditor("one two three\n", vim.Hooks{}, &a.registers)
 		fresh.Feed(tc.delete)
 		if got := fresh.Text(); got != tc.want {
 			t.Fatalf("%s %q: got %q, want %q", tc.motions, tc.delete, got, tc.want)
@@ -55,10 +55,10 @@ func TestHelixWordMotionLeavesTheNextWordOut(t *testing.T) {
 	ed := a.activeBuffer().ed
 	ed.Feed("w")
 	start, end, _, ok := ed.VisualRange()
-	if !ok || start != (helix.Pos{Line: 0, Col: 0}) || end != (helix.Pos{Line: 0, Col: 3}) {
+	if !ok || start != (vim.Pos{Line: 0, Col: 0}) || end != (vim.Pos{Line: 0, Col: 3}) {
 		t.Fatalf("selection after w = %v..%v ok=%t, want the text before the next word", start, end, ok)
 	}
-	if got, want := ed.BlockCursor(), (helix.Pos{Line: 0, Col: 3}); got != want {
+	if got, want := blockCursor(ed), (vim.Pos{Line: 0, Col: 3}); got != want {
 		t.Fatalf("block cursor after w = %v, want %v", got, want)
 	}
 }
@@ -77,15 +77,15 @@ func TestVimMotionsKeepAppKeys(t *testing.T) {
 	a.openNote("b.md", true)
 	// gn is a helix-motion key: with the vim engine it stays with the engine
 	// (a no-op here) and must not switch tabs.
-	a.handleKey(helix.R('g'))
-	a.handleKey(helix.R('n'))
+	a.handleKey(vim.R('g'))
+	a.handleKey(vim.R('n'))
 	if got := a.activeBuffer().path; got != "b.md" {
 		t.Fatalf("gn switched tabs with the vim engine, active %q", got)
 	}
 	// vim visual mode keeps its label through the interface
 	a.activeBuffer().ed.Feed("v")
-	if label := a.activeBuffer().ed.ModeLabel(); label != "VISUAL" {
+	if label := modeLabel(a.activeBuffer().ed); label != "VISUAL" {
 		t.Fatalf("vim visual label = %q", label)
 	}
-	a.activeBuffer().ed.Feed(helix.KeyEsc.String())
+	a.activeBuffer().ed.Feed(vim.KeyEsc.String())
 }

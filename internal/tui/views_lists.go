@@ -10,8 +10,8 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // --- note list views: Quick Notes, Archive, Trash ---
@@ -134,7 +134,7 @@ func formatAge(unixMs int64) string {
 	return time.UnixMilli(unixMs).Format("2006-01-02")
 }
 
-func (v *noteListView) handleKey(a *App, k helix.Key) bool {
+func (v *noteListView) handleKey(a *App, k vim.Key) bool {
 	if isMarkKey(k) {
 		if n := v.selected(); n != nil {
 			a.markPath(n.Path)
@@ -287,7 +287,8 @@ func (v *tagsView) refresh(a *App) {
 		}
 	}
 	for _, n := range a.idx.notes {
-		if n.Folder == vault.FolderTrash {
+		// A template's tags count for nothing (#1024), so a tag's notes skip it.
+		if n.Folder == vault.FolderTrash || vault.IsPathInTemplateFolder(n.Path, a.idx.settings.TemplateFolder) {
 			continue
 		}
 		have := map[string]bool{}
@@ -378,7 +379,7 @@ func joinColumns(a *App, blocks []string, h int) string {
 	return joinHorizontal(parts...)
 }
 
-func (v *tagsView) handleKey(a *App, k helix.Key) bool {
+func (v *tagsView) handleKey(a *App, k vim.Key) bool {
 	if k.Is("tab") && !k.Shift {
 		if v.tagList.cursor < len(v.tags) {
 			t := v.tags[v.tagList.cursor].tag

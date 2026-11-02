@@ -284,6 +284,13 @@ type Editor struct {
 	folds map[int]int
 
 	inChange bool
+
+	// keymap holds the user's bindings (keymap.go); keymapSeq is a bound
+	// sequence in progress, and remapping marks keys the keymap feeds to
+	// the engine, which must not be remapped again.
+	keymap    *Keymap
+	keymapSeq []Key
+	remapping bool
 }
 
 // New creates an editor over text.
@@ -559,6 +566,9 @@ func (e *Editor) Feed(notation string) {
 // HandleKey processes one keystroke. It reports false only in plain (non
 // Vim) mode for keys the editor has no use for, so the host may act.
 func (e *Editor) HandleKey(k Key) bool {
+	if e.remapKey(k) {
+		return true
+	}
 	if e.macroReg != 0 && !e.replaying && e.macroDepth == 0 {
 		e.macroKeys = append(e.macroKeys, k)
 	}
@@ -1812,4 +1822,14 @@ func (e *Editor) PendingCount() (int, bool) {
 		n = n*10 + int(k.Rune-'0')
 	}
 	return n, true
+}
+
+// ReplacePending reports whether an `r` (with an optional register and count
+// before it) is waiting for the character to put in.
+func (e *Editor) ReplacePending() bool {
+	if (e.mode != ModeNormal && e.mode != ModeSelect) || len(e.pending) == 0 {
+		return false
+	}
+	_, _, _, rest, status := splitPrefix(e.pending)
+	return status == parseComplete && len(rest) == 1 && rest[0].IsRune('r')
 }

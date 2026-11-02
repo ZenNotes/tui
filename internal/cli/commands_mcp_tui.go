@@ -15,11 +15,37 @@ import (
 // follows the desktop app the way a fresh zn does and starting before
 // anything is configured works; after a switch, calls stop until vault_info
 // confirms the new vault, so a switch never redirects in-flight edits.
+//
+// --allow-path, --deny-path, --read-only and --access narrow what the client
+// may see and change (ZenNotes/tui#21); the server enforces them on every
+// tool, and a bad entry stops it before it serves anything.
 func cmdMCP(ctx context.Context, args Args) error {
+	scope, err := mcpScopeFromArgs(args)
+	if err != nil {
+		return err
+	}
 	return mcp.Run(ctx, mcp.Options{
 		ResolveTarget: func() (backend.Target, error) { return ResolveTargetFromArgs(args) },
 		OpenBackend:   OpenBackend,
+		Scope:         scope,
 	})
+}
+
+// mcpScopeFromArgs reads the scope flags; nil means none were given, today's
+// full access.
+func mcpScopeFromArgs(args Args) (*mcp.Scope, error) {
+	allow := args.Flags["allow-path"]
+	deny := args.Flags["deny-path"]
+	access := args.Str("access")
+	readOnly := args.Bool("read-only")
+	if len(allow) == 0 && len(deny) == 0 && access == "" && !readOnly {
+		return nil, nil
+	}
+	scope, err := mcp.NewScope(access, readOnly, allow, deny)
+	if err != nil {
+		return nil, err
+	}
+	return &scope, nil
 }
 
 // cmdTUI opens the terminal app on the resolved vault; a positional path

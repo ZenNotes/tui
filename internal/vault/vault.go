@@ -439,13 +439,14 @@ func (v *Vault) ListAssets() ([]AssetMeta, error) {
 
 // ReadNote returns a note with its body.
 func (v *Vault) ReadNote(rel string) (NoteContent, error) {
-	abs, err := v.AbsPath(rel)
+	abs, folder, err := v.notePath(rel)
 	if err != nil {
 		return NoteContent{}, err
 	}
-	folder, ok := v.folderOfAbs(abs)
-	if !ok {
-		return NoteContent{}, errNotInFolder(rel)
+	// A note is a Markdown file. Anything else in a note folder (a root-mode
+	// vault that is also a code checkout holds plenty) is not one to read.
+	if !strings.EqualFold(filepath.Ext(abs), ".md") {
+		return NoteContent{}, fmt.Errorf("Not a Markdown note: %s", rel)
 	}
 	body, err := os.ReadFile(abs)
 	if err != nil {
@@ -462,17 +463,13 @@ func (v *Vault) ReadNote(rel string) (NoteContent, error) {
 func (v *Vault) WriteNote(rel, body string) (NoteMeta, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	abs, err := v.AbsPath(rel)
-	if err != nil {
-		return NoteMeta{}, err
-	}
 	// Refuse anything outside the note folders BEFORE a byte lands. This used
 	// to write first and check after, so write_note on `.zennotes/...` created
 	// the file and only then failed: an assistant could plant comments,
 	// creation dates or the agent edit records that say what a note was.
-	folder, ok := v.folderOfAbs(abs)
-	if !ok {
-		return NoteMeta{}, errNotInFolder(rel)
+	abs, folder, err := v.notePath(rel)
+	if err != nil {
+		return NoteMeta{}, err
 	}
 	if err := v.writeNoteFileAtomic(abs, []byte(body)); err != nil {
 		return NoteMeta{}, err
@@ -557,14 +554,9 @@ func (v *Vault) CreateNote(folder NoteFolder, title, subpath string, body *strin
 		title = "Untitled"
 	}
 	base := SanitizeTitle(title)
-	clean := strings.Trim(strings.ReplaceAll(subpath, "\\", "/"), "/")
-	dir := v.FolderRoot(folder)
-	if clean != "" {
-		sub, err := SafeJoin(dir, clean)
-		if err != nil {
-			return NoteMeta{}, fmt.Errorf("Path escapes vault: %s", clean)
-		}
-		dir = sub
+	dir, err := v.bucketDir(folder, subpath)
+	if err != nil {
+		return NoteMeta{}, err
 	}
 	if err := os.MkdirAll(dir, v.dirMode); err != nil {
 		return NoteMeta{}, err
@@ -586,6 +578,14 @@ func (v *Vault) CreateNote(folder NoteFolder, title, subpath string, body *strin
 // follows when SyncTitleHeading is on, and every `[[wikilink]]` in the vault
 // that resolved to the note is rewritten to the new name.
 func (v *Vault) RenameNote(rel, nextTitle string) (NoteMeta, error) {
+	return v.RenameNoteRewritingLinksIn(rel, nextTitle, nil)
+}
+
+// RenameNoteRewritingLinksIn is RenameNote with the inbound link rewrite
+// limited to the notes rewrite accepts; nil accepts every note. A scoped MCP
+// client renames this way so its rename never writes into notes it cannot
+// see (ZenNotes/tui#21).
+func (v *Vault) RenameNoteRewritingLinksIn(rel, nextTitle string, rewrite func(path string) bool) (NoteMeta, error) {
 	oldRel := NormalizeRelPath(rel)
 	notesBefore, _ := v.ListNotes()
 	meta, err := v.renameNoteFile(rel, nextTitle)
@@ -593,7 +593,7 @@ func (v *Vault) RenameNote(rel, nextTitle string) (NoteMeta, error) {
 		return NoteMeta{}, err
 	}
 	if meta.Path != oldRel {
-		v.rewriteInboundWikilinks(notesBefore, oldRel, meta.Title)
+		v.rewriteInboundWikilinks(notesBefore, oldRel, meta.Title, rewrite)
 	}
 	return meta, nil
 }
@@ -601,13 +601,9 @@ func (v *Vault) RenameNote(rel, nextTitle string) (NoteMeta, error) {
 func (v *Vault) renameNoteFile(rel, nextTitle string) (NoteMeta, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	abs, err := v.AbsPath(rel)
+	abs, folder, err := v.notePath(rel)
 	if err != nil {
 		return NoteMeta{}, err
-	}
-	folder, ok := v.folderOfAbs(abs)
-	if !ok {
-		return NoteMeta{}, errNotInFolder(rel)
 	}
 	dir := filepath.Dir(abs)
 	trimmed := SanitizeTitle(nextTitle)
@@ -661,9 +657,12 @@ func (v *Vault) syncTitleHeading(sourceAbs, targetAbs, title string) {
 	}
 }
 
-func (v *Vault) rewriteInboundWikilinks(notesBefore []NoteMeta, oldPath, newTitle string) {
+func (v *Vault) rewriteInboundWikilinks(notesBefore []NoteMeta, oldPath, newTitle string, rewrite func(path string) bool) {
 	for _, n := range notesBefore {
 		if n.Path == oldPath || n.Folder == FolderTrash {
+			continue
+		}
+		if rewrite != nil && !rewrite(n.Path) {
 			continue
 		}
 		linksToIt := false
@@ -690,21 +689,18 @@ func (v *Vault) rewriteInboundWikilinks(notesBefore []NoteMeta, oldPath, newTitl
 func (v *Vault) moveBetweenFolders(rel string, target NoteFolder) (NoteMeta, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	abs, err := v.AbsPath(rel)
+	// The source is classified first: unchecked, archive_note on
+	// `.zennotes/vault.json` carried the settings off to archive/vault.md.
+	abs, _, err := v.notePath(rel)
 	if err != nil {
 		return NoteMeta{}, err
 	}
 	if _, err := os.Stat(abs); err != nil {
 		return NoteMeta{}, err
 	}
-	subpath := v.SubpathOf(v.relPosix(abs))
-	targetRoot := v.FolderRoot(target)
-	destDir := targetRoot
-	if subpath != "" {
-		destDir, err = SafeJoin(targetRoot, subpath)
-		if err != nil {
-			return NoteMeta{}, err
-		}
+	destDir, err := v.bucketDir(target, v.SubpathOf(v.relPosix(abs)))
+	if err != nil {
+		return NoteMeta{}, err
 	}
 	if err := os.MkdirAll(destDir, v.dirMode); err != nil {
 		return NoteMeta{}, err
@@ -748,23 +744,17 @@ func (v *Vault) MoveNote(rel string, target NoteFolder, targetSubpath string) (N
 	if !IsValidFolder(target) {
 		return NoteMeta{}, fmt.Errorf("invalid folder: %s", target)
 	}
-	oldAbs, err := v.AbsPath(rel)
+	// Both ends must be note folders: an unchecked source let move_note
+	// carry `.zennotes/vault.json` into a note folder, where read_note read it.
+	oldAbs, folder, err := v.notePath(rel)
 	if err != nil {
 		return NoteMeta{}, err
 	}
-	cleanSub := strings.Trim(strings.ReplaceAll(targetSubpath, "\\", "/"), "/")
-	destDir := v.FolderRoot(target)
-	if cleanSub != "" {
-		destDir, err = SafeJoin(destDir, cleanSub)
-		if err != nil {
-			return NoteMeta{}, fmt.Errorf("Path escapes vault: %s", cleanSub)
-		}
+	destDir, err := v.bucketDir(target, targetSubpath)
+	if err != nil {
+		return NoteMeta{}, err
 	}
 	if filepath.Clean(filepath.Dir(oldAbs)) == filepath.Clean(destDir) {
-		folder, ok := v.folderOfAbs(oldAbs)
-		if !ok {
-			return NoteMeta{}, errNotInFolder(rel)
-		}
 		return v.readMeta(oldAbs, folder, v.Settings().TypstPreambleFolder)
 	}
 	if err := os.MkdirAll(destDir, v.dirMode); err != nil {
@@ -787,13 +777,9 @@ func (v *Vault) MoveNote(rel string, target NoteFolder, targetSubpath string) (N
 func (v *Vault) DuplicateNote(rel string) (NoteMeta, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	abs, err := v.AbsPath(rel)
+	abs, folder, err := v.notePath(rel)
 	if err != nil {
 		return NoteMeta{}, err
-	}
-	folder, ok := v.folderOfAbs(abs)
-	if !ok {
-		return NoteMeta{}, errNotInFolder(rel)
 	}
 	dir := filepath.Dir(abs)
 	ext := filepath.Ext(abs)
@@ -815,7 +801,7 @@ func (v *Vault) DuplicateNote(rel string) (NoteMeta, error) {
 func (v *Vault) DeleteNote(rel string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	abs, err := v.AbsPath(rel)
+	abs, _, err := v.notePath(rel)
 	if err != nil {
 		return err
 	}
@@ -870,13 +856,12 @@ func (v *Vault) CreateFolder(folder NoteFolder, subpath string) error {
 	if !IsValidFolder(folder) {
 		return fmt.Errorf("invalid folder: %s", folder)
 	}
-	clean := cleanSubpath(subpath)
-	if clean == "" {
-		return errors.New("Folder name is required")
-	}
-	abs, err := SafeJoin(v.FolderRoot(folder), clean)
+	abs, err := v.bucketDir(folder, subpath)
 	if err != nil {
-		return fmt.Errorf("Path escapes vault: %s", clean)
+		return err
+	}
+	if abs == v.FolderRoot(folder) {
+		return errors.New("Folder name is required")
 	}
 	if err := os.MkdirAll(abs, v.dirMode); err != nil {
 		return err
@@ -894,14 +879,20 @@ func (v *Vault) RenameFolder(folder NoteFolder, oldSubpath, newSubpath string) (
 	if oldClean == "" || newClean == "" {
 		return "", errors.New("Both old and new folder paths are required")
 	}
+	// Both ends are note folders of this bucket and neither is its root: the
+	// internal dir, an attachments dir or another bucket must not be moved
+	// into notes, nor a note folder into them.
 	base := v.FolderRoot(folder)
-	oldAbs, err := SafeJoin(base, oldClean)
+	oldAbs, err := v.bucketDir(folder, oldClean)
 	if err != nil {
-		return "", fmt.Errorf("Path escapes vault: %s", oldClean)
+		return "", err
 	}
-	newAbs, err := SafeJoin(base, newClean)
+	newAbs, err := v.bucketDir(folder, newClean)
 	if err != nil {
-		return "", fmt.Errorf("Path escapes vault: %s", newClean)
+		return "", err
+	}
+	if oldAbs == base || newAbs == base {
+		return "", errors.New("Both old and new folder paths are required")
 	}
 	if newAbs == oldAbs {
 		return newClean, nil
@@ -917,8 +908,11 @@ func (v *Vault) RenameFolder(folder NoteFolder, oldSubpath, newSubpath string) (
 	}
 	v.invalidateLayout()
 	// The Tasks folder lists name on-disk paths, so they follow the folder: a
-	// renamed Task folder left behind would empty Tasks (#962).
-	if err := v.rewriteTasksFoldersForRename(v.relPosix(oldAbs), v.relPosix(newAbs)); err != nil {
+	// renamed Task folder left behind would empty Tasks (#962). So does the
+	// template folder (ZenNotes/zennotes#1024), and its icon and color.
+	oldSub, _ := filepath.Rel(base, oldAbs)
+	newSub, _ := filepath.Rel(base, newAbs)
+	if err := v.rewriteSettingsForFolderRename(folder, ToPosix(oldSub), ToPosix(newSub), v.relPosix(oldAbs), v.relPosix(newAbs)); err != nil {
 		return "", err
 	}
 	return newClean, nil
@@ -928,13 +922,14 @@ func (v *Vault) RenameFolder(folder NoteFolder, oldSubpath, newSubpath string) (
 func (v *Vault) DeleteFolder(folder NoteFolder, subpath string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	clean := cleanSubpath(subpath)
-	if clean == "" {
-		return errors.New("Cannot delete the top-level folder")
-	}
-	abs, err := SafeJoin(v.FolderRoot(folder), clean)
+	// `x/..` cleans to the bucket root, which in root primary mode is the
+	// whole vault: checked on the resolved directory, not the string.
+	abs, err := v.bucketDir(folder, subpath)
 	if err != nil {
-		return fmt.Errorf("Path escapes vault: %s", clean)
+		return err
+	}
+	if abs == v.FolderRoot(folder) {
+		return errors.New("Cannot delete the top-level folder")
 	}
 	if err := os.RemoveAll(abs); err != nil {
 		return err
@@ -949,7 +944,10 @@ func (v *Vault) DeleteFolder(folder NoteFolder, subpath string) error {
 // --- search ---
 
 // SearchText is a case-insensitive substring search over every line of
-// every live note, capped at limit matches.
+// every live note, capped at limit matches. The template folder's notes are
+// placeholders nobody is searching for (ZenNotes/zennotes#1024), so they are
+// skipped before the cap, as the app and the server skip them, and the limit
+// is spent on real notes.
 func (v *Vault) SearchText(query string, limit int) ([]TextSearchMatch, error) {
 	trimmed := strings.TrimSpace(query)
 	if trimmed == "" {
@@ -959,16 +957,20 @@ func (v *Vault) SearchText(query string, limit int) ([]TextSearchMatch, error) {
 		limit = 80
 	}
 	needle := strings.ToLower(trimmed)
+	templateFolder := v.Settings().TemplateFolder
 	out := []TextSearchMatch{}
 	v.walkNotes(LiveFolders, true, func(f noteFile) {
 		if len(out) >= limit {
+			return
+		}
+		rel := v.relPosix(f.abs)
+		if IsPathInTemplateFolder(rel, templateFolder) {
 			return
 		}
 		body, err := os.ReadFile(f.abs)
 		if err != nil {
 			return
 		}
-		rel := v.relPosix(f.abs)
 		title := strings.TrimSuffix(filepath.Base(f.abs), filepath.Ext(f.abs))
 		for i, line := range strings.Split(string(body), "\n") {
 			if len(out) >= limit {
@@ -997,12 +999,11 @@ func (v *Vault) SearchText(query string, limit int) ([]TextSearchMatch, error) {
 // --- tasks ---
 
 // ScanTasks parses every task in every live note, honoring the vault's
-// excluded folders, its Task folders (#962) and each note's `tasks:` opt-out
-// unless asked not to.
+// excluded folders, its Task folders (#962), its template folder, whose
+// checkboxes are placeholders (ZenNotes/zennotes#1024), and each note's
+// `tasks:` opt-out unless asked not to.
 func (v *Vault) ScanTasks(opts ParseTasksOptions) ([]Task, error) {
-	settings := v.Settings()
-	excluded := settings.TasksExcludedFolders
-	included := settings.TasksIncludedFolders
+	excluded, included := v.Settings().TasksFolderLists()
 	if opts.IncludeExcluded {
 		excluded = nil
 		included = nil
@@ -1039,8 +1040,9 @@ func (v *Vault) ScanTasks(opts ParseTasksOptions) ([]Task, error) {
 }
 
 // ScanTasksForPath parses one note's tasks. A trashed or unclassifiable note
-// contributes nothing, and neither does one under an excluded folder unless
-// opts asks for it.
+// contributes nothing, and neither does one the full scan's folder lists
+// leave out (an excluded folder, outside the Task folders, or the template
+// folder) unless opts asks for it.
 func (v *Vault) ScanTasksForPath(rel string, opts ParseTasksOptions) ([]Task, error) {
 	abs, err := v.AbsPath(rel)
 	if err != nil {
@@ -1055,9 +1057,10 @@ func (v *Vault) ScanTasksForPath(rel string, opts ParseTasksOptions) ([]Task, er
 		return []Task{}, nil
 	}
 	relPosix := v.relPosix(abs)
-	settings := v.Settings()
-	if !opts.IncludeExcluded && IsPathExcludedFromTasks(relPosix, settings.TasksExcludedFolders, settings.TasksIncludedFolders) {
-		return []Task{}, nil
+	if !opts.IncludeExcluded {
+		if excluded, included := v.Settings().TasksFolderLists(); IsPathExcludedFromTasks(relPosix, excluded, included) {
+			return []Task{}, nil
+		}
 	}
 	title := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 	return ParseTasks(relPosix, title, folder, string(body), opts), nil
@@ -1071,17 +1074,13 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	abs, err := v.AbsPath(rel)
+	abs, folder, err := v.notePath(rel)
 	if err != nil {
 		return nil, err
 	}
 	body, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, err
-	}
-	folder, ok := v.folderOfAbs(abs)
-	if !ok {
-		return nil, errNotInFolder(rel)
 	}
 	relPosix := v.relPosix(abs)
 	title := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
@@ -1124,7 +1123,7 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 // --- convenience edits ---
 
 func (v *Vault) editNote(rel string, transform func(body string) (string, bool, error)) (NoteMeta, error) {
-	abs, err := v.AbsPath(rel)
+	abs, folder, err := v.notePath(rel)
 	if err != nil {
 		return NoteMeta{}, err
 	}
@@ -1135,10 +1134,6 @@ func (v *Vault) editNote(rel string, transform func(body string) (string, bool, 
 	next, write, err := transform(string(body))
 	if err != nil {
 		return NoteMeta{}, err
-	}
-	folder, ok := v.folderOfAbs(abs)
-	if !ok {
-		return NoteMeta{}, errNotInFolder(rel)
 	}
 	if write {
 		if _, err := v.WriteNote(v.relPosix(abs), next); err != nil {

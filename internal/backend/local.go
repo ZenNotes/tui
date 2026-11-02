@@ -72,8 +72,14 @@ func (l *Local) AppendToNote(_ context.Context, rel, text string) (vault.NoteMet
 func (l *Local) PrependToNote(_ context.Context, rel, text string) (vault.NoteMeta, error) {
 	return l.vault.PrependToNote(rel, text)
 }
-func (l *Local) RenameNote(_ context.Context, rel, nextTitle string) (vault.NoteMeta, error) {
-	meta, err := l.vault.RenameNote(rel, nextTitle)
+func (l *Local) RenameNote(ctx context.Context, rel, nextTitle string) (vault.NoteMeta, error) {
+	return l.RenameNoteRewritingLinksIn(ctx, rel, nextTitle, nil)
+}
+
+// RenameNoteRewritingLinksIn renames a note but rewrites inbound links only
+// in the notes rewrite accepts (nil: every note).
+func (l *Local) RenameNoteRewritingLinksIn(_ context.Context, rel, nextTitle string, rewrite func(path string) bool) (vault.NoteMeta, error) {
+	meta, err := l.vault.RenameNoteRewritingLinksIn(rel, nextTitle, rewrite)
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}

@@ -1,0 +1,994 @@
+[
+ {
+  "ID": "t001",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 338
+ },
+ {
+  "ID": "t002",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 374
+ },
+ {
+  "ID": "t003",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 357
+ },
+ {
+  "ID": "t004",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 355
+ },
+ {
+  "ID": "t005",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 701
+ },
+ {
+  "ID": "t006",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 347
+ },
+ {
+  "ID": "t007",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "t008",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 354
+ },
+ {
+  "ID": "t009",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 355
+ },
+ {
+  "ID": "t010",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 352
+ },
+ {
+  "ID": "t011",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 356
+ },
+ {
+  "ID": "t012",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 380
+ },
+ {
+  "ID": "t013",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 346
+ },
+ {
+  "ID": "t014",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 389
+ },
+ {
+  "ID": "t015",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 357
+ },
+ {
+  "ID": "t016",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 356
+ },
+ {
+  "ID": "t017",
+  "Cat": "arrows.meta",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 369
+ },
+ {
+  "ID": "t018",
+  "Cat": "calc",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 356
+ },
+ {
+  "ID": "t019",
+  "Cat": "positioning",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 379
+ },
+ {
+  "ID": "t020",
+  "Cat": "shapes",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 369
+ },
+ {
+  "ID": "t021",
+  "Cat": "shapes",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 391
+ },
+ {
+  "ID": "t022",
+  "Cat": "decorations.pathreplacing",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 358
+ },
+ {
+  "ID": "t023",
+  "Cat": "intersections",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 348
+ },
+ {
+  "ID": "t024",
+  "Cat": "patterns",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 355
+ },
+ {
+  "ID": "t025",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 384
+ },
+ {
+  "ID": "t026",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 382
+ },
+ {
+  "ID": "t027",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "t028",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "t029",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 399
+ },
+ {
+  "ID": "t030",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 414
+ },
+ {
+  "ID": "t031",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "t032",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 369
+ },
+ {
+  "ID": "t033",
+  "Cat": "math-in-tikz",
+  "Kind": "tikz",
+  "OK": false,
+  "Err": "! Undefined control sequence.",
+  "Ms": 323
+ },
+ {
+  "ID": "t034",
+  "Cat": "color",
+  "Kind": "tikz",
+  "OK": true,
+  "Err": "",
+  "Ms": 353
+ },
+ {
+  "ID": "m001",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 364
+ },
+ {
+  "ID": "m002",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m003",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 357
+ },
+ {
+  "ID": "m004",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 359
+ },
+ {
+  "ID": "m005",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 363
+ },
+ {
+  "ID": "m006",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m007",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 354
+ },
+ {
+  "ID": "m008",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 347
+ },
+ {
+  "ID": "m009",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m010",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 361
+ },
+ {
+  "ID": "m011",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m012",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 350
+ },
+ {
+  "ID": "m013",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 358
+ },
+ {
+  "ID": "m014",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 358
+ },
+ {
+  "ID": "m015",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 361
+ },
+ {
+  "ID": "m016",
+  "Cat": "form",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 367
+ },
+ {
+  "ID": "m017",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 369
+ },
+ {
+  "ID": "m018",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 626
+ },
+ {
+  "ID": "m019",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 383
+ },
+ {
+  "ID": "m020",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 385
+ },
+ {
+  "ID": "m021",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 379
+ },
+ {
+  "ID": "m022",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 382
+ },
+ {
+  "ID": "m023",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 363
+ },
+ {
+  "ID": "m024",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 364
+ },
+ {
+  "ID": "m025",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": false,
+  "Err": "<input>:1:942: Invalid character in tag name",
+  "Ms": 359
+ },
+ {
+  "ID": "m026",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 363
+ },
+ {
+  "ID": "m027",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 366
+ },
+ {
+  "ID": "m028",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 365
+ },
+ {
+  "ID": "m029",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 446
+ },
+ {
+  "ID": "m030",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 550
+ },
+ {
+  "ID": "m031",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 698
+ },
+ {
+  "ID": "m032",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 387
+ },
+ {
+  "ID": "m033",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 376
+ },
+ {
+  "ID": "m034",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 371
+ },
+ {
+  "ID": "m035",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 378
+ },
+ {
+  "ID": "m036",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 366
+ },
+ {
+  "ID": "m037",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 367
+ },
+ {
+  "ID": "m038",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 384
+ },
+ {
+  "ID": "m039",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! Undefined control sequence.",
+  "Ms": 542
+ },
+ {
+  "ID": "m040",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 377
+ },
+ {
+  "ID": "m041",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 357
+ },
+ {
+  "ID": "m042",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": false,
+  "Err": "crash: throw Error(\"Could not find font \" + fontname);",
+  "Ms": 0
+ },
+ {
+  "ID": "m043",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 373
+ },
+ {
+  "ID": "m044",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 358
+ },
+ {
+  "ID": "m045",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 353
+ },
+ {
+  "ID": "m046",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m047",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: Can be used only in preamble.",
+  "Ms": 307
+ },
+ {
+  "ID": "m048",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 355
+ },
+ {
+  "ID": "m049",
+  "Cat": "ams",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 360
+ },
+ {
+  "ID": "m050",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 397
+ },
+ {
+  "ID": "m051",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 367
+ },
+ {
+  "ID": "m052",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m053",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 356
+ },
+ {
+  "ID": "m054",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 370
+ },
+ {
+  "ID": "m055",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 374
+ },
+ {
+  "ID": "m056",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 371
+ },
+ {
+  "ID": "m057",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 361
+ },
+ {
+  "ID": "m058",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m059",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 362
+ },
+ {
+  "ID": "m060",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 361
+ },
+ {
+  "ID": "m061",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 363
+ },
+ {
+  "ID": "m062",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 354
+ },
+ {
+  "ID": "m063",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 365
+ },
+ {
+  "ID": "m064",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 361
+ },
+ {
+  "ID": "m065",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 360
+ },
+ {
+  "ID": "m066",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 358
+ },
+ {
+  "ID": "m067",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 357
+ },
+ {
+  "ID": "m068",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 353
+ },
+ {
+  "ID": "m069",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! Undefined control sequence.",
+  "Ms": 312
+ },
+ {
+  "ID": "m070",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 359
+ },
+ {
+  "ID": "m071",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 360
+ },
+ {
+  "ID": "m072",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 348
+ },
+ {
+  "ID": "m073",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 352
+ },
+ {
+  "ID": "m074",
+  "Cat": "core",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 355
+ },
+ {
+  "ID": "m075",
+  "Cat": "macros",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 348
+ },
+ {
+  "ID": "m076",
+  "Cat": "macros",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 347
+ },
+ {
+  "ID": "m077",
+  "Cat": "macros",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 352
+ },
+ {
+  "ID": "m078",
+  "Cat": "macros",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 357
+ },
+ {
+  "ID": "m079",
+  "Cat": "color",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 355
+ },
+ {
+  "ID": "m080",
+  "Cat": "color",
+  "Kind": "math",
+  "OK": true,
+  "Err": "",
+  "Ms": 353
+ },
+ {
+  "ID": "m081",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 176
+ },
+ {
+  "ID": "m082",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 178
+ },
+ {
+  "ID": "m083",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 171
+ },
+ {
+  "ID": "m084",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 170
+ },
+ {
+  "ID": "m085",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 178
+ },
+ {
+  "ID": "m086",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 201
+ },
+ {
+  "ID": "m087",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 167
+ },
+ {
+  "ID": "m088",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! Undefined control sequence.",
+  "Ms": 318
+ },
+ {
+  "ID": "m089",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 163
+ },
+ {
+  "ID": "m090",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "OK": false,
+  "Err": "! LaTeX Error: File `mhchem.sty' not found.",
+  "Ms": 165
+ }
+]

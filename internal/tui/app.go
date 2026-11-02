@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -17,10 +18,10 @@ import (
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/fswatch"
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // Options configure a terminal session.
@@ -85,8 +86,9 @@ type App struct {
 	markedMoveDirs map[string]string
 	boardOrder     map[string][]string
 	buffers        map[string]*noteBuffer
-	registers      helix.RegisterStore
+	registers      vim.RegisterStore
 	noteModes      map[string]paneMode
+	newNotes       map[string]bool
 	panes          *paneNode
 	activePane     *pane
 	focus          focusTarget
@@ -106,7 +108,8 @@ type App struct {
 
 	overlay  overlay
 	leader   *leaderState
-	navKeys  []helix.Key
+	navKeys  []vim.Key
+	tabSeq   []vim.Key // first key of a buffer/tab sequence typed outside the editor
 	paneKeys bool
 
 	// tagMenu is the tag completion under the cursor; tagDismissed the token
@@ -120,9 +123,11 @@ type App struct {
 	recent     []string
 	closedTabs []closedTab
 
-	message     string
-	messageErr  bool
-	toasts      []toast
+	message    string
+	messageErr bool
+	toasts     []toast
+	// toastRects are the cells the last frame's toasts were drawn over.
+	toastRects  []rect
 	nextToastID int
 
 	watcher      *fswatch.Watcher
@@ -143,6 +148,19 @@ type App struct {
 	assetPaths          map[string]string
 	previewDepth        int
 	previewPath         string
+	// latexNoticeShown is set once the current preview render has shown the
+	// missing-TeX notice, so only a note's first LaTeX block carries it.
+	latexNoticeShown bool
+
+	// cursor is where the terminal cursor belongs in the last frame drawn.
+	cursor cursorState
+	// cursorOut shapes the terminal cursor; nil when the app runs without a
+	// terminal, as in tests.
+	cursorOut *cursorOut
+	// cmdlineX is the column of the next typed character on the command
+	// line, set by renderCommandLine while a command line is open.
+	cmdlineX    int
+	cmdlineOpen bool
 
 	systemDark        bool
 	exHistory         []string
@@ -160,7 +178,7 @@ type App struct {
 
 type jumpEntry struct {
 	path string
-	pos  helix.Pos
+	pos  vim.Pos
 }
 
 type toast struct {
@@ -186,9 +204,24 @@ func Run(ctx context.Context, opts Options) error {
 	if prefs.TerminalMouse {
 		teaOpts = append(teaOpts, tea.WithMouseCellMotion())
 	}
+	return runProgram(app, os.Stdout, nil, teaOpts...)
+}
+
+// runProgram runs app on out and in with the cursor wrapper between Bubble Tea
+// and the terminal. Bubble Tea recovers panics and p.Run returns an error, so
+// the cursor is restored on every path after p.Run returns. A nil in keeps
+// Bubble Tea's own input, which opens the terminal when stdin is redirected.
+func runProgram(app *App, out cursorFile, in io.Reader, teaOpts ...tea.ProgramOption) error {
+	wrapper := newCursorOut(out)
+	app.cursorOut = wrapper
+	defer wrapper.Reset()
+	teaOpts = append([]tea.ProgramOption{tea.WithOutput(wrapper)}, teaOpts...)
+	if in != nil {
+		teaOpts = append(teaOpts, tea.WithInput(in))
+	}
 	p := tea.NewProgram(app, teaOpts...)
 	app.program = p
-	_, err = p.Run()
+	_, err := p.Run()
 	saveErr := app.shutdown()
 	if err == nil {
 		err = saveErr
@@ -213,6 +246,7 @@ func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bo
 		mouseEnabled: prefs.TerminalMouse,
 		buffers:      map[string]*noteBuffer{},
 		noteModes:    map[string]paneMode{},
+		newNotes:     map[string]bool{},
 		panes:        newPaneTree(),
 		sidebarOpen:  true,
 		sidebarWidth: 32,
@@ -311,7 +345,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, tea.Batch(configPollCmd(), a.flush())
+	case tea.ResumeMsg:
+		a.resumeCursor()
+		return a, a.flush()
 	case configEditedMsg:
+		a.resumeCursor()
 		if m.err != nil {
 			a.notifyError(m.err.Error())
 		} else if err := a.reloadPreferences(); err != nil {
@@ -469,6 +507,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.invalidatePreviews()
 		return a, a.flush()
 	case editorDoneMsg:
+		a.resumeCursor()
 		a.finishExternalEdit(m)
 		return a, a.flush()
 	case leaderHintMsg:
@@ -488,7 +527,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.Type == tea.KeyRunes && len(m.Runes) > 1 && !m.Alt {
 			var cmds []tea.Cmd
 			for _, r := range m.Runes {
-				if cmd := a.handleKey(helix.Key{Rune: r}); cmd != nil {
+				if cmd := a.handleKey(vim.Key{Rune: r}); cmd != nil {
 					cmds = append(cmds, cmd)
 				}
 			}
@@ -711,6 +750,10 @@ func (a *App) View() string {
 	if len(a.toasts) > 0 {
 		screen = a.renderToasts(screen)
 	}
+	a.cursor = a.computeCursor()
+	if a.cursorOut != nil {
+		a.cursorOut.Set(a.cursor)
+	}
 	return a.theme.paint(screen)
 }
 
@@ -794,9 +837,9 @@ func (a *App) renderEmptyPane(w, h int) string {
 		"",
 		th.KeyHint.Render(padRight(a.keyOf("global.searchNotes"), 10)) + th.Base.Render("search notes"),
 		th.KeyHint.Render(padRight(a.keyOf("global.newNoteHere"), 10)) + th.Base.Render("new note"),
-		th.KeyHint.Render(padRight(a.keyOf("helix.leaderPrefix")+" d", 10)) + th.Base.Render("today's daily note"),
-		th.KeyHint.Render(padRight(a.keyOf("helix.leaderPrefix")+" q", 10)) + th.Base.Render("quick capture"),
-		th.KeyHint.Render(padRight(a.keyOf("helix.leaderPrefix")+" x", 10)) + th.Base.Render("tasks"),
+		th.KeyHint.Render(padRight(a.keyOf("vim.leaderPrefix")+" d", 10)) + th.Base.Render("today's daily note"),
+		th.KeyHint.Render(padRight(a.keyOf("vim.leaderPrefix")+" q", 10)) + th.Base.Render("quick capture"),
+		th.KeyHint.Render(padRight(a.keyOf("vim.leaderPrefix")+" x", 10)) + th.Base.Render("tasks"),
 		th.KeyHint.Render(padRight(":help", 10)) + th.Base.Render("the manual"),
 	}
 	if len(a.recent) > 0 {
@@ -854,8 +897,8 @@ func (a *App) renderStatusBar() string {
 	suffix := ""
 	modeStyle := t.StatusMode
 	if buf := a.activeBuffer(); buf != nil && a.focus == focusPane {
-		if a.prefs.HelixMode {
-			mode = buf.ed.ModeLabel()
+		if a.prefs.VimMode {
+			mode = modeLabel(buf.ed)
 		} else {
 			mode = "EDIT"
 		}
@@ -901,7 +944,9 @@ func (a *App) renderStatusBar() string {
 	if a.leader != nil {
 		suffix = "SPC " + a.leader.pendingLabel()
 	} else if len(a.navKeys) > 0 {
-		suffix = helix.KeysString(a.navKeys)
+		suffix = vim.KeysString(a.navKeys)
+	} else if len(a.tabSeq) > 0 {
+		suffix = vim.KeysString(a.tabSeq)
 	} else if a.paneKeys {
 		suffix = "^W"
 	}
@@ -1007,6 +1052,7 @@ func (a *App) vaultLabel() string {
 
 func (a *App) renderCommandLine() string {
 	t := a.theme
+	a.cmdlineOpen = false
 	if buf := a.activeBuffer(); buf != nil && a.focus == focusPane {
 		if kind, text, cursor, active := buf.ed.Cmdline(); active {
 			runes := []rune(text)
@@ -1015,7 +1061,8 @@ func (a *App) renderCommandLine() string {
 			if cursor < len(runes) {
 				after = string(runes[cursor:])
 			}
-			line := string(kind) + before + t.Cursor.Render(firstCellOr(after, " ")) + restAfterFirst(after)
+			a.cmdlineX, a.cmdlineOpen = min(cellWidth(string(kind)+before), max(0, a.width-1)), true
+			line := string(kind) + before + after
 			if comps, idx := buf.ed.Completions(); len(comps) > 0 {
 				line += "   " + a.renderWildmenu(comps, idx)
 			}
@@ -1037,21 +1084,6 @@ func (a *App) renderCommandLine() string {
 	return padRight(t.Muted.Render(a.hintLine()), a.width)
 }
 
-func firstCellOr(s, fallback string) string {
-	if s == "" {
-		return fallback
-	}
-	return string([]rune(s)[0])
-}
-
-func restAfterFirst(s string) string {
-	r := []rune(s)
-	if len(r) <= 1 {
-		return ""
-	}
-	return string(r[1:])
-}
-
 func (a *App) renderWildmenu(comps []string, idx int) string {
 	parts := []string{}
 	for i, c := range comps {
@@ -1071,6 +1103,7 @@ func (a *App) renderWildmenu(comps []string, idx int) string {
 func (a *App) renderToasts(screen string) string {
 	lines := strings.Split(screen, "\n")
 	row := 1
+	a.toastRects = a.toastRects[:0]
 	for _, t := range a.toasts {
 		style := a.theme.Overlay
 		if t.isErr {
@@ -1080,13 +1113,17 @@ func (a *App) renderToasts(screen string) string {
 		blockLines := strings.Split(block, "\n")
 		bw := lipgloss.Width(block)
 		left := max(0, a.width-bw-2)
+		drawn := 0
 		for i, bl := range blockLines {
 			if row+i >= len(lines)-2 {
 				break
 			}
 			orig := lines[row+i]
 			lines[row+i] = padRight(truncateAnsi(orig, left), left) + bl
+			drawn++
 		}
+		// The rest of each row past the toast is cut off too.
+		a.toastRects = append(a.toastRects, rect{x: left, y: row, w: max(0, a.width-left), h: drawn})
 		row += len(blockLines)
 	}
 	return strings.Join(lines, "\n")

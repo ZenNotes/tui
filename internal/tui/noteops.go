@@ -11,11 +11,11 @@ import (
 
 	"github.com/atotto/clipboard"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // createNote makes a note and opens it.
@@ -25,14 +25,17 @@ func (a *App) createNote(folder vault.NoteFolder, title, subpath string, body *s
 		a.notifyError(err.Error())
 		return
 	}
+	if open {
+		a.markNewNote(meta.Path)
+	}
 	a.ignoreChange(meta.Path)
 	a.addNoteToIndex(meta)
 	if open {
 		a.openNote(meta.Path, true)
 		a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) {
 			buf.ed.GotoLine(buf.ed.LineCount())
-			if a.prefs.HelixMode {
-				buf.ed.HandleKey(helix.R('A'))
+			if a.prefs.VimMode {
+				buf.ed.HandleKey(vim.R('A'))
 			}
 		})
 	}
@@ -602,6 +605,7 @@ func (a *App) openPeriodicOn(kind periodic.Kind, date time.Time) {
 	if kind == periodic.Daily {
 		a.rolloverUnfinishedTasks(meta.Path, date)
 	}
+	a.markNewNote(meta.Path)
 	a.openNote(meta.Path, true)
 	a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.GotoLine(buf.ed.LineCount()) })
 	a.refreshIndex()
@@ -675,6 +679,7 @@ func (a *App) createFromTemplate(t templates.Template) {
 		}
 		a.ignoreChange(meta.Path)
 		a.addNoteToIndex(meta)
+		a.markNewNote(meta.Path)
 		a.openNote(meta.Path, true)
 		if rendered.CursorOffset >= 0 {
 			a.withLoadedBuffer(meta.Path, func(buf *noteBuffer) { buf.ed.SetCursor(posForOffset(buf.ed.Text(), rendered.CursorOffset)) })
@@ -697,7 +702,7 @@ func (a *App) insertTemplate(t templates.Template) {
 }
 
 // posForOffset maps a rune offset to a position.
-func posForOffset(text string, offset int) helix.Pos {
+func posForOffset(text string, offset int) vim.Pos {
 	line, col := 0, 0
 	for i, r := range []rune(text) {
 		if i == offset {
@@ -710,7 +715,7 @@ func posForOffset(text string, offset int) helix.Pos {
 			col++
 		}
 	}
-	return helix.Pos{Line: line, Col: col}
+	return vim.Pos{Line: line, Col: col}
 }
 
 // --- folders ---
@@ -838,11 +843,14 @@ func (a *App) openNoteSearch(initial string) {
 		if a.idx == nil {
 			return nil
 		}
+		// The template folder's notes stay out, as in the desktop's Search
+		// notes, until the query starts with the folder's path (#1024).
+		templateFolder := a.idx.settings.TemplateFolder
 		var notes []vault.NoteMeta
 		if strings.TrimSpace(query) == "" {
 			seen := map[string]bool{}
 			for _, r := range a.recent {
-				if meta, ok := a.noteMeta(r); ok && !seen[r] {
+				if meta, ok := a.noteMeta(r); ok && !seen[r] && !vault.IsPathInTemplateFolder(r, templateFolder) {
 					seen[r] = true
 					notes = append(notes, meta)
 				}
@@ -851,13 +859,13 @@ func (a *App) openNoteSearch(initial string) {
 				if len(notes) >= 30 {
 					break
 				}
-				if !seen[n.Path] {
+				if !seen[n.Path] && !vault.IsPathInTemplateFolder(n.Path, templateFolder) {
 					seen[n.Path] = true
 					notes = append(notes, n)
 				}
 			}
 		} else {
-			notes = search.Notes(a.idx.search, query, 50, false)
+			notes = search.Notes(a.idx.search, query, 50, false, templateFolder)
 		}
 		items := make([]paletteItem, 0, len(notes))
 		for _, n := range notes {
@@ -901,7 +909,9 @@ func (a *App) openTextSearch(initial string) {
 
 // openNoteQuiet opens a note without recording a jump.
 func (a *App) openNoteQuiet(path string) {
+	a.forgetEmbedTimeouts()
 	pane := a.activePane
+	justCreated := a.consumeNewNote(path)
 	if idx := pane.findTab(path); idx >= 0 {
 		pane.active = idx
 		return
@@ -914,8 +924,15 @@ func (a *App) openNoteQuiet(path string) {
 	if mode == "" {
 		mode = modeEdit
 	}
-	pane.tabs = append(pane.tabs, &tab{path: path, mode: mode})
+	if justCreated {
+		mode = modeEdit
+	}
+	t := &tab{path: path, mode: mode}
+	pane.tabs = append(pane.tabs, t)
 	pane.active = len(pane.tabs) - 1
+	if !justCreated {
+		a.watchFrontmatterMode(t)
+	}
 	a.touchRecent(path)
 	a.markSessionDirty()
 }
@@ -925,7 +942,7 @@ func (a *App) openNoteQuiet(path string) {
 // note inserts its title and steps past the closing brackets auto-pairs
 // added.
 func (a *App) maybeWikilinkCompletion(buf *noteBuffer) {
-	if buf.ed.Mode() != helix.ModeInsert {
+	if buf.ed.Mode() != vim.ModeInsert {
 		return
 	}
 	cur := buf.ed.Cursor()
@@ -949,7 +966,7 @@ func (a *App) openWikilinkPicker(buf *noteBuffer) {
 		case opened && closed:
 			buf.ed.InsertAtCursor(title)
 			c := buf.ed.Cursor()
-			buf.ed.SetCursor(helix.Pos{Line: c.Line, Col: c.Col + 2})
+			buf.ed.SetCursor(vim.Pos{Line: c.Line, Col: c.Col + 2})
 		case opened:
 			buf.ed.InsertAtCursor(title + "]]")
 		default:

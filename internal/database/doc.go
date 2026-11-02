@@ -438,6 +438,32 @@ func (d *Doc) AddRow() Row {
 	return row
 }
 
+// AddRowInView appends an empty row while viewID is the view being looked
+// at. A view whose schema.json entry has a pickedRowIds list shows only
+// those rows in the app, so the new row joins that list, or it would be
+// missing from the view it was added in; picksChanged then says schema.json
+// changed too, since a rows-only write leaves it alone. Other views keep
+// their picks: a curated view nobody is looking at does not collect every
+// row added elsewhere. Mirrors addRowInView in the app's shared-domain
+// database-records.ts: the TUI passes the view on screen, `zn base add` the
+// database's active view.
+func (d *Doc) AddRowInView(viewID string) (row Row, picksChanged bool) {
+	row = d.AddRow()
+	view := d.viewObject(viewID)
+	if view == nil {
+		return row, false
+	}
+	value, _ := view.Get("pickedRowIds")
+	picked, ok := value.([]any)
+	if !ok {
+		return row, false
+	}
+	next := make([]any, 0, len(picked)+1)
+	next = append(append(next, picked...), row.ID)
+	view.Set("pickedRowIds", next)
+	return row, true
+}
+
 // DeleteRow removes a row.
 func (d *Doc) DeleteRow(rowID string) {
 	out := d.Rows[:0]

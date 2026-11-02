@@ -8,6 +8,11 @@ behavior fixtures from `ZenNotes/zennotes`, not another repository's source tree
 - `internal/remote/testdata/self-hosted-http.json` covers authentication, note
   metadata, exact Unicode/whitespace, missing resources and invalid paths at both
   `/` and `/notes`.
+- `internal/mcp/testdata/mcp-scope.json` covers scoped MCP access (#21): flag
+  validation, the tools each scope lists and their annotations, every tool's
+  answer for shared, hidden, symlinked, case- and accent-variant paths in root,
+  inbox and remapped vaults, and what is on disk afterwards. The desktop's
+  bundled MCP server runs the same cases.
 - Adjacent `.source.json` files record each upstream path and SHA-256. Tests
   verify the checked-in bytes before interpreting the contract.
 

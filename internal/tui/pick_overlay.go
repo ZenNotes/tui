@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // pickItem is one checkable entry of a pickOverlay.
@@ -24,6 +24,7 @@ type pickOverlay struct {
 	title       string
 	placeholder string
 	input       textInput
+	cur         cursorState
 	items       []pickItem
 	source      func(a *App, query string) []pickItem
 	checked     map[string]bool
@@ -145,7 +146,7 @@ func (p *pickOverlay) toggleCurrent() {
 	}
 }
 
-func (p *pickOverlay) handleKey(a *App, k helix.Key) {
+func (p *pickOverlay) handleKey(a *App, k vim.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsCtrl('['):
 		a.overlay = nil
@@ -177,6 +178,8 @@ func (p *pickOverlay) handleKey(a *App, k helix.Key) {
 	}
 }
 
+func (p *pickOverlay) fieldCursor() cursorState { return p.cur }
+
 func (p *pickOverlay) render(a *App, w, h int) string {
 	th := a.theme
 	width := min(w-4, max(44, w*2/3))
@@ -190,9 +193,11 @@ func (p *pickOverlay) render(a *App, w, h int) string {
 	}
 	lines := []string{th.OverlayTitle.Render(p.title)}
 	prompt := "› "
-	lines = append(lines, prompt+p.input.render(th, inner-cellWidth(prompt)))
+	fieldW := inner - cellWidth(prompt)
+	lines = append(lines, prompt+p.input.render(fieldW))
+	p.cur = a.fieldAt(cellWidth(prompt)+p.input.cell(fieldW), titleRows(p.title, inner))
 	if p.input.String() == "" && p.placeholder != "" {
-		lines[len(lines)-1] = prompt + th.Cursor.Render(" ") + th.Muted.Render(padRight(p.placeholder, inner-3))
+		lines[len(lines)-1] = prompt + " " + th.Muted.Render(padRight(p.placeholder, inner-3))
 	}
 	lines = append(lines, th.Muted.Render(strings.Repeat("─", inner)))
 	if len(p.filtered) == 0 {

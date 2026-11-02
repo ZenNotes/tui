@@ -87,7 +87,11 @@ type VaultSettings struct {
 	// TasksIncludedFolders, the Task folders (#962), narrow Tasks to the
 	// notes inside them. Empty means the whole vault.
 	TasksIncludedFolders []string
-	TypstPreambleFolder  string
+	// TemplateFolder is `templates.folder` (#1024), a vault-relative path as
+	// it is on disk; "" when the vault has none. Its notes stay out of Tasks
+	// and text search; see template_folder.go.
+	TemplateFolder      string
+	TypstPreambleFolder string
 	// Raw is the decoded file, kept so a targeted write can preserve every
 	// key this process does not model.
 	Raw map[string]any
@@ -188,6 +192,7 @@ func normalizeVaultSettings(raw map[string]any) VaultSettings {
 		s.TasksExcludedFolders = NormalizeTasksExcludedFolders(stringsOf(tasks["excludedFolders"]))
 		s.TasksIncludedFolders = NormalizeTasksExcludedFolders(stringsOf(tasks["includedFolders"]))
 	}
+	s.TemplateFolder = templateFolderOf(raw)
 	if typst := mapOf(raw["typstPreambles"]); typst != nil {
 		if folder := normalizeTypstPreambleFolder(stringOf(typst["folder"])); folder != "" {
 			s.TypstPreambleFolder = folder
@@ -367,6 +372,22 @@ func SystemFolderForDirName(name string, paths map[string]string) (NoteFolder, b
 	return "", false
 }
 
+// IsReservedRootName reports whether a top-level name is kept out of the
+// root-mode note tree: an asset or internal directory, or the resolved
+// directory of any system folder. Case-insensitive, unlike the walkers'
+// exact skip list, because it guards names a client typed: on a
+// case-insensitive volume `Attachements/` is the attachments directory.
+func IsReservedRootName(name string, paths map[string]string) bool {
+	lower := strings.ToLower(name)
+	for reserved := range reservedNonSystemRootNames {
+		if strings.ToLower(reserved) == lower {
+			return true
+		}
+	}
+	_, system := SystemFolderForDirName(name, paths)
+	return system
+}
+
 // --- tasks folder lists (mirrors shared-domain/tasks-excluded-folders.ts) ---
 // The excluded folders (#458) and the Task folders (#962) share one set of
 // validation rules; keep them byte-compatible with the desktop and the server.
@@ -454,25 +475,64 @@ func listHasFolder(list []string, rel string) bool {
 	return false
 }
 
-// rewriteTasksFoldersForRename keeps the vault's Tasks folder lists naming the
-// same folders after a rename or move, writing vault.json only when an entry
-// moves. Mirrors rewriteTasksFoldersForRename in tasks-excluded-folders.ts.
-func (v *Vault) rewriteTasksFoldersForRename(oldRel, newRel string) error {
+// rewriteFolderKeyedMap repoints a `<bucket>:<subpath>` keyed map (the folder
+// icons and colors) at a renamed folder and everything inside it. Mirrors
+// rewriteFolderIconsForRename in the desktop's main/vault.ts; an entry that
+// moves wins over a stale one already at its new key.
+func rewriteFolderKeyedMap(m map[string]any, folder NoteFolder, oldSub, newSub string) (map[string]any, bool) {
+	exact := string(folder) + ":" + oldSub
+	moved := map[string]any{}
+	next := make(map[string]any, len(m))
+	for key, value := range m {
+		if key == exact || strings.HasPrefix(key, exact+"/") {
+			moved[string(folder)+":"+newSub+key[len(exact):]] = value
+			continue
+		}
+		next[key] = value
+	}
+	if len(moved) == 0 {
+		return m, false
+	}
+	for key, value := range moved {
+		next[key] = value
+	}
+	return next, true
+}
+
+// rewriteSettingsForFolderRename keeps vault.json's path-keyed settings naming
+// the same folders after a rename or move: the Tasks folder lists, which hold
+// vault-relative paths (mirrors rewriteTasksFoldersForRename in
+// tasks-excluded-folders.ts), the template folder, another such path
+// (rewriteTemplateFolderForRename), and the folder icons and colors, keyed by
+// bucket and subpath, as desktop main and the server rewrite them. vault.json
+// is written only when an entry moves.
+func (v *Vault) rewriteSettingsForFolderRename(folder NoteFolder, oldSub, newSub, oldRel, newRel string) error {
 	if oldRel == "" || newRel == "" || oldRel == newRel {
 		return nil
 	}
 	s := v.Settings()
-	if !listHasFolder(s.TasksExcludedFolders, oldRel) && !listHasFolder(s.TasksIncludedFolders, oldRel) {
+	tasksMove := listHasFolder(s.TasksExcludedFolders, oldRel) || listHasFolder(s.TasksIncludedFolders, oldRel)
+	templateFolder := rewriteTemplateFolderForRename(s.TemplateFolder, oldRel, newRel)
+	_, iconsMove := rewriteFolderKeyedMap(mapOf(s.Raw["folderIcons"]), folder, oldSub, newSub)
+	_, colorsMove := rewriteFolderKeyedMap(mapOf(s.Raw["folderColors"]), folder, oldSub, newSub)
+	if !tasksMove && templateFolder == s.TemplateFolder && !iconsMove && !colorsMove {
 		return nil
 	}
 	return v.UpdateSettings(func(raw map[string]any) {
-		tasks, _ := raw["tasks"].(map[string]any)
-		if tasks == nil {
-			return
+		if tasks, _ := raw["tasks"].(map[string]any); tasks != nil {
+			for _, key := range []string{"excludedFolders", "includedFolders"} {
+				if list := NormalizeTasksExcludedFolders(stringsOf(tasks[key])); len(list) > 0 {
+					tasks[key] = rewriteFolderList(list, oldRel, newRel)
+				}
+			}
 		}
-		for _, key := range []string{"excludedFolders", "includedFolders"} {
-			if list := NormalizeTasksExcludedFolders(stringsOf(tasks[key])); len(list) > 0 {
-				tasks[key] = rewriteFolderList(list, oldRel, newRel)
+		// Only the folder is replaced; anything else under `templates` stays.
+		if templates, _ := raw["templates"].(map[string]any); templates != nil && templateFolder != s.TemplateFolder {
+			templates["folder"] = templateFolder
+		}
+		for _, key := range []string{"folderIcons", "folderColors"} {
+			if next, changed := rewriteFolderKeyedMap(mapOf(raw[key]), folder, oldSub, newSub); changed {
+				raw[key] = next
 			}
 		}
 	})

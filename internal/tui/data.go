@@ -73,7 +73,7 @@ func (a *App) loadIndexCmd() tea.Cmd {
 		idx.folders = folders
 		idx.settings = settings
 		idx.primary = desc.PrimaryNotesLocation
-		idx.tags = countTags(notes)
+		idx.tags = countTags(notes, settings.TemplateFolder)
 		idx.search = search.Index(notes)
 		idx.loadedAt = time.Now()
 		return indexLoadedMsg{epoch: epoch, idx: idx}
@@ -88,10 +88,13 @@ func (a *App) loadTasksCmd() tea.Cmd {
 	}
 }
 
-func countTags(notes []vault.NoteMeta) []tagCount {
+// countTags tallies the tags of live notes. A note in the template folder
+// contributes none (ZenNotes/zennotes#1024): the Tags view, the sidebar and
+// every tag picker read this list.
+func countTags(notes []vault.NoteMeta, templateFolder string) []tagCount {
 	counts := map[string]int{}
 	for _, n := range notes {
-		if n.Folder == vault.FolderTrash {
+		if n.Folder == vault.FolderTrash || vault.IsPathInTemplateFolder(n.Path, templateFolder) {
 			continue
 		}
 		for _, t := range n.Tags {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
-	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // newTagTestApp opens Draft.md in a vault whose other notes carry tags:
@@ -54,7 +54,7 @@ func newTagTestApp(t *testing.T, prefs config.Prefs, draft string) (*App, *noteB
 	return a, buf
 }
 
-func feed(a *App, keys ...helix.Key) {
+func feed(a *App, keys ...vim.Key) {
 	for _, k := range keys {
 		a.handleKey(k)
 	}
@@ -62,7 +62,7 @@ func feed(a *App, keys ...helix.Key) {
 
 func typeKeys(a *App, text string) {
 	for _, r := range text {
-		a.handleKey(helix.R(r))
+		a.handleKey(vim.R(r))
 	}
 }
 
@@ -80,13 +80,13 @@ func menuTags(a *App) string {
 
 func vimPrefs() config.Prefs {
 	p := config.DefaultPrefs()
-	p.HelixInsertEscape = ""
+	p.VimInsertEscape = ""
 	return p
 }
 
 func TestTypingAHashOffersTheVaultsTags(t *testing.T) {
 	a, buf := newTagTestApp(t, vimPrefs(), "# Draft\n\n")
-	feed(a, helix.R('G'), helix.R('o'))
+	feed(a, vim.R('G'), vim.R('o'))
 	typeKeys(a, "see #")
 	if got := menuTags(a); got != "" {
 		t.Fatalf("a bare # must stay quiet (it may become a heading), got %q", got)
@@ -100,7 +100,7 @@ func TestTypingAHashOffersTheVaultsTags(t *testing.T) {
 	if !strings.Contains(a.View(), "#archived-project") {
 		t.Fatal("the menu is not on screen")
 	}
-	feed(a, helix.Key{Rune: 'n', Ctrl: true}, helix.Key{Name: "enter"})
+	feed(a, vim.Key{Rune: 'n', Ctrl: true}, vim.Key{Name: "enter"})
 	if got := buf.ed.Line(3); got != "see #prose" {
 		t.Fatalf("accepted line %q", got)
 	}
@@ -108,10 +108,10 @@ func TestTypingAHashOffersTheVaultsTags(t *testing.T) {
 		t.Fatal("the menu should close after a pick")
 	}
 	// Still in insert mode, and the pick undoes together with the typing.
-	if buf.ed.Mode() != helix.ModeInsert {
+	if buf.ed.Mode() != vim.ModeInsert {
 		t.Fatalf("mode after pick: %v", buf.ed.Mode())
 	}
-	feed(a, helix.KeyEsc, helix.R('u'))
+	feed(a, vim.KeyEsc, vim.R('u'))
 	if buf.ed.LineCount() != 3 {
 		t.Fatalf("undo left %q", buf.ed.Text())
 	}
@@ -121,9 +121,9 @@ func TestTagMenuMatchesTheDesktopsRules(t *testing.T) {
 	a, buf := newTagTestApp(t, vimPrefs(), "---\ntags: [x]\n---\n# Draft #\n\n```\n#\n```\nurl.com/#\n`#`\n\n")
 	at := func(line int, typed string) string {
 		t.Helper()
-		feed(a, helix.KeyEsc)
-		buf.ed.SetCursor(helix.Pos{Line: line, Col: 0})
-		feed(a, helix.R('A'))
+		feed(a, vim.KeyEsc)
+		buf.ed.SetCursor(vim.Pos{Line: line, Col: 0})
+		feed(a, vim.R('A'))
 		typeKeys(a, typed)
 		return menuTags(a)
 	}
@@ -132,9 +132,9 @@ func TestTagMenuMatchesTheDesktopsRules(t *testing.T) {
 			t.Fatalf("%s offered %q", name, got)
 		}
 	}
-	feed(a, helix.KeyEsc)
-	buf.ed.SetCursor(helix.Pos{Line: 9, Col: 1})
-	feed(a, helix.R('a'))
+	feed(a, vim.KeyEsc)
+	buf.ed.SetCursor(vim.Pos{Line: 9, Col: 1})
+	feed(a, vim.R('a'))
 	typeKeys(a, "pro")
 	if got := menuTags(a); got != "" {
 		t.Fatalf("inline code offered %q", got)
@@ -155,32 +155,32 @@ func TestTagMenuMatchesTheDesktopsRules(t *testing.T) {
 
 func TestTagMenuKeysAndDismissal(t *testing.T) {
 	a, buf := newTagTestApp(t, vimPrefs(), "\n")
-	feed(a, helix.R('i'))
+	feed(a, vim.R('i'))
 	typeKeys(a, "#pro")
 	// Ctrl-E closes the menu and keeps it closed while the token grows.
-	feed(a, helix.Key{Rune: 'e', Ctrl: true})
+	feed(a, vim.Key{Rune: 'e', Ctrl: true})
 	typeKeys(a, "j")
 	if a.liveTagMenu() != nil || buf.ed.Line(0) != "#proj" {
 		t.Fatalf("after Ctrl-E: menu=%v line=%q", a.liveTagMenu() != nil, buf.ed.Line(0))
 	}
 	// A new token opens it again; Tab accepts; Ctrl-P wraps to the end.
 	typeKeys(a, " #pro")
-	feed(a, helix.Key{Rune: 'p', Ctrl: true}, helix.KeyTab)
+	feed(a, vim.Key{Rune: 'p', Ctrl: true}, vim.KeyTab)
 	if got := buf.ed.Line(0); got != "#proj #archived-project" {
 		t.Fatalf("Ctrl-P then Tab: %q", got)
 	}
 	// Esc leaves insert mode and takes the menu with it, as Vim's does.
 	typeKeys(a, " #pro")
-	feed(a, helix.KeyEsc)
-	if a.liveTagMenu() != nil || buf.ed.Mode() != helix.ModeNormal {
+	feed(a, vim.KeyEsc)
+	if a.liveTagMenu() != nil || buf.ed.Mode() != vim.ModeNormal {
 		t.Fatalf("after Esc: menu=%v mode=%v", a.liveTagMenu() != nil, buf.ed.Mode())
 	}
 }
 
 func TestCtrlXCtrlOOpensTheMenuOnDemand(t *testing.T) {
 	a, buf := newTagTestApp(t, vimPrefs(), "\n")
-	ctrl := func(r rune) helix.Key { return helix.Key{Rune: r, Ctrl: true} }
-	feed(a, helix.R('i'))
+	ctrl := func(r rune) vim.Key { return vim.Key{Rune: r, Ctrl: true} }
+	feed(a, vim.R('i'))
 	// Nothing typed: every tag, most used first.
 	feed(a, ctrl('x'), ctrl('o'))
 	if got := menuTags(a); got != "project,archived-project,Idea,prose,work/deep" {
@@ -206,28 +206,28 @@ func TestCtrlXCtrlOOpensTheMenuOnDemand(t *testing.T) {
 
 func TestFrontmatterTagsCompleteWithoutTheHash(t *testing.T) {
 	a, buf := newTagTestApp(t, vimPrefs(), "---\ntags: [idea, ]\nrelated:\n  - x\ntags:\n  - \n---\n")
-	buf.ed.SetCursor(helix.Pos{Line: 1, Col: 12})
-	feed(a, helix.R('a'))
+	buf.ed.SetCursor(vim.Pos{Line: 1, Col: 12})
+	feed(a, vim.R('a'))
 	typeKeys(a, "pro")
 	if got := menuTags(a); got != "project,prose,archived-project" {
 		t.Fatalf("inline list: %q", got)
 	}
-	feed(a, helix.Key{Name: "enter"})
+	feed(a, vim.Key{Name: "enter"})
 	if got := buf.ed.Line(1); got != "tags: [idea, project]" {
 		t.Fatalf("inline list accepted: %q", got)
 	}
-	feed(a, helix.KeyEsc)
-	buf.ed.SetCursor(helix.Pos{Line: 5, Col: 3})
-	feed(a, helix.R('a'))
+	feed(a, vim.KeyEsc)
+	buf.ed.SetCursor(vim.Pos{Line: 5, Col: 3})
+	feed(a, vim.R('a'))
 	typeKeys(a, "wo")
-	feed(a, helix.KeyTab)
+	feed(a, vim.KeyTab)
 	if got := buf.ed.Line(5); got != "  - work/deep" {
 		t.Fatalf("block list accepted: %q", got)
 	}
 	// A list under another key is not a tag list.
-	feed(a, helix.KeyEsc)
-	buf.ed.SetCursor(helix.Pos{Line: 3, Col: 4})
-	feed(a, helix.R('a'))
+	feed(a, vim.KeyEsc)
+	buf.ed.SetCursor(vim.Pos{Line: 3, Col: 4})
+	feed(a, vim.R('a'))
 	typeKeys(a, "pro")
 	if got := menuTags(a); got != "" {
 		t.Fatalf("list under related: offered %q", got)
@@ -236,14 +236,14 @@ func TestFrontmatterTagsCompleteWithoutTheHash(t *testing.T) {
 
 func TestTagMenuWorksWithoutVimMode(t *testing.T) {
 	prefs := vimPrefs()
-	prefs.HelixMode = false
+	prefs.VimMode = false
 	a, buf := newTagTestApp(t, prefs, "\n")
 	typeKeys(a, "#wor")
 	if got := menuTags(a); got != "work/deep" {
 		t.Fatalf("plain editing: %q", got)
 	}
 	// Esc only closes the menu here: there is no mode to leave.
-	feed(a, helix.KeyEsc)
+	feed(a, vim.KeyEsc)
 	if a.liveTagMenu() != nil {
 		t.Fatal("Esc should close the menu")
 	}
@@ -252,7 +252,7 @@ func TestTagMenuWorksWithoutVimMode(t *testing.T) {
 		t.Fatal("a dismissed token stays quiet")
 	}
 	typeKeys(a, " #dee")
-	feed(a, helix.Key{Name: "enter"})
+	feed(a, vim.Key{Name: "enter"})
 	if got := buf.ed.Line(0); got != "#work #work/deep" {
 		t.Fatalf("accepted: %q", got)
 	}

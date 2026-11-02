@@ -1,0 +1,750 @@
+{
+ "math": [
+  {
+   "id": "m001",
+   "cat": "form",
+   "kind": "math",
+   "src": "$$ x^2 + y^2 = z^2 $$"
+  },
+  {
+   "id": "m002",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\[ \\int_0^1 x^2\\,dx = \\tfrac13 \\]"
+  },
+  {
+   "id": "m003",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{equation} E = mc^2 \\end{equation}"
+  },
+  {
+   "id": "m004",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{equation*} E = mc^2 \\end{equation*}"
+  },
+  {
+   "id": "m005",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{align} a &= b + c \\\\ d &= e \\end{align}"
+  },
+  {
+   "id": "m006",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{align*} a &= b + c \\\\ d &= e \\end{align*}"
+  },
+  {
+   "id": "m007",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{gather} x = 1 \\\\ yy = 22 \\end{gather}"
+  },
+  {
+   "id": "m008",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{gather*} x = 1 \\\\ yy = 22 \\end{gather*}"
+  },
+  {
+   "id": "m009",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{multline} a + b + c \\\\ + d + e \\end{multline}"
+  },
+  {
+   "id": "m010",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{multline*} a + b + c \\\\ + d + e \\end{multline*}"
+  },
+  {
+   "id": "m011",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{alignat}{2} x &= y & \\quad a &= b \\\\ x' &= y' & a' &= b' \\end{alignat}"
+  },
+  {
+   "id": "m012",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{alignat*}{2} x &= y & \\quad a &= b \\end{alignat*}"
+  },
+  {
+   "id": "m013",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{flalign} x &= y & a &= b \\end{flalign}"
+  },
+  {
+   "id": "m014",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{flalign*} x &= y & a &= b \\end{flalign*}"
+  },
+  {
+   "id": "m015",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{eqnarray} a &=& b \\\\ c &=& d \\end{eqnarray}"
+  },
+  {
+   "id": "m016",
+   "cat": "form",
+   "kind": "math",
+   "src": "\\begin{eqnarray*} a &=& b \\end{eqnarray*}"
+  },
+  {
+   "id": "m017",
+   "cat": "ams",
+   "kind": "math",
+   "src": "\\begin{equation} \\begin{split} a &= b + c \\\\ &= d \\end{split} \\end{equation}"
+  },
+  {
+   "id": "m018",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ f(x) = \\begin{cases} x & x > 0 \\\\ -x & \\text{otherwise} \\end{cases} $$"
+  },
+  {
+   "id": "m019",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\begin{aligned} a &= 1 \\\\ b &= 2 \\end{aligned} \\qquad \\begin{gathered} c \\\\ dd \\end{gathered} $$"
+  },
+  {
+   "id": "m020",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix} \\begin{bmatrix} 1 \\\\ 2 \\end{bmatrix} \\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix} $$"
+  },
+  {
+   "id": "m021",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\begin{Vmatrix} a \\end{Vmatrix} \\begin{Bmatrix} a \\end{Bmatrix} \\begin{matrix} a & b \\end{matrix} \\left(\\begin{smallmatrix} a & b \\\\ c & d \\end{smallmatrix}\\right) $$"
+  },
+  {
+   "id": "m022",
+   "cat": "ams",
+   "kind": "math",
+   "src": "\\begin{align} a &= b \\tag{A} \\\\ c &= d \\notag \\\\ e &= f \\nonumber \\end{align}"
+  },
+  {
+   "id": "m023",
+   "cat": "ams",
+   "kind": "math",
+   "src": "\\begin{equation} x = y \\tag*{(star)} \\end{equation}"
+  },
+  {
+   "id": "m024",
+   "cat": "ams",
+   "kind": "math",
+   "src": "\\begin{align} a &= b \\\\ \\intertext{and so} c &= d \\end{align}"
+  },
+  {
+   "id": "m025",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\sum_{\\substack{0 < i < m \\\\ 0 < j < n}} P(i,j) $$"
+  },
+  {
+   "id": "m026",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\overset{!}{=} \\quad \\underset{x}{\\arg\\max} \\quad \\stackrel{\\text{def}}{=} $$"
+  },
+  {
+   "id": "m027",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ A \\xrightarrow[\\text{below}]{\\text{above}} B \\xleftarrow{f} C $$"
+  },
+  {
+   "id": "m028",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\boxed{E = mc^2} $$"
+  },
+  {
+   "id": "m029",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\frac{a}{b} \\dfrac{a}{b} \\tfrac{a}{b} \\cfrac{1}{1+\\cfrac{1}{x}} $$"
+  },
+  {
+   "id": "m030",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\binom{n}{k} \\dbinom{n}{k} \\tbinom{n}{k} \\genfrac{[}{]}{0pt}{}{n}{k} $$"
+  },
+  {
+   "id": "m031",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\operatorname{sgn}(x) \\quad \\operatorname*{arg\\,min}_x f(x) $$"
+  },
+  {
+   "id": "m032",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\iint_D \\iiint_V \\iiiint \\idotsint \\oint_C $$"
+  },
+  {
+   "id": "m033",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ a_1, \\dotsc, a_n \\quad a_1 + \\dotsb + a_n \\quad \\dotsm \\quad \\dotsi \\quad \\dotso $$"
+  },
+  {
+   "id": "m034",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ a \\bmod b \\quad a \\pmod{n} \\quad a \\mod{n} \\quad a \\pod{n} $$"
+  },
+  {
+   "id": "m035",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\overbrace{a+b}^{n} \\quad \\underbrace{c+d}_{m} $$"
+  },
+  {
+   "id": "m036",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\left( \\frac{a}{b} \\middle| c \\right) \\bigl( \\Bigl( \\biggl( \\Biggl( x \\Biggr) \\biggr) \\Bigr) \\bigr) $$"
+  },
+  {
+   "id": "m037",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\phantom{x} \\hphantom{y} \\vphantom{\\int} \\smash{\\int} \\mathstrut a $$"
+  },
+  {
+   "id": "m038",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\lim_{x \\to 0} \\frac{\\sin x}{x} = 1 \\quad \\lim\\limits_{n} \\quad \\sum\\nolimits_k $$"
+  },
+  {
+   "id": "m039",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\sideset{_a^b}{_c^d}\\sum \\quad \\leftidx{_1}{A}{_2} $$"
+  },
+  {
+   "id": "m040",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\sqrt[3]{x} \\quad \\sqrt[\\leftroot{2}\\uproot{2}n]{x} $$"
+  },
+  {
+   "id": "m041",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\text{hello } \\textbf{bold} \\textit{it} \\textrm{rm} \\mbox{box} $$"
+  },
+  {
+   "id": "m042",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\mathrm{d}x \\; \\mathbf{v} \\; \\mathit{it} \\; \\mathsf{sf} \\; \\mathtt{tt} \\; \\boldsymbol{\\alpha} \\; \\pmb{\\beta} $$"
+  },
+  {
+   "id": "m043",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\hat{a} \\check{a} \\tilde{a} \\acute{a} \\grave{a} \\dot{a} \\ddot{a} \\dddot{a} \\breve{a} \\bar{a} \\vec{a} \\widehat{abc} \\widetilde{abc} $$"
+  },
+  {
+   "id": "m044",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\overline{AB} \\underline{CD} \\overrightarrow{AB} \\overleftarrow{AB} \\overleftrightarrow{AB} \\underrightarrow{AB} $$"
+  },
+  {
+   "id": "m045",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\lvert x \\rvert \\lVert x \\rVert \\langle x \\rangle \\lfloor x \\rfloor \\lceil x \\rceil $$"
+  },
+  {
+   "id": "m046",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\because \\therefore \\implies \\impliedby \\iff \\land \\lor \\neg $$"
+  },
+  {
+   "id": "m047",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\DeclareMathOperator{\\Tr}{Tr} \\Tr(A) $$"
+  },
+  {
+   "id": "m048",
+   "cat": "ams",
+   "kind": "math",
+   "src": "\\begin{subequations} \\begin{align} a &= b \\\\ c &= d \\end{align} \\end{subequations}"
+  },
+  {
+   "id": "m049",
+   "cat": "ams",
+   "kind": "math",
+   "src": "$$ \\numberwithin{equation}{section} x $$"
+  },
+  {
+   "id": "m050",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\mathbb{R} \\mathbb{N} \\mathbb{Z} \\mathbb{Q} \\mathbb{C} \\mathfrak{g} \\mathcal{L} $$"
+  },
+  {
+   "id": "m051",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\nexists \\varnothing \\emptyset \\complement \\hbar \\hslash \\ell \\beth \\gimel \\daleth \\Bbbk $$"
+  },
+  {
+   "id": "m052",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\lesssim \\gtrsim \\leqslant \\geqslant \\nleq \\ngeq \\lneq \\gneq \\leqq \\geqq \\ll \\gg \\lll \\ggg $$"
+  },
+  {
+   "id": "m053",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\subsetneq \\supsetneq \\subseteqq \\Subset \\Supset \\sqsubset \\sqsupset \\nsubseteq $$"
+  },
+  {
+   "id": "m054",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\rightleftharpoons \\leftrightharpoons \\twoheadrightarrow \\hookrightarrow \\rightsquigarrow \\circlearrowleft \\curvearrowright \\Rrightarrow \\mapsto \\longmapsto $$"
+  },
+  {
+   "id": "m055",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\blacksquare \\square \\lozenge \\blacklozenge \\bigstar \\measuredangle \\sphericalangle \\triangleq \\doteqdot \\approxeq \\backsim \\checkmark \\maltese \\circledR $$"
+  },
+  {
+   "id": "m056",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\smallsetminus \\backslash \\setminus \\divideontimes \\ltimes \\rtimes \\boxplus \\boxtimes \\circledast \\intercal \\veebar \\barwedge $$"
+  },
+  {
+   "id": "m057",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\nmid \\nparallel \\ncong \\nsim \\nVdash \\vDash \\Vdash \\models \\top \\bot \\diagup \\diagdown $$"
+  },
+  {
+   "id": "m058",
+   "cat": "amssymb",
+   "kind": "math",
+   "src": "$$ \\ulcorner x \\urcorner \\llcorner y \\lrcorner \\digamma \\varkappa \\varrho \\varsigma \\varepsilon \\vartheta \\varphi \\varpi $$"
+  },
+  {
+   "id": "m059",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\alpha\\beta\\gamma\\delta\\epsilon\\zeta\\eta\\theta\\iota\\kappa\\lambda\\mu\\nu\\xi\\pi\\rho\\sigma\\tau\\upsilon\\phi\\chi\\psi\\omega \\Gamma\\Delta\\Theta\\Lambda\\Xi\\Pi\\Sigma\\Upsilon\\Phi\\Psi\\Omega $$"
+  },
+  {
+   "id": "m060",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\infty \\partial \\nabla \\forall \\exists \\in \\notin \\ni \\subset \\supset \\cup \\cap \\bigcup \\bigcap \\bigoplus \\bigotimes \\prod \\coprod $$"
+  },
+  {
+   "id": "m061",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\le \\ge \\ne \\approx \\equiv \\sim \\simeq \\cong \\propto \\pm \\mp \\times \\div \\cdot \\circ \\bullet \\star \\ast \\oplus \\otimes \\odot $$"
+  },
+  {
+   "id": "m062",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\to \\gets \\Rightarrow \\Leftarrow \\Leftrightarrow \\leftrightarrow \\longrightarrow \\Longrightarrow \\uparrow \\downarrow \\nearrow \\searrow $$"
+  },
+  {
+   "id": "m063",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\sin \\cos \\tan \\log \\ln \\exp \\det \\gcd \\max \\min \\sup \\inf \\arg \\deg \\dim \\ker \\hom \\Pr $$"
+  },
+  {
+   "id": "m064",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\begin{array}{c|lr} a & b & c \\\\ \\hline 1 & 2 & 3 \\end{array} $$"
+  },
+  {
+   "id": "m065",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ x^{2^{3}} \\; x_{i_{j}} \\; {}^{14}_{6}C \\; f'(x) \\; f''(x) \\; \\prime $$"
+  },
+  {
+   "id": "m066",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\left\\{ \\begin{array}{ll} a & b \\\\ c & d \\end{array} \\right. $$"
+  },
+  {
+   "id": "m067",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ a \\quad b \\qquad c \\, d \\: e \\; f \\! g \\enspace h \\hspace{1cm} i $$"
+  },
+  {
+   "id": "m068",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\displaystyle\\sum_i \\textstyle\\sum_i \\scriptstyle x \\scriptscriptstyle y $$"
+  },
+  {
+   "id": "m069",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\overleftrightarrow{x} \\not= \\not\\in \\cancel{x} $$"
+  },
+  {
+   "id": "m070",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\ldots \\cdots \\vdots \\ddots $$"
+  },
+  {
+   "id": "m071",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\mathop{\\mathrm{lcm}}\\nolimits(a,b) \\mathbin{\\#} \\mathrel{\\sim} \\mathord{-} $$"
+  },
+  {
+   "id": "m072",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\stackrel{?}{=} {a \\atop b} {n \\choose k} $$"
+  },
+  {
+   "id": "m073",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\textstyle \\frac{1}{2} \\displaystyle \\frac{1}{2} $$"
+  },
+  {
+   "id": "m074",
+   "cat": "core",
+   "kind": "math",
+   "src": "$$ \\rule{1cm}{0.4pt} \\raisebox{1ex}{x} $$"
+  },
+  {
+   "id": "m075",
+   "cat": "macros",
+   "kind": "math",
+   "src": "$$ \\newcommand{\\R}{\\mathbb{R}} f\\colon \\R \\to \\R $$"
+  },
+  {
+   "id": "m076",
+   "cat": "macros",
+   "kind": "math",
+   "src": "$$ \\renewcommand{\\vec}[1]{\\mathbf{#1}} \\vec{v} $$"
+  },
+  {
+   "id": "m077",
+   "cat": "macros",
+   "kind": "math",
+   "src": "$$ \\def\\half{\\frac12} \\half $$"
+  },
+  {
+   "id": "m078",
+   "cat": "macros",
+   "kind": "math",
+   "src": "$$ \\newcommand{\\abs}[1]{\\left|#1\\right|} \\abs{x} $$"
+  },
+  {
+   "id": "m079",
+   "cat": "color",
+   "kind": "math",
+   "src": "$$ \\color{red} x + \\textcolor{blue}{y} + {\\color{green} z} $$"
+  },
+  {
+   "id": "m080",
+   "cat": "color",
+   "kind": "math",
+   "src": "$$ \\colorbox{yellow}{$x$} \\fcolorbox{red}{white}{$y$} $$"
+  },
+  {
+   "id": "m081",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{H2O} \\quad \\ce{CO2 + C -> 2 CO} $$"
+  },
+  {
+   "id": "m082",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{2H2 + O2 -> 2H2O} $$"
+  },
+  {
+   "id": "m083",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{A <=> B} \\quad \\ce{A <-> B} \\quad \\ce{A <=>> B} \\quad \\ce{A ->[\\Delta] B} $$"
+  },
+  {
+   "id": "m084",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{Fe^{2+}} \\quad \\ce{SO4^2-} \\quad \\ce{^{227}_{90}Th} \\quad \\ce{Hg^2+ ->[I-] HgI2} $$"
+  },
+  {
+   "id": "m085",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{SO4^2- + Ba^2+ -> BaSO4 v} \\quad \\ce{CaCO3 ->[\\Delta] CaO + CO2 ^} $$"
+  },
+  {
+   "id": "m086",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{x Na(NH4)HPO4 ->[\\Delta] (NaPO3)_x + x NH3 ^ + x H2O} $$"
+  },
+  {
+   "id": "m087",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{C=C} \\quad \\ce{A-B=C#D} \\quad \\ce{CH3-CH2-OH} $$"
+  },
+  {
+   "id": "m088",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\pu{123 kJ/mol} \\quad \\pu{1.2e3 m/s} $$"
+  },
+  {
+   "id": "m089",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "$$ \\ce{NaCl(aq)} \\quad \\ce{H2O(l)} \\quad \\ce{[Cu(NH3)4]^2+} \\quad \\ce{KCr(SO4)2*12H2O} $$"
+  },
+  {
+   "id": "m090",
+   "cat": "mhchem",
+   "kind": "math",
+   "src": "\\begin{align*} \\ce{H2O &<=> H+ + OH-} \\\\ \\ce{NH3 + H2O &<=> NH4+ + OH-} \\end{align*}"
+  }
+ ],
+ "tikz": [
+  {
+   "id": "t001",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw (0,0) -- (2,1); \\draw (0,0) circle (0.5); \\draw (1,0) rectangle (2,0.5); \\end{tikzpicture}"
+  },
+  {
+   "id": "t002",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\node[draw] (a) at (0,0) {A}; \\node[draw, circle] (b) at (2,0) {$x^2$}; \\draw[->] (a) -- (b); \\end{tikzpicture}"
+  },
+  {
+   "id": "t003",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw[help lines] (0,0) grid (3,2); \\draw[thick, red, dashed] (0,0) -- (3,2); \\end{tikzpicture}"
+  },
+  {
+   "id": "t004",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\foreach \\x in {0,...,4} \\draw (\\x,0) circle (0.2); \\end{tikzpicture}"
+  },
+  {
+   "id": "t005",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw[domain=0:6.28, smooth, variable=\\x] plot ({\\x},{sin(\\x r)}); \\end{tikzpicture}"
+  },
+  {
+   "id": "t006",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\fill[blue!30] (0,0) -- (1,0) -- (0.5,1) -- cycle; \\filldraw[fill=green!20, draw=black] (2,0) circle (0.5); \\end{tikzpicture}"
+  },
+  {
+   "id": "t007",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\shade[left color=red, right color=blue] (0,0) rectangle (2,1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t008",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\fill[red, opacity=0.5] (0,0) circle (1); \\fill[blue, fill opacity=0.5] (1,0) circle (1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t009",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\clip (0,0) circle (1); \\fill[orange] (0,0) rectangle (2,2); \\end{tikzpicture}"
+  },
+  {
+   "id": "t010",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\begin{scope}[rotate=30, scale=0.8] \\draw (0,0) rectangle (2,1); \\end{scope} \\end{tikzpicture}"
+  },
+  {
+   "id": "t011",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw (0,0) .. controls (1,1) and (2,-1) .. (3,0); \\draw (0,-1) to[out=90, in=180] (2,0); \\end{tikzpicture}"
+  },
+  {
+   "id": "t012",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw[->] (-1,0) -- (3,0) node[right] {$x$}; \\draw[->] (0,-1) -- (0,2) node[above] {$y$}; \\node[below left] at (0,0) {$O$}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t013",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\tikz \\draw (0,0) -- (1,1);"
+  },
+  {
+   "id": "t014",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture}[every node/.style={draw, rounded corners}] \\node (a) {one}; \\node (b) at (2,0) {two}; \\draw (a) edge[bend left, ->] (b); \\end{tikzpicture}"
+  },
+  {
+   "id": "t015",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw (0,0) arc (0:270:1); \\draw (2,0) ellipse (1 and 0.5); \\end{tikzpicture}"
+  },
+  {
+   "id": "t016",
+   "cat": "tikz-basic",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\node[draw, align=center, text width=2cm] {two\\\\lines}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t017",
+   "cat": "arrows.meta",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw[-Stealth] (0,0) -- (2,0); \\draw[-{Latex[length=3mm]}] (0,-0.5) -- (2,-0.5); \\draw[{Bar}-{Triangle[open]}] (0,-1) -- (2,-1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t018",
+   "cat": "calc",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\coordinate (a) at (0,0); \\coordinate (b) at (2,1); \\fill ($(a)!0.5!(b)$) circle (2pt); \\draw (a) -- ($(b)+(1,0)$); \\end{tikzpicture}"
+  },
+  {
+   "id": "t019",
+   "cat": "positioning",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\node[draw] (a) {A}; \\node[draw, right=of a] (b) {B}; \\node[draw, below=1cm of a] (c) {C}; \\draw[->] (a) -- (b); \\draw[->] (a) -- (c); \\end{tikzpicture}"
+  },
+  {
+   "id": "t020",
+   "cat": "shapes",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\node[draw, diamond] at (0,0) {d}; \\node[draw, ellipse] at (1.5,0) {e}; \\node[draw, regular polygon, regular polygon sides=6] at (3,0) {h}; \\node[draw, star] at (4.5,0) {s}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t021",
+   "cat": "shapes",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\node[draw, rounded rectangle] {rr}; \\node[draw, cylinder, shape border rotate=90] at (2,0) {db}; \\node[draw, single arrow] at (4,0) {go}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t022",
+   "cat": "decorations.pathreplacing",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw (0,0) -- (3,0); \\draw[decorate, decoration={brace, amplitude=6pt}] (0,0.1) -- node[above=6pt] {width} (3,0.1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t023",
+   "cat": "intersections",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw[name path=l1] (0,0) -- (2,2); \\draw[name path=l2] (0,2) -- (2,0); \\fill[red, name intersections={of=l1 and l2}] (intersection-1) circle (2pt); \\end{tikzpicture}"
+  },
+  {
+   "id": "t024",
+   "cat": "patterns",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\fill[pattern=north east lines] (0,0) rectangle (1,1); \\fill[pattern=crosshatch dots] (1.5,0) rectangle (2.5,1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t025",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{matrix}\n\\begin{tikzpicture} \\matrix[matrix of nodes, nodes={draw}] { a & b \\\\ c & d \\\\ }; \\end{tikzpicture}"
+  },
+  {
+   "id": "t026",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{arrows}\n\\begin{tikzpicture} \\draw[-latex] (0,0) -- (1,0); \\draw[->>] (0,-0.3) -- (1,-0.3); \\end{tikzpicture}"
+  },
+  {
+   "id": "t027",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usepackage{amsmath}\n\\begin{tikzpicture} \\node {$\\begin{aligned} a &= b \\\\ c &= d \\end{aligned}$}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t028",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{decorations.markings}\n\\begin{tikzpicture} \\draw[postaction={decorate}, decoration={markings, mark=at position 0.5 with {\\arrow{>}}}] (0,0) -- (2,0); \\end{tikzpicture}"
+  },
+  {
+   "id": "t029",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{automata}\n\\begin{tikzpicture}[shorten >=1pt, node distance=2cm, auto] \\node[state, initial] (q0) {$q_0$}; \\node[state, accepting] (q1) [right of=q0] {$q_1$}; \\path[->] (q0) edge node {a} (q1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t030",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{trees}\n\\begin{tikzpicture} \\node {root} child {node {a}} child {node {b}}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t031",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{3d}\n\\begin{tikzpicture}[x={(1cm,0cm)}, y={(0.5cm,0.5cm)}, z={(0cm,1cm)}] \\draw[->] (0,0,0) -- (1,0,0); \\draw[->] (0,0,0) -- (0,1,0); \\draw[->] (0,0,0) -- (0,0,1); \\end{tikzpicture}"
+  },
+  {
+   "id": "t032",
+   "cat": "fence-preamble",
+   "kind": "tikz",
+   "src": "\\usetikzlibrary{backgrounds, fit}\n\\begin{tikzpicture} \\node (a) {A}; \\node (b) at (1,0) {B}; \\begin{scope}[on background layer] \\node[fill=gray!20, fit=(a) (b)] {}; \\end{scope} \\end{tikzpicture}"
+  },
+  {
+   "id": "t033",
+   "cat": "math-in-tikz",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\node at (0,0) {$\\int_0^1 f(x)\\,dx$}; \\node at (3,0) {$\\mathbb{R}^n$}; \\node at (5,0) {$\\ce{H2O}$}; \\end{tikzpicture}"
+  },
+  {
+   "id": "t034",
+   "cat": "color",
+   "kind": "tikz",
+   "src": "\\begin{tikzpicture} \\draw[red!60!black, line width=2pt] (0,0) -- (1,0); \\fill[blue!20] (1.5,0) circle (0.3); \\node[text=orange] at (3,0) {txt}; \\end{tikzpicture}"
+  }
+ ]
+}

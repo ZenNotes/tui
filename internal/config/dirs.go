@@ -64,6 +64,11 @@ func ConfigTomlPath() string {
 	return filepath.Join(PortableConfigDir(), "config.toml")
 }
 
+// PreamblePath is the user-owned LaTeX preamble for math = "latex".
+func PreamblePath() string {
+	return filepath.Join(PortableConfigDir(), "preamble.tex")
+}
+
 // CustomThemesDir is where the desktop app keeps user-authored themes, one
 // folder each, next to config.toml.
 func CustomThemesDir() string {

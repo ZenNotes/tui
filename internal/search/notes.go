@@ -148,18 +148,37 @@ type scored struct {
 	score float64
 }
 
+// HidesTemplates reports whether a Search notes query leaves the template
+// folder's notes out (ZenNotes/zennotes#1024). They are placeholders nobody
+// is searching for, so they stay out until the query's free text starts with
+// the folder's path and a slash (`Templates/meet`), case-insensitively, which
+// is how a template is found to be edited. Mirrors queryNamesTemplateFolder
+// in the desktop's note-search.ts.
+func HidesTemplates(query, templateFolder string) bool {
+	if templateFolder == "" {
+		return false
+	}
+	freeText, _ := parseQuery(query)
+	return !strings.HasPrefix(strings.ToLower(freeText), strings.ToLower(templateFolder)+"/")
+}
+
 // Notes runs a query over the index. With no free text the live notes come
 // back in their given order, tag filters applied; quick notes first and most
-// recent first when quickFirst is set.
-func Notes(index []Entry, query string, limit int, quickFirst bool) []vault.NoteMeta {
+// recent first when quickFirst is set. A templateFolder's notes are left out
+// unless the query names the folder (HidesTemplates); "" leaves every note in.
+func Notes(index []Entry, query string, limit int, quickFirst bool, templateFolder string) []vault.NoteMeta {
 	freeText, tagTokens := parseQuery(query)
 	if limit <= 0 {
 		return nil
 	}
+	hidden := ""
+	if HidesTemplates(query, templateFolder) {
+		hidden = templateFolder
+	}
 	if freeText == "" {
 		live := []Entry{}
 		for _, e := range index {
-			if e.Note.Folder != vault.FolderTrash && e.matchesTags(tagTokens) {
+			if e.Note.Folder != vault.FolderTrash && e.matchesTags(tagTokens) && !vault.IsPathInTemplateFolder(e.Note.Path, hidden) {
 				live = append(live, e)
 			}
 		}
@@ -185,7 +204,7 @@ func Notes(index []Entry, query string, limit int, quickFirst bool) []vault.Note
 	collect := func(allowFuzzy bool) []scored {
 		matches := []scored{}
 		for _, e := range index {
-			if e.Note.Folder == vault.FolderTrash || !e.matchesTags(tagTokens) {
+			if e.Note.Folder == vault.FolderTrash || !e.matchesTags(tagTokens) || vault.IsPathInTemplateFolder(e.Note.Path, hidden) {
 				continue
 			}
 			s := e.score(prepared, allowFuzzy)

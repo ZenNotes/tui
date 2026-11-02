@@ -14,7 +14,7 @@ import (
 
 func TestSplitBlocks(t *testing.T) {
 	src := "---\ntitle: x\n---\n# Heading\n\npara one\npara two\n\n- [ ] a\n- [x] b\n    - child\n\n```go\ncode\n```\n> quote\n| a | b |\n| - | - |\n"
-	blocks := splitBlocks(strings.Split(src, "\n"))
+	blocks := splitBlocks(strings.Split(src, "\n"), false)
 	kinds := []string{}
 	for _, b := range blocks {
 		kinds = append(kinds, b.kind)

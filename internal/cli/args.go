@@ -57,6 +57,7 @@ var valuelessFlags = map[string]bool{
 	"page":             true,
 	"path":             true,
 	"pretty":           true,
+	"read-only":        true,
 	"reopen":           true,
 	"unchecked":        true,
 	"yes":              true,

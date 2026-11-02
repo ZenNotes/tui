@@ -1,16 +1,14 @@
 package tui
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 func TestWrapLineBreaksAtSpaces(t *testing.T) {
@@ -37,11 +35,11 @@ func TestBindingKeys(t *testing.T) {
 	if len(keys) != 1 || !keys[0].Ctrl || keys[0].Rune != 'p' {
 		t.Fatalf("Ctrl+Shift+P parsed as %+v", keys)
 	}
-	complete, prefix := matchSequence([]helix.Key{helix.R('g')}, keys)
+	complete, prefix := matchSequence([]vim.Key{vim.R('g')}, keys)
 	if complete || prefix {
 		t.Fatal("g should not match Ctrl+P")
 	}
-	complete, prefix = matchSequence([]helix.Key{helix.R('g')}, bindingKeys("g t"))
+	complete, prefix = matchSequence([]vim.Key{vim.R('g')}, bindingKeys("g t"))
 	if complete || !prefix {
 		t.Fatal("g should be a prefix of g t")
 	}
@@ -242,57 +240,46 @@ func TestHumanSize(t *testing.T) {
 	}
 }
 
-func TestGotoNextPreviousTab(t *testing.T) {
-	a, root := newFeatureTestApp(t)
-	for name, text := range map[string]string{"a.md": "A\n", "b.md": "B\n"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o600); err != nil {
-			t.Fatal(err)
+// The in-app help mentions the latex settings and the preamble file.
+func TestHelpMentionsLatexSettings(t *testing.T) {
+	a := &App{}
+	a.keymap = newTestResolver()
+	help := strings.Join(helpLines(a, ""), "\n")
+	for _, want := range []string{"[terminal] math", "preamble.tex", "render_timeout", "render_concurrency"} {
+		if !contains(help, want) {
+			t.Errorf("help does not mention %q", want)
 		}
-	}
-	a.openNote("a.md", true)
-	a.openNote("b.md", true)
-	if got := a.activeBuffer().path; got != "b.md" {
-		t.Fatalf("expected b.md active, got %q", got)
-	}
-	a.handleKey(helix.R('g'))
-	a.handleKey(helix.R('n'))
-	if got := a.activeBuffer().path; got != "a.md" {
-		t.Fatalf("gn did not switch to the next tab, active %q", got)
-	}
-	a.handleKey(helix.R('g'))
-	a.handleKey(helix.R('p'))
-	if got := a.activeBuffer().path; got != "b.md" {
-		t.Fatalf("gp did not switch to the previous tab, active %q", got)
-	}
-	// gd must still reach the engine now that g sequences are parked.
-	a.handleKey(helix.R('g'))
-	a.handleKey(helix.R('g'))
-	if cur := a.activeBuffer().ed.Cursor(); cur.Line != 0 {
-		t.Fatalf("gg moved the cursor unexpectedly: %+v", cur)
 	}
 }
 
-func TestGotoNextPreviousTabFromHome(t *testing.T) {
-	a, root := newFeatureTestApp(t)
-	for name, text := range map[string]string{"a.md": "A\n", "b.md": "B\n"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o600); err != nil {
-			t.Fatal(err)
+func TestHelpMentionsFrontmatterViewMode(t *testing.T) {
+	a := &App{}
+	a.keymap = newTestResolver()
+	help := strings.Join(helpLines(a, ""), "\n")
+	for _, want := range []string{"view_mode_field", "[terminal.view_mode_rules]", "frontmatter"} {
+		if !contains(help, want) {
+			t.Errorf("help does not mention %q", want)
 		}
 	}
-	a.openNote("a.md", true)
-	a.openNote("b.md", true)
-	a.openHome()
-	if got := a.activeTab().path; got != tabHome {
-		t.Fatalf("expected Home active, got %q", got)
+}
+
+// The help row keyed `[terminal] math` names the tools latex needs.
+func TestHelpMathEntryNamesTools(t *testing.T) {
+	a := &App{}
+	a.keymap = newTestResolver()
+	var row string
+	for _, l := range helpLines(a, "") {
+		if key, _, ok := strings.Cut(l, "\t"); ok && key == "[terminal] math" {
+			row = l
+			break
+		}
 	}
-	a.handleKey(helix.R('g'))
-	a.handleKey(helix.R('n'))
-	if got := a.activeTab().path; got != "a.md" {
-		t.Fatalf("gn did not leave Home for the next tab, active %q", got)
+	if row == "" {
+		t.Fatal("no help row with the key [terminal] math")
 	}
-	a.handleKey(helix.R('g'))
-	a.handleKey(helix.R('p'))
-	if got := a.activeTab().path; got != tabHome {
-		t.Fatalf("gp did not go back to the previous tab, active %q", got)
+	for _, want := range []string{"pdftex", "pdftocairo"} {
+		if !contains(row, want) {
+			t.Errorf("[terminal] math row does not name %q: %q", want, row)
+		}
 	}
 }

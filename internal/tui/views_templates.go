@@ -2,9 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/templates"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 	"strings"
 )
 
@@ -64,7 +64,7 @@ func (v *templatesView) render(a *App, w, h int, focused bool) string {
 	}
 	return fitBlock(strings.Join(lines, "\n"), w, h)
 }
-func (v *templatesView) handleKey(a *App, k helix.Key) bool {
+func (v *templatesView) handleKey(a *App, k vim.Key) bool {
 	if a.listNav(&v.list, k, len(v.templates), v.rows) {
 		return true
 	}

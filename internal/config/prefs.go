@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -11,12 +12,13 @@ import (
 // honor. Defaults match the desktop's PORTABLE_DEFAULTS; a missing file or
 // key keeps the default.
 type Prefs struct {
-	HelixWrappedLineMotions string
-	IgnoredKeys             []string
-	HelixMode               bool
-	Motions               string
-	HelixInsertEscape     string
-	HelixYankToClipboard  bool
+	VimWrappedLineMotions string
+	IgnoredKeys           []string
+	VimMode               bool
+	VimInsertEscape       string
+	VimYankToClipboard    bool
+	Motions               string         // vim or helix: the editing engine (prefs_helix.go)
+	HelixKeys             map[string]any // [keys] tables for the helix engine (prefs_helix.go)
 	WhichKeyHints         bool
 	WhichKeyHintMode      string
 	WhichKeyHintTimeoutMs int
@@ -78,14 +80,27 @@ type Prefs struct {
 	// TerminalTheme names a theme for zn alone: a family, a theme id or a
 	// custom theme. Empty follows the desktop's [appearance] selection.
 	TerminalTheme string
+	// TerminalMath is typst or latex: the engine for display math. Anything
+	// else loads as typst; zn doctor reports it.
+	TerminalMath string
+	// TerminalViewModeField names the frontmatter field that picks a note's
+	// pane mode when it opens in a new tab. Empty turns the feature off.
+	TerminalViewModeField string
+	// ViewModeRules maps "<key>=<value>" to a pane mode, from
+	// [terminal.view_mode_rules]. Entries are raw; see ViewModeRuleEntries.
+	ViewModeRules map[string]string
+	// RenderTimeout (seconds) bounds one external render; RenderConcurrency
+	// caps how many run at once. Non-positive values load as the defaults.
+	RenderTimeout     int
+	RenderConcurrency int
 }
 
 // DefaultPrefs are the shipped defaults.
 func DefaultPrefs() Prefs {
 	return Prefs{
-		HelixMode:                true,
+		VimMode:                  true,
 		Motions:                  "vim",
-		HelixWrappedLineMotions:  "display",
+		VimWrappedLineMotions:    "display",
 		TabsEnabled:              true,
 		SavedTaskFilters:         map[string]string{},
 		WhichKeyHints:            true,
@@ -109,6 +124,10 @@ func DefaultPrefs() Prefs {
 		ThemeTweaks:              map[string]string{},
 		PreviewStyle:             "auto",
 		TerminalMouse:            true,
+		TerminalMath:             "typst",
+		ViewModeRules:            map[string]string{},
+		RenderTimeout:            10,
+		RenderConcurrency:        2,
 		UnifiedSidebar:           true,
 		NoteSortOrder:            "none",
 		GroupByKind:              true,
@@ -143,10 +162,11 @@ func LoadPrefs() (Prefs, string, error) {
 	if _, err := toml.Decode(string(raw), &doc); err != nil {
 		return prefs, path, err
 	}
-	if err := validateKnownValues(doc); err != nil {
+	if err := validateKnownValues(doc, false); err != nil {
 		return prefs, path, err
 	}
 	applyPrefs(&prefs, doc)
+	applyHelixPrefs(&prefs, doc)
 	return prefs, path, nil
 }
 
@@ -155,18 +175,14 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 		m, _ := doc[name].(map[string]any)
 		return m
 	}
-	modal := section("vim")
-	if modal == nil {
-		modal = section("helix")
-	}
-	setBool(modal, "enabled", &p.HelixMode)
-	setString(modal, "motions", &p.Motions)
-	setString(modal, "wrapped_line_motions", &p.HelixWrappedLineMotions)
-	setString(modal, "insert_escape", &p.HelixInsertEscape)
-	setBool(modal, "yank_to_clipboard", &p.HelixYankToClipboard)
-	setBool(modal, "which_key_hints", &p.WhichKeyHints)
-	setString(modal, "which_key_hint_mode", &p.WhichKeyHintMode)
-	setInt(modal, "which_key_hint_timeout_ms", &p.WhichKeyHintTimeoutMs)
+	vim := section("vim")
+	setBool(vim, "enabled", &p.VimMode)
+	setString(vim, "wrapped_line_motions", &p.VimWrappedLineMotions)
+	setString(vim, "insert_escape", &p.VimInsertEscape)
+	setBool(vim, "yank_to_clipboard", &p.VimYankToClipboard)
+	setBool(vim, "which_key_hints", &p.WhichKeyHints)
+	setString(vim, "which_key_hint_mode", &p.WhichKeyHintMode)
+	setInt(vim, "which_key_hint_timeout_ms", &p.WhichKeyHintTimeoutMs)
 
 	editor := section("editor")
 	setBool(editor, "sync_title_heading_on_rename", &p.SyncTitleHeadingOnRename)
@@ -231,8 +247,35 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	setString(terminal, "preview_style", &p.PreviewStyle)
 	setString(terminal, "images", &p.TerminalImages)
 	setString(terminal, "theme", &p.TerminalTheme)
+	setString(terminal, "math", &p.TerminalMath)
+	setString(terminal, "view_mode_field", &p.TerminalViewModeField)
+	if rules, ok := terminal["view_mode_rules"].(map[string]any); ok {
+		p.ViewModeRules = map[string]string{}
+		for k, v := range rules {
+			// A mode that is not a string is kept as text, so the rule is
+			// listed as invalid and can be removed instead of vanishing.
+			s, isString := v.(string)
+			if !isString {
+				s = fmt.Sprint(v)
+			}
+			p.ViewModeRules[k] = s
+		}
+	}
+	setInt(terminal, "render_timeout", &p.RenderTimeout)
+	setInt(terminal, "render_concurrency", &p.RenderConcurrency)
 	if strings.TrimSpace(p.PreviewStyle) == "" {
 		p.PreviewStyle = "auto"
+	}
+	if strings.EqualFold(strings.TrimSpace(p.TerminalMath), "latex") {
+		p.TerminalMath = "latex"
+	} else {
+		p.TerminalMath = "typst"
+	}
+	if p.RenderTimeout <= 0 {
+		p.RenderTimeout = 10
+	}
+	if p.RenderConcurrency <= 0 {
+		p.RenderConcurrency = 2
 	}
 
 	p.KeymapOverrides = mergeStringTable(p.KeymapOverrides, section("keymaps"))
@@ -299,7 +342,7 @@ const DefaultConfigTOML = `# ZenNotes portable preferences. Shared by the deskto
 
 [vim]
 enabled = true
-motions = "vim" # or "helix": the selection-first engine
+motions = "vim" # or "helix": select first, then act
 insert_escape = "jk"
 yank_to_clipboard = true
 which_key_hints = true
@@ -350,6 +393,14 @@ mouse = true
 # A theme for zn alone: a family, a theme id or a custom theme. Empty follows
 # [appearance], so the terminal matches the desktop app.
 theme = ""
+# math = typst | latex: the engine for display math in the preview. latex
+# runs TeX on this computer, which zn does not include: install pdftex
+# (TeX Live, MacTeX or MiKTeX) and pdftocairo (poppler) yourself; zn doctor
+# prints the commands. Its packages come from preamble.tex next to this file.
+math = "typst"
+# Seconds one diagram or math render may take, and how many run at once.
+render_timeout = 10
+render_concurrency = 2
 
 [keymaps]
 # "action.id" = "keys"   (an empty string unbinds an action)

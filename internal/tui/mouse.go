@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // Mouse support covers every surface: click to focus and select, double
@@ -27,7 +27,7 @@ type mouseState struct {
 	dragNode    *paneNode
 	dragPane    *pane
 	dragBuf     *noteBuffer
-	dragStart   helix.Pos
+	dragStart   vim.Pos
 	dragVisual  bool
 }
 
@@ -123,6 +123,9 @@ func (a *App) dividerAt(n *paneNode, x, y int) *paneNode {
 
 // handleMouse is the entry point for every mouse event.
 func (a *App) handleMouse(m tea.MouseMsg) {
+	if m.Action != tea.MouseActionMotion {
+		a.tabSeq = nil
+	}
 	switch m.Action {
 	case tea.MouseActionRelease:
 		a.mouse.drag = ""
@@ -209,7 +212,7 @@ func (a *App) scrollAt(x, y, delta int) {
 			return
 		}
 		mode := buf.ed.Mode()
-		if !a.prefs.HelixMode || mode == helix.ModeInsert || mode == helix.ModeCmdline {
+		if !a.prefs.VimMode || mode == vim.ModeInsert || mode == vim.ModeReplace || mode == vim.ModeCmdline {
 			top := max(0, min(max(0, buf.ed.LineCount()-1), buf.ed.ScrollTop()+delta))
 			buf.ed.SetScrollTop(top)
 			return
@@ -312,20 +315,19 @@ func (a *App) paneClick(p *pane, m tea.MouseMsg, double bool) {
 			return
 		}
 	}
-	if mode == helix.ModeInsert || mode == helix.ModeCmdline {
+	if mode == vim.ModeInsert || mode == vim.ModeReplace || mode == vim.ModeCmdline {
 		buf.ed.SetCursor(pos)
 		return
 	}
-	if a.prefs.HelixMode && mode != helix.ModeNormal {
-		buf.ed.HandleKey(helix.KeyEsc)
+	if a.prefs.VimMode && mode != vim.ModeNormal {
+		buf.ed.HandleKey(vim.KeyEsc)
 	}
 	buf.ed.SetCursor(pos)
-	if double && a.prefs.HelixMode {
-		// Select the word under the pointer (Helix match mode).
-		buf.ed.Feed("miw")
+	if double && a.prefs.VimMode {
+		buf.ed.Feed(a.engine().selectWord)
 		return
 	}
-	if a.prefs.HelixMode {
+	if a.prefs.VimMode {
 		a.mouse.drag = "select"
 		a.mouse.dragBuf = buf
 		a.mouse.dragPane = p
@@ -336,7 +338,7 @@ func (a *App) paneClick(p *pane, m tea.MouseMsg, double bool) {
 
 // editorPosAt maps a screen cell to a buffer position using the rows of
 // the last render.
-func (a *App) editorPosAt(p *pane, buf *noteBuffer, x, y int) (helix.Pos, bool) {
+func (a *App) editorPosAt(p *pane, buf *noteBuffer, x, y int) (vim.Pos, bool) {
 	inner := a.contentRect(p)
 	textY := y - inner.y
 	textX := x - inner.x
@@ -354,14 +356,14 @@ func (a *App) editorPosAt(p *pane, buf *noteBuffer, x, y int) (helix.Pos, bool) 
 		if col > ri.segStart && col >= ri.segEnd && ri.segEnd < len(runes) {
 			col = ri.segEnd - 1
 		}
-		return helix.Pos{Line: ri.line, Col: col}, true
+		return vim.Pos{Line: ri.line, Col: col}, true
 	}
 	// Below the last row: end of the buffer.
 	if len(buf.rows) > 0 && textY > buf.rows[len(buf.rows)-1].y {
 		last := buf.ed.LineCount() - 1
-		return helix.Pos{Line: last, Col: max(0, len(buf.ed.LineRunes(last))-1)}, true
+		return vim.Pos{Line: last, Col: max(0, len(buf.ed.LineRunes(last))-1)}, true
 	}
-	return helix.Pos{}, false
+	return vim.Pos{}, false
 }
 
 func (a *App) previewClick(t *tab, buf *noteBuffer, y int, m tea.MouseMsg, double bool) {
@@ -434,7 +436,7 @@ func (a *App) sidePanelClick(m tea.MouseMsg, double bool, main rect) {
 				p.month = time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, time.Local)
 			}
 			if double {
-				a.calendar.handleKey(a, helix.KeyEnter)
+				a.calendar.handleKey(a, vim.KeyEnter)
 			}
 		}
 	}
@@ -506,8 +508,13 @@ func (a *App) mouseRight(m tea.MouseMsg) {
 			return
 		}
 		if t.view != nil {
+			inner := a.contentRect(hit.pane)
+			x, y := m.X-inner.x, m.Y-inner.y
+			if x < 0 || y < 0 || x >= inner.w || y >= inner.h {
+				return
+			}
 			if c, ok := t.view.(clicker); ok {
-				c.click(a, hit.pane, m.X-hit.pane.rect.x, m.Y-hit.pane.rect.y-a.tabBarHeight(), m, false)
+				c.click(a, hit.pane, x, y, m, false)
 			}
 			return
 		}
@@ -583,7 +590,7 @@ func (a *App) mouseDrag(m tea.MouseMsg) {
 		}
 		if !a.mouse.dragVisual {
 			buf.ed.SetCursor(a.mouse.dragStart)
-			buf.ed.HandleKey(helix.R('v'))
+			buf.ed.HandleKey(vim.R('v'))
 			a.mouse.dragVisual = true
 		}
 		buf.ed.SetCursor(pos)
@@ -611,7 +618,7 @@ func (a *App) overlayMouse(m tea.MouseMsg) {
 			idx := ov.scroll + by - 3
 			if idx >= 0 && idx < len(ov.filtered) {
 				ov.cursor = idx
-				ov.handleKey(a, helix.KeyEnter)
+				ov.handleKey(a, vim.KeyEnter)
 			}
 		}
 	case *menu:
@@ -625,7 +632,7 @@ func (a *App) overlayMouse(m tea.MouseMsg) {
 		idx := by - 1
 		if idx >= 0 && idx < len(ov.items) && !ov.items[idx].sep {
 			ov.cursor = idx
-			ov.handleKey(a, helix.KeyEnter)
+			ov.handleKey(a, vim.KeyEnter)
 		}
 	case *confirmDialog:
 		if m.Button != tea.MouseButtonLeft || !inside {
@@ -633,9 +640,9 @@ func (a *App) overlayMouse(m tea.MouseMsg) {
 		}
 		if by == 2 {
 			if bx < (r.w-4)/2 {
-				ov.handleKey(a, helix.R('y'))
+				ov.handleKey(a, vim.R('y'))
 			} else {
-				ov.handleKey(a, helix.R('n'))
+				ov.handleKey(a, vim.R('n'))
 			}
 		}
 	case *keyHelpOverlay, *hintOverlay:

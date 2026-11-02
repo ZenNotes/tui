@@ -8,7 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // previewState is the reading-mode state of a tab.
@@ -475,6 +475,7 @@ func (a *App) previewLinesFor(t *tab, buf *noteBuffer, width int) []previewLine 
 	if pv.cache == nil || pv.cache.version != buf.ed.Version() || pv.cache.width != width || pv.cache.style != style || pv.cache.dark != a.theme.Dark {
 		var lines []previewLine
 		a.previewPath = buf.path
+		a.latexNoticeShown = false
 		if strings.EqualFold(style, "zen") {
 			lines = a.renderPreviewLines(buf.ed.Text(), width)
 		} else {
@@ -550,10 +551,10 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 // previewKey handles reading-mode keys.
 // previewHint is the help line for reading mode.
 func (a *App) previewHint() string {
-	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"helix.leaderPrefix", "leader"}})
+	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"vim.leaderPrefix", "leader"}})
 }
 
-func (a *App) previewKey(t *tab, buf *noteBuffer, k helix.Key) {
+func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	pv := t.preview
 	if pv == nil {
 		pv = &previewState{}
@@ -585,14 +586,14 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k helix.Key) {
 	if !a.listKeyAllowed(k) {
 		return
 	}
-	id, pending := a.resolveAction(k, "nav.toggleTask", "nav.openResult", "nav.localEx", "nav.filter", "helix.goToDefinition")
+	id, pending := a.resolveAction(k, "nav.toggleTask", "nav.openResult", "nav.localEx", "nav.filter", "vim.goToDefinition")
 	if pending {
 		return
 	}
 	switch id {
 	case "nav.toggleTask":
 		a.previewToggleTask(t, buf)
-	case "nav.openResult", "helix.goToDefinition":
+	case "nav.openResult", "vim.goToDefinition":
 		a.previewFollow(t, buf)
 	case "nav.localEx":
 		if buf != nil {
@@ -655,7 +656,7 @@ func (a *App) previewToggleTask(t *tab, buf *noteBuffer) {
 		return
 	}
 	cur := buf.ed.Cursor()
-	buf.ed.SetCursor(helix.Pos{Line: row.srcLine, Col: 0})
+	buf.ed.SetCursor(vim.Pos{Line: row.srcLine, Col: 0})
 	buf.ed.ToggleCheckboxAtCursor()
 	buf.ed.SetCursor(cur)
 }

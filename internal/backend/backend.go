@@ -77,6 +77,20 @@ type Backend interface {
 	UpdateVaultSettings(ctx context.Context, patch func(raw map[string]any)) error
 }
 
+// TemplateFolder is the vault's template folder (ZenNotes/zennotes#1024), ""
+// when it has none or its settings cannot be read. A note inside it
+// contributes no tags, so the tag list and every tag search leave it out
+// (vault.IsPathInTemplateFolder). A server vault reports the folder in its
+// settings like a local one, and the tag list is counted here from the note
+// listing for both, so the same rule covers both.
+func TemplateFolder(ctx context.Context, b Backend) string {
+	settings, err := b.VaultSettings(ctx)
+	if err != nil {
+		return ""
+	}
+	return settings.TemplateFolder
+}
+
 // Options tune a backend.
 type Options struct {
 	// SyncTitleHeading is the desktop's "Sync title heading on rename"

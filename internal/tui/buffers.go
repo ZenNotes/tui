@@ -10,8 +10,8 @@ import (
 	"github.com/atotto/clipboard"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // noteBuffer is an open note: its Vim editor plus save state. One buffer
@@ -30,6 +30,14 @@ type noteBuffer struct {
 	afterLoad   []func(*noteBuffer)
 	loadErr     error
 	rows        []rowInfo
+	// focusRows is the wrapping of the pane that last drew this buffer with
+	// focus; rows belongs to whichever pane drew it last.
+	focusRows []rowInfo
+	// focusW is the drawn width of that editor, gutter included.
+	focusW int
+	// standalone marks an editor drawn outside the tabs, such as quick
+	// capture's, whose cursor its host places.
+	standalone bool
 
 	words        int
 	wordsVersion int
@@ -46,18 +54,18 @@ type saveResultMsg struct {
 }
 
 // editorOptions derives the engine options from the preferences.
-func (a *App) editorOptions() helix.Options {
-	opts := helix.DefaultOptions()
-	opts.WrappedLineMotions = a.prefs.HelixWrappedLineMotions == "display"
+func (a *App) editorOptions() vim.Options {
+	opts := vim.DefaultOptions()
+	opts.WrappedLineMotions = a.prefs.VimWrappedLineMotions == "display"
 	opts.TabSize = a.prefs.EditorTabSize
 	opts.ScrollOff = a.prefs.EditorScrollOff
-	opts.InsertEscape = a.prefs.HelixInsertEscape
+	opts.InsertEscape = a.prefs.VimInsertEscape
 	opts.AutoPairs = a.prefs.AutoPairs
 	opts.AutoPairQuotes = a.prefs.AutoPairQuotesInProse
 	opts.TextReplacements = a.prefs.TextReplacements
 	opts.TextReplacementsEnabled = a.prefs.TextReplacementsEnabled
-	opts.YankToClipboard = a.prefs.HelixYankToClipboard
-	opts.HelixEnabled = a.prefs.HelixMode
+	opts.YankToClipboard = a.prefs.VimYankToClipboard
+	opts.VimEnabled = a.prefs.VimMode
 	opts.MarkdownLists = true
 	return opts
 }
@@ -87,9 +95,9 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	return buf, nil
 }
 
-func (a *App) editorHooks(buf *noteBuffer) helix.Hooks {
-	return helix.Hooks{
-		DisplayRowBounds: func(p helix.Pos) (int, int) {
+func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
+	return vim.Hooks{
+		DisplayRowBounds: func(p vim.Pos) (int, int) {
 			line := buf.ed.LineRunes(p.Line)
 			if !a.prefs.WordWrap {
 				return 0, len(line)
@@ -101,7 +109,7 @@ func (a *App) editorHooks(buf *noteBuffer) helix.Hooks {
 			}
 			return 0, len(line)
 		},
-		ExCommand: func(cmd helix.ExCommand) (bool, error) {
+		ExCommand: func(cmd vim.ExCommand) (bool, error) {
 			return a.runEx(buf, cmd)
 		},
 		ExComplete: func(text string) (string, []string) { return a.completeEx(text) },
@@ -115,7 +123,7 @@ func (a *App) editorHooks(buf *noteBuffer) helix.Hooks {
 		WriteClipboard: func(text string) bool {
 			return clipboard.WriteAll(text) == nil
 		},
-		OnJump: func(from helix.Pos) {
+		OnJump: func(from vim.Pos) {
 			a.pushJump(buf.path, from)
 		},
 		FollowLink: func() { a.followLinkAtCursor(buf) },

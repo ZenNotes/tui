@@ -1,0 +1,108 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"image"
+	"image/png"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	mathjax "github.com/d2lang/mathjax-go"
+	"github.com/srwiley/oksvg"
+	"github.com/srwiley/rasterx"
+)
+
+type item struct{ ID, Cat, Kind, Src string }
+
+var (
+	errAttr = regexp.MustCompile(`data-mjx-error="([^"]*)"`)
+	dims    = regexp.MustCompile(`width="([0-9.]+)ex" height="([0-9.]+)ex"`)
+)
+
+// mathInput is what MathJax gets: $$ and \[ \] lose their delimiters, a
+// top-level environment passes whole, as zn's latex path compiles it.
+func mathInput(src string) string {
+	s := strings.TrimSpace(src)
+	if strings.HasPrefix(s, "$$") && strings.HasSuffix(s, "$$") && len(s) >= 4 {
+		return strings.TrimSpace(s[2 : len(s)-2])
+	}
+	if strings.HasPrefix(s, `\[`) && strings.HasSuffix(s, `\]`) {
+		return strings.TrimSpace(s[2 : len(s)-2])
+	}
+	return s
+}
+
+func main() {
+	corpus, out := os.Args[1], os.Args[2]
+	var c map[string][]item
+	b, _ := os.ReadFile(corpus)
+	if err := json.Unmarshal(b, &c); err != nil {
+		panic(err)
+	}
+	type res struct {
+		ID, Cat, Err string
+		OK           bool
+		Us           int64
+	}
+	var results []res
+	for _, it := range c["math"] {
+		start := time.Now()
+		svg, err := mathjax.Render(mathInput(it.Src))
+		r := res{ID: it.ID, Cat: it.Cat, Us: time.Since(start).Microseconds()}
+		switch {
+		case err != nil:
+			r.Err = "go error: " + err.Error()
+		case strings.Contains(svg, `data-mml-node="merror"`):
+			if m := errAttr.FindStringSubmatch(svg); m != nil {
+				r.Err = m[1]
+			} else {
+				r.Err = "merror"
+			}
+		default:
+			r.OK = true
+		}
+		results = append(results, r)
+		if err == nil {
+			_ = os.WriteFile(filepath.Join(out, it.ID+".svg"), []byte(svg), 0o644)
+			if perr := raster(svg, filepath.Join(out, it.ID+".png")); perr != nil && r.OK {
+				results[len(results)-1].Err = "raster: " + perr.Error()
+			}
+		}
+	}
+	j, _ := json.MarshalIndent(results, "", " ")
+	_ = os.WriteFile(filepath.Join(out, "results.json"), j, 0o644)
+	fmt.Println(len(results), "rendered")
+}
+
+// raster draws the SVG at about the size pdftex gives 10pt type at 260 dpi
+// (an em of 36 px; MathJax sizes in ex at 8 px each for a 16 px em).
+func raster(svg, path string) error {
+	svg = strings.ReplaceAll(svg, "currentColor", "#D4BE98")
+	m := dims.FindStringSubmatch(svg)
+	if m == nil {
+		return fmt.Errorf("no size")
+	}
+	wex, _ := strconv.ParseFloat(m[1], 64)
+	hex, _ := strconv.ParseFloat(m[2], 64)
+	scale := 36.0 / 16.0
+	w, h := int(wex*8*scale)+1, int(hex*8*scale)+1
+	icon, err := oksvg.ReadIconStream(strings.NewReader(svg), oksvg.IgnoreErrorMode)
+	if err != nil {
+		return err
+	}
+	icon.SetTarget(0, 0, float64(w), float64(h))
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	sc := rasterx.NewScannerGV(w, h, img, img.Bounds())
+	icon.Draw(rasterx.NewDasher(w, h, sc), 1)
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
+}

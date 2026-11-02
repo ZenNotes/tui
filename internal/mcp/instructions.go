@@ -232,7 +232,8 @@ const DefaultInstructions = "You are connected to a user's ZenNotes vault: plain
 	"- Task ids from list_tasks (`path#index`) are stable, so pass\n" +
 	"  them to toggle_task.\n" +
 	"- list_tasks omits notes opted out of Tasks (frontmatter\n" +
-	"  `tasks: false`/`note`, excluded folders). Pass\n" +
+	"  `tasks: false`/`note`, excluded folders, the template folder,\n" +
+	"  and notes outside the vault's Task folders when it has any). Pass\n" +
 	"  includeExcluded: true only when the user asks for everything.\n" +
 	"\n" +
 	"## Comments: reviewing a note together\n" +

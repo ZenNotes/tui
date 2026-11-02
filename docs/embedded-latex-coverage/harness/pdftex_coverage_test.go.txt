@@ -1,0 +1,57 @@
+// Copy into internal/tui/ as zz_coverage_test.go to render the corpus through
+// zn's own latex path (latexPNG), then run:
+//   COV_CORPUS=<corpus.json> COV_OUT=<dir> PATH=<dir with pdftex>:$PATH \
+//     go test ./internal/tui -run TestZZCoverage -count=1 -timeout 30m
+
+package tui
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestZZCoverage(t *testing.T) {
+	corpus, out := os.Getenv("COV_CORPUS"), os.Getenv("COV_OUT")
+	if corpus == "" {
+		t.Skip("COV_CORPUS not set")
+	}
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	t.Setenv("HOME", filepath.Join(out, "home"))
+	var c map[string][]struct{ ID, Cat, Kind, Src string }
+	b, _ := os.ReadFile(corpus)
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	type res struct {
+		ID, Cat, Kind, Err string
+		OK                 bool
+		Ms                 int64
+	}
+	var results []res
+	var formats latexFormats
+	for _, group := range []string{"math", "tikz"} {
+		for _, it := range c[group] {
+			kind := "latex"
+			if it.Kind == "tikz" {
+				kind = "tikz"
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			start := time.Now()
+			png, err := latexPNG(ctx, &formats, kind, it.Src, "#D4BE98")
+			cancel()
+			r := res{ID: it.ID, Cat: it.Cat, Kind: it.Kind, OK: err == nil, Ms: time.Since(start).Milliseconds()}
+			if err != nil {
+				r.Err = err.Error()
+			} else {
+				_ = os.WriteFile(filepath.Join(out, it.ID+".png"), png, 0o644)
+			}
+			results = append(results, r)
+		}
+	}
+	j, _ := json.MarshalIndent(results, "", " ")
+	_ = os.WriteFile(filepath.Join(out, "results.json"), j, 0o644)
+}

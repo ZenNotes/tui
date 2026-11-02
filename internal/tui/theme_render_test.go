@@ -22,7 +22,7 @@ func TestViewPaintsEveryCellIndependentlyOfTerminalColors(t *testing.T) {
 	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
 	for _, mode := range []string{"light", "dark"} {
 		t.Run(mode, func(t *testing.T) {
-			a := newApp(context.Background(), Options{}, config.Prefs{ThemeMode: mode, HelixMode: true}, true)
+			a := newApp(context.Background(), Options{}, config.Prefs{ThemeMode: mode, VimMode: true}, true)
 			a.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 			for y, row := range strings.Split(a.View(), "\n") {
 				// Bubble Tea can redraw any row on its own after a resize or edit.
@@ -93,5 +93,28 @@ func TestThemePaintPreservesNestedColorsAndHonorsNoColor(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.Ascii)
 	if got := theme.paint("plain\ntext"); got != "plain\ntext" {
 		t.Fatalf("no-color output contains styling: %q", got)
+	}
+}
+
+// In the editor itself: a math body is painted with the same
+// lexer colors as the identical body in a ```tex fence, not as prose.
+func TestEditorPaintsMathBodyLikeTexFence(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
+	row := func(note string) string {
+		a, _ := newFeatureTestApp(t)
+		a.prefs.TerminalMath = "latex"
+		a.openNote("note.md", true)
+		buf := a.activeBuffer()
+		buf.ed.ReplaceText(note)
+		return strings.Split(a.renderEditor(buf, 60, 6, true), "\n")[1]
+	}
+	body := `\frac{a}{b} + \alpha_1`
+	want := row("```tex\n" + body + "\n```")
+	for _, open := range [][2]string{{"$$", "$$"}, {`\[`, `\]`}, {`\begin{align}`, `\end{align}`}} {
+		if got := row(open[0] + "\n" + body + "\n" + open[1]); got != want {
+			t.Errorf("%s body painted as\n%q\nwant the ```tex fence's\n%q", open[0], got, want)
+		}
 	}
 }

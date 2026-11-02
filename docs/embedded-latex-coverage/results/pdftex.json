@@ -1,0 +1,994 @@
+[
+ {
+  "ID": "m001",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 7191
+ },
+ {
+  "ID": "m002",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 332
+ },
+ {
+  "ID": "m003",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 302
+ },
+ {
+  "ID": "m004",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 316
+ },
+ {
+  "ID": "m005",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 299
+ },
+ {
+  "ID": "m006",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 313
+ },
+ {
+  "ID": "m007",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 305
+ },
+ {
+  "ID": "m008",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 298
+ },
+ {
+  "ID": "m009",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 291
+ },
+ {
+  "ID": "m010",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 290
+ },
+ {
+  "ID": "m011",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 306
+ },
+ {
+  "ID": "m012",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 290
+ },
+ {
+  "ID": "m013",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 278
+ },
+ {
+  "ID": "m014",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 409
+ },
+ {
+  "ID": "m015",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 957
+ },
+ {
+  "ID": "m016",
+  "Cat": "form",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1621
+ },
+ {
+  "ID": "m017",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1035
+ },
+ {
+  "ID": "m018",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1368
+ },
+ {
+  "ID": "m019",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1652
+ },
+ {
+  "ID": "m020",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1587
+ },
+ {
+  "ID": "m021",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1655
+ },
+ {
+  "ID": "m022",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1151
+ },
+ {
+  "ID": "m023",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1763
+ },
+ {
+  "ID": "m024",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1145
+ },
+ {
+  "ID": "m025",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1127
+ },
+ {
+  "ID": "m026",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1195
+ },
+ {
+  "ID": "m027",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1343
+ },
+ {
+  "ID": "m028",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1302
+ },
+ {
+  "ID": "m029",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1203
+ },
+ {
+  "ID": "m030",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1667
+ },
+ {
+  "ID": "m031",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1698
+ },
+ {
+  "ID": "m032",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 1178
+ },
+ {
+  "ID": "m033",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 311
+ },
+ {
+  "ID": "m034",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 367
+ },
+ {
+  "ID": "m035",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 319
+ },
+ {
+  "ID": "m036",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 284
+ },
+ {
+  "ID": "m037",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 273
+ },
+ {
+  "ID": "m038",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 277
+ },
+ {
+  "ID": "m039",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "latex: ! Undefined control sequence.",
+  "OK": false,
+  "Ms": 247
+ },
+ {
+  "ID": "m040",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 281
+ },
+ {
+  "ID": "m041",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 288
+ },
+ {
+  "ID": "m042",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 276
+ },
+ {
+  "ID": "m043",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 272
+ },
+ {
+  "ID": "m044",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 293
+ },
+ {
+  "ID": "m045",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 271
+ },
+ {
+  "ID": "m046",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 264
+ },
+ {
+  "ID": "m047",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "latex: ! LaTeX Error: Can be used only in preamble.",
+  "OK": false,
+  "Ms": 242
+ },
+ {
+  "ID": "m048",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 282
+ },
+ {
+  "ID": "m049",
+  "Cat": "ams",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 262
+ },
+ {
+  "ID": "m050",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 285
+ },
+ {
+  "ID": "m051",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 283
+ },
+ {
+  "ID": "m052",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 266
+ },
+ {
+  "ID": "m053",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 271
+ },
+ {
+  "ID": "m054",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 268
+ },
+ {
+  "ID": "m055",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 268
+ },
+ {
+  "ID": "m056",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 273
+ },
+ {
+  "ID": "m057",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 277
+ },
+ {
+  "ID": "m058",
+  "Cat": "amssymb",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 273
+ },
+ {
+  "ID": "m059",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "m060",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "m061",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 275
+ },
+ {
+  "ID": "m062",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 284
+ },
+ {
+  "ID": "m063",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 283
+ },
+ {
+  "ID": "m064",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 281
+ },
+ {
+  "ID": "m065",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 305
+ },
+ {
+  "ID": "m066",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 300
+ },
+ {
+  "ID": "m067",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 272
+ },
+ {
+  "ID": "m068",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 271
+ },
+ {
+  "ID": "m069",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "latex: ! Undefined control sequence.",
+  "OK": false,
+  "Ms": 248
+ },
+ {
+  "ID": "m070",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 284
+ },
+ {
+  "ID": "m071",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 267
+ },
+ {
+  "ID": "m072",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 282
+ },
+ {
+  "ID": "m073",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 265
+ },
+ {
+  "ID": "m074",
+  "Cat": "core",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 284
+ },
+ {
+  "ID": "m075",
+  "Cat": "macros",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 300
+ },
+ {
+  "ID": "m076",
+  "Cat": "macros",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 280
+ },
+ {
+  "ID": "m077",
+  "Cat": "macros",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 276
+ },
+ {
+  "ID": "m078",
+  "Cat": "macros",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 293
+ },
+ {
+  "ID": "m079",
+  "Cat": "color",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 287
+ },
+ {
+  "ID": "m080",
+  "Cat": "color",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 276
+ },
+ {
+  "ID": "m081",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 340
+ },
+ {
+  "ID": "m082",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 338
+ },
+ {
+  "ID": "m083",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 322
+ },
+ {
+  "ID": "m084",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 369
+ },
+ {
+  "ID": "m085",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 387
+ },
+ {
+  "ID": "m086",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 413
+ },
+ {
+  "ID": "m087",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 351
+ },
+ {
+  "ID": "m088",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "latex: ! Undefined control sequence.",
+  "OK": false,
+  "Ms": 246
+ },
+ {
+  "ID": "m089",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 430
+ },
+ {
+  "ID": "m090",
+  "Cat": "mhchem",
+  "Kind": "math",
+  "Err": "",
+  "OK": true,
+  "Ms": 468
+ },
+ {
+  "ID": "t001",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 278
+ },
+ {
+  "ID": "t002",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "t003",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 279
+ },
+ {
+  "ID": "t004",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 279
+ },
+ {
+  "ID": "t005",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 298
+ },
+ {
+  "ID": "t006",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 280
+ },
+ {
+  "ID": "t007",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 275
+ },
+ {
+  "ID": "t008",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "t009",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 286
+ },
+ {
+  "ID": "t010",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 281
+ },
+ {
+  "ID": "t011",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 286
+ },
+ {
+  "ID": "t012",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 305
+ },
+ {
+  "ID": "t013",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 283
+ },
+ {
+  "ID": "t014",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "t015",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 305
+ },
+ {
+  "ID": "t016",
+  "Cat": "tikz-basic",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 288
+ },
+ {
+  "ID": "t017",
+  "Cat": "arrows.meta",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 301
+ },
+ {
+  "ID": "t018",
+  "Cat": "calc",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 279
+ },
+ {
+  "ID": "t019",
+  "Cat": "positioning",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 300
+ },
+ {
+  "ID": "t020",
+  "Cat": "shapes",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 298
+ },
+ {
+  "ID": "t021",
+  "Cat": "shapes",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 303
+ },
+ {
+  "ID": "t022",
+  "Cat": "decorations.pathreplacing",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "t023",
+  "Cat": "intersections",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 292
+ },
+ {
+  "ID": "t024",
+  "Cat": "patterns",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 299
+ },
+ {
+  "ID": "t025",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 293
+ },
+ {
+  "ID": "t026",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 293
+ },
+ {
+  "ID": "t027",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 284
+ },
+ {
+  "ID": "t028",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 293
+ },
+ {
+  "ID": "t029",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 313
+ },
+ {
+  "ID": "t030",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 296
+ },
+ {
+  "ID": "t031",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 279
+ },
+ {
+  "ID": "t032",
+  "Cat": "fence-preamble",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 289
+ },
+ {
+  "ID": "t033",
+  "Cat": "math-in-tikz",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 319
+ },
+ {
+  "ID": "t034",
+  "Cat": "color",
+  "Kind": "tikz",
+  "Err": "",
+  "OK": true,
+  "Ms": 290
+ }
+]

@@ -85,7 +85,7 @@ func (a *App) glamourRenderer(width int) (*glamour.TermRenderer, error) {
 
 // mdBlock is one renderable slice of a note.
 type mdBlock struct {
-	kind  string // front, fence, table, list, quote, heading, hr, para, blank
+	kind  string // front, fence, math, tex, table, list, quote, heading, hr, para, blank
 	start int    // first source line
 	end   int    // one past the last source line
 }
@@ -100,10 +100,42 @@ var (
 	taskStateRe   = regexp.MustCompile(`(?m)^(\s*)([-*+]|\d+[.)])\s+\[([/>\-])\]\s?(.*)$`)
 	calloutLineRe = regexp.MustCompile(`(?m)^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
 	itemMarkerRe  = regexp.MustCompile(`^\s*(?:[•◦▪\-*+]|\d+\.|\[[ xX✓✔]\]|☐|☑)\s`)
+	texOpenRe     = regexp.MustCompile(`^ {0,3}\\\[\s*$`)
+	texLineRe     = regexp.MustCompile(`^ {0,3}\\\[.*\\\]\s*$`)
+	texEnvRe      = regexp.MustCompile(`^ {0,3}\\begin\{((?:equation|align|gather|multline|alignat|flalign|eqnarray)\*?|tikzpicture)\}`)
 )
 
-// splitBlocks walks the source lines and groups them into blocks.
-func splitBlocks(lines []string) []mdBlock {
+// texBlockEnd returns one past the last line of a block-level \[…\] or
+// display environment (texEnvRe) that starts at line i, or -1 when none
+// starts there or it is never closed, so an unclosed opener stays text.
+func texBlockEnd(lines []string, i int) int {
+	if texLineRe.MatchString(lines[i]) {
+		return i + 1
+	}
+	if texOpenRe.MatchString(lines[i]) {
+		for j := i + 1; j < len(lines); j++ {
+			if strings.HasSuffix(strings.TrimSpace(lines[j]), `\]`) {
+				return j + 1
+			}
+		}
+		return -1
+	}
+	m := texEnvRe.FindStringSubmatch(lines[i])
+	if m == nil {
+		return -1
+	}
+	end := `\end{` + m[1] + `}`
+	for j := i; j < len(lines); j++ {
+		if strings.Contains(lines[j], end) {
+			return j + 1
+		}
+	}
+	return -1
+}
+
+// splitBlocks walks the source lines and groups them into blocks. With
+// latex, block-level \[…\] and the display environments become "tex" blocks.
+func splitBlocks(lines []string, latex bool) []mdBlock {
 	blocks := []mdBlock{}
 	i := 0
 	if len(lines) > 0 && lines[0] == "---" {
@@ -149,6 +181,10 @@ func splitBlocks(lines []string) []mdBlock {
 			}
 			blocks = append(blocks, mdBlock{kind: "math", start: i, end: j})
 			i = j
+		case latex && texBlockEnd(lines, i) > 0:
+			j := texBlockEnd(lines, i)
+			blocks = append(blocks, mdBlock{kind: "tex", start: i, end: j})
+			i = j
 		case tableRowRe.MatchString(line):
 			j := i
 			for j < len(lines) && tableRowRe.MatchString(lines[j]) {
@@ -185,7 +221,7 @@ func splitBlocks(lines []string) []mdBlock {
 			j := i + 1
 			for j < len(lines) {
 				next := lines[j]
-				if blankRe.MatchString(next) || fenceRe.MatchString(next) || headingRe.MatchString(next) || tableRowRe.MatchString(next) || quoteRe.MatchString(next) || listLineRe.MatchString(next) || hrRe.MatchString(next) || mathFenceRe.MatchString(next) || mathInlineOpen.MatchString(next) {
+				if blankRe.MatchString(next) || fenceRe.MatchString(next) || headingRe.MatchString(next) || tableRowRe.MatchString(next) || quoteRe.MatchString(next) || listLineRe.MatchString(next) || hrRe.MatchString(next) || mathFenceRe.MatchString(next) || mathInlineOpen.MatchString(next) || latex && texBlockEnd(lines, j) > 0 {
 					break
 				}
 				j++
@@ -366,9 +402,10 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 	th := a.theme
 	lines := strings.Split(text, "\n")
 	out := []previewLine{}
-	for _, b := range splitBlocks(lines) {
-		if embedded, ok := a.embedBlockLines(b, lines, width, fromPath); ok {
-			out = append(out, embedded...)
+	for _, b := range splitBlocks(lines, a.prefs.TerminalMath == "latex") {
+		embedded, ok := a.embedBlockLines(b, lines, width, fromPath)
+		out = append(out, embedded...)
+		if ok {
 			continue
 		}
 		switch b.kind {

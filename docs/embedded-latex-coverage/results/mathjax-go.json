@@ -1,0 +1,632 @@
+[
+ {
+  "ID": "m001",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 343
+ },
+ {
+  "ID": "m002",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 243
+ },
+ {
+  "ID": "m003",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 141
+ },
+ {
+  "ID": "m004",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 63
+ },
+ {
+  "ID": "m005",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 229
+ },
+ {
+  "ID": "m006",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 436
+ },
+ {
+  "ID": "m007",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 121
+ },
+ {
+  "ID": "m008",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 110
+ },
+ {
+  "ID": "m009",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 102
+ },
+ {
+  "ID": "m010",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 370
+ },
+ {
+  "ID": "m011",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 307
+ },
+ {
+  "ID": "m012",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 414
+ },
+ {
+  "ID": "m013",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 106
+ },
+ {
+  "ID": "m014",
+  "Cat": "form",
+  "Err": "",
+  "OK": true,
+  "Us": 162
+ },
+ {
+  "ID": "m015",
+  "Cat": "form",
+  "Err": "Unknown environment 'eqnarray'",
+  "OK": false,
+  "Us": 70
+ },
+ {
+  "ID": "m016",
+  "Cat": "form",
+  "Err": "Unknown environment 'eqnarray*'",
+  "OK": false,
+  "Us": 54
+ },
+ {
+  "ID": "m017",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 131
+ },
+ {
+  "ID": "m018",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 279
+ },
+ {
+  "ID": "m019",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 202
+ },
+ {
+  "ID": "m020",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 263
+ },
+ {
+  "ID": "m021",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 457
+ },
+ {
+  "ID": "m022",
+  "Cat": "ams",
+  "Err": "raster: no size",
+  "OK": true,
+  "Us": 180
+ },
+ {
+  "ID": "m023",
+  "Cat": "ams",
+  "Err": "raster: no size",
+  "OK": true,
+  "Us": 78
+ },
+ {
+  "ID": "m024",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\intertext",
+  "OK": false,
+  "Us": 43
+ },
+ {
+  "ID": "m025",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 202
+ },
+ {
+  "ID": "m026",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 269
+ },
+ {
+  "ID": "m027",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 231
+ },
+ {
+  "ID": "m028",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 112
+ },
+ {
+  "ID": "m029",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 235
+ },
+ {
+  "ID": "m030",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 260
+ },
+ {
+  "ID": "m031",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 173
+ },
+ {
+  "ID": "m032",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 251
+ },
+ {
+  "ID": "m033",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 176
+ },
+ {
+  "ID": "m034",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\pod",
+  "OK": false,
+  "Us": 76
+ },
+ {
+  "ID": "m035",
+  "Cat": "ams",
+  "Err": "Double exponent: use braces to clarify",
+  "OK": false,
+  "Us": 103
+ },
+ {
+  "ID": "m036",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 406
+ },
+ {
+  "ID": "m037",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\mathstrut",
+  "OK": false,
+  "Us": 97
+ },
+ {
+  "ID": "m038",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 246
+ },
+ {
+  "ID": "m039",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\leftidx",
+  "OK": false,
+  "Us": 79
+ },
+ {
+  "ID": "m040",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\leftroot",
+  "OK": false,
+  "Us": 56
+ },
+ {
+  "ID": "m041",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 100
+ },
+ {
+  "ID": "m042",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\pmb",
+  "OK": false,
+  "Us": 150
+ },
+ {
+  "ID": "m043",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 334
+ },
+ {
+  "ID": "m044",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\overleftrightarrow",
+  "OK": false,
+  "Us": 76
+ },
+ {
+  "ID": "m045",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 154
+ },
+ {
+  "ID": "m046",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 180
+ },
+ {
+  "ID": "m047",
+  "Cat": "ams",
+  "Err": "",
+  "OK": true,
+  "Us": 80
+ },
+ {
+  "ID": "m048",
+  "Cat": "ams",
+  "Err": "Unknown environment 'subequations'",
+  "OK": false,
+  "Us": 44
+ },
+ {
+  "ID": "m049",
+  "Cat": "ams",
+  "Err": "Undefined control sequence \\numberwithin",
+  "OK": false,
+  "Us": 39
+ },
+ {
+  "ID": "m050",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 151
+ },
+ {
+  "ID": "m051",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 104
+ },
+ {
+  "ID": "m052",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 159
+ },
+ {
+  "ID": "m053",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 94
+ },
+ {
+  "ID": "m054",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 349
+ },
+ {
+  "ID": "m055",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 116
+ },
+ {
+  "ID": "m056",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 196
+ },
+ {
+  "ID": "m057",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 266
+ },
+ {
+  "ID": "m058",
+  "Cat": "amssymb",
+  "Err": "",
+  "OK": true,
+  "Us": 125
+ },
+ {
+  "ID": "m059",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 269
+ },
+ {
+  "ID": "m060",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 181
+ },
+ {
+  "ID": "m061",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 195
+ },
+ {
+  "ID": "m062",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 163
+ },
+ {
+  "ID": "m063",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 314
+ },
+ {
+  "ID": "m064",
+  "Cat": "core",
+  "Err": "Undefined control sequence \\hline",
+  "OK": false,
+  "Us": 100
+ },
+ {
+  "ID": "m065",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 548
+ },
+ {
+  "ID": "m066",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 112
+ },
+ {
+  "ID": "m067",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 174
+ },
+ {
+  "ID": "m068",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 120
+ },
+ {
+  "ID": "m069",
+  "Cat": "core",
+  "Err": "Undefined control sequence \\overleftrightarrow",
+  "OK": false,
+  "Us": 32
+ },
+ {
+  "ID": "m070",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 66
+ },
+ {
+  "ID": "m071",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 378
+ },
+ {
+  "ID": "m072",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 111
+ },
+ {
+  "ID": "m073",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 99
+ },
+ {
+  "ID": "m074",
+  "Cat": "core",
+  "Err": "",
+  "OK": true,
+  "Us": 52
+ },
+ {
+  "ID": "m075",
+  "Cat": "macros",
+  "Err": "Undefined control sequence \\newcommand",
+  "OK": false,
+  "Us": 37
+ },
+ {
+  "ID": "m076",
+  "Cat": "macros",
+  "Err": "Undefined control sequence \\renewcommand",
+  "OK": false,
+  "Us": 39
+ },
+ {
+  "ID": "m077",
+  "Cat": "macros",
+  "Err": "Undefined control sequence \\def",
+  "OK": false,
+  "Us": 28
+ },
+ {
+  "ID": "m078",
+  "Cat": "macros",
+  "Err": "Undefined control sequence \\newcommand",
+  "OK": false,
+  "Us": 26
+ },
+ {
+  "ID": "m079",
+  "Cat": "color",
+  "Err": "",
+  "OK": true,
+  "Us": 252
+ },
+ {
+  "ID": "m080",
+  "Cat": "color",
+  "Err": "",
+  "OK": true,
+  "Us": 138
+ },
+ {
+  "ID": "m081",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 1488
+ },
+ {
+  "ID": "m082",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 378
+ },
+ {
+  "ID": "m083",
+  "Cat": "mhchem",
+  "Err": "Undefined control sequence \\longrightleftharpoons",
+  "OK": false,
+  "Us": 141
+ },
+ {
+  "ID": "m084",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 1051
+ },
+ {
+  "ID": "m085",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 676
+ },
+ {
+  "ID": "m086",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 1233
+ },
+ {
+  "ID": "m087",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 769
+ },
+ {
+  "ID": "m088",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 231
+ },
+ {
+  "ID": "m089",
+  "Cat": "mhchem",
+  "Err": "",
+  "OK": true,
+  "Us": 1141
+ },
+ {
+  "ID": "m090",
+  "Cat": "mhchem",
+  "Err": "Misplaced alignment tab character \u0026amp;",
+  "OK": false,
+  "Us": 174
+ }
+]

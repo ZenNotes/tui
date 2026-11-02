@@ -73,3 +73,21 @@ func TestSetValueRemovesEntryAndRejectsBrokenConfig(t *testing.T) {
 		t.Fatal("failed update modified config")
 	}
 }
+
+// Writes stay strict for the keys LoadPrefs is lenient about: SetValue
+// refuses a bad engine or a non-integer timeout instead of saving it.
+func TestSetValueRejectsBadLatexKeys(t *testing.T) {
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	if err := SetValue("terminal", "math", "foo"); err == nil {
+		t.Fatal("math = \"foo\" was written")
+	}
+	if err := SetValue("terminal", "render_timeout", "ten"); err == nil {
+		t.Fatal("render_timeout = \"ten\" was written")
+	}
+	if err := SetValue("terminal", "math", "latex"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, err := LoadPrefs(); err != nil || p.TerminalMath != "latex" {
+		t.Fatalf("math after set: %q, err %v", p.TerminalMath, err)
+	}
+}

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // Tag completion. Typing `#` and a letter in a note offers the vault's
@@ -42,7 +42,7 @@ type tagMenu struct {
 	scroll int
 	// at is where the cursor stood when the menu was last refreshed. A cursor
 	// that moved by other means (the mouse, a reload) makes the menu stale.
-	at helix.Pos
+	at vim.Pos
 }
 
 func isTagRune(r rune) bool {
@@ -204,7 +204,8 @@ func (a *App) tagPool(buf *noteBuffer) []tagCount {
 	counts := map[string]int{}
 	if a.idx != nil {
 		for _, n := range a.idx.notes {
-			if n.Folder == vault.FolderTrash || n.Path == buf.path {
+			// A note in the template folder contributes no tags (#1024).
+			if n.Folder == vault.FolderTrash || n.Path == buf.path || vault.IsPathInTemplateFolder(n.Path, a.idx.settings.TemplateFolder) {
 				continue
 			}
 			for _, t := range n.Tags {
@@ -230,7 +231,7 @@ func (a *App) liveTagMenu() *tagMenu {
 	}
 	buf := a.activeBuffer()
 	if buf == nil || a.overlay != nil || a.focus != focusPane || buf.path != m.path ||
-		buf.ed.Mode() != helix.ModeInsert || buf.ed.Cursor() != m.at {
+		buf.ed.Mode() != vim.ModeInsert || buf.ed.Cursor() != m.at {
 		a.tagMenu = nil
 		return nil
 	}
@@ -243,7 +244,7 @@ func (a *App) liveTagMenu() *tagMenu {
 func (a *App) refreshTagMenu(buf *noteBuffer) {
 	prev := a.tagMenu
 	a.tagMenu = nil
-	if buf.ed.Mode() != helix.ModeInsert {
+	if buf.ed.Mode() != vim.ModeInsert {
 		a.tagDismissed = nil
 		return
 	}
@@ -282,7 +283,7 @@ func (a *App) refreshTagMenu(buf *noteBuffer) {
 
 // wordTagToken is the run of tag characters from start to the cursor, for
 // a menu that was opened by hand where no '#' had been typed.
-func wordTagToken(line []rune, cur helix.Pos, start int) (tagToken, bool) {
+func wordTagToken(line []rune, cur vim.Pos, start int) (tagToken, bool) {
 	if start > cur.Col || cur.Col > len(line) {
 		return tagToken{}, false
 	}
@@ -304,7 +305,7 @@ type tagDismissal struct {
 // anywhere else the word before the cursor becomes the query and the pick
 // replaces it with `#tag`.
 func (a *App) openTagMenu(buf *noteBuffer) {
-	if buf.ed.Mode() != helix.ModeInsert {
+	if buf.ed.Mode() != vim.ModeInsert {
 		return
 	}
 	cur := buf.ed.Cursor()
@@ -329,7 +330,7 @@ func (a *App) openTagMenu(buf *noteBuffer) {
 
 // tagMenuKey takes the keys that drive an open menu. Everything else goes
 // on to the editor, which is how typing narrows the list.
-func (a *App) tagMenuKey(buf *noteBuffer, k helix.Key) bool {
+func (a *App) tagMenuKey(buf *noteBuffer, k vim.Key) bool {
 	m := a.liveTagMenu()
 	if m == nil {
 		return false
@@ -343,7 +344,7 @@ func (a *App) tagMenuKey(buf *noteBuffer, k helix.Key) bool {
 		a.acceptTag(buf, m)
 	case k.IsCtrl('e'):
 		a.dismissTagMenu(m)
-	case k.Is("esc") && !a.prefs.HelixMode:
+	case k.Is("esc") && !a.prefs.VimMode:
 		a.dismissTagMenu(m)
 	default:
 		// Esc in Vim mode closes the menu and leaves insert mode, as Vim's

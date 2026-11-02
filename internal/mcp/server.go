@@ -34,6 +34,10 @@ type Options struct {
 	ResolveTarget func() (backend.Target, error)
 	// OpenBackend binds a resolved target.
 	OpenBackend func(backend.Target) (Backend, error)
+	// Scope limits what clients see and change (ZenNotes/tui#21); nil is
+	// full access. It comes from the server's own launch flags, never from a
+	// tool call.
+	Scope *Scope
 	// Version is reported to clients.
 	Version string
 	// Transport defaults to stdio; tests pass an in-memory one.
@@ -156,9 +160,15 @@ func tools() []toolDef {
 				}
 				folders, err := b.ListFolders(ctx)
 				if err != nil {
-					return nil, err
+					// A scope that shares nothing still answers vault_info, with
+					// the reason under access.blocked.
+					if _, scoped := b.(*scopedBackend); !scoped {
+						return nil, err
+					}
+					folders = []vault.FolderEntry{}
 				}
 				isRoot := description.PrimaryNotesLocation == vault.PrimaryNotesRoot
+				scoped, isScoped := b.(*scopedBackend)
 				pathNotes := "IMPORTANT: Always use the `path` returned by other tools verbatim. Never prepend `inbox/` to a path you got back from list_notes / create_note / read_note. "
 				switchNote := ""
 				if previous, ok := ctx.Value(previousVaultKey{}).(backend.Target); ok {
@@ -169,7 +179,30 @@ func tools() []toolDef {
 				} else {
 					pathNotes += "This vault uses INBOX mode: notes for the conceptual `inbox` folder live under `inbox/` (e.g. `inbox/MyNote.md`)."
 				}
+				if isScoped && scoped.scope.Restricted() {
+					pathNotes += " You see part of this vault: `access.allow` lists what was shared (empty means everything except some hidden paths). Anything else does not exist for you."
+				}
 				top := []string{"inbox", "quick", "archive", "trash"}
+				if isScoped {
+					// An assistant with scoped access gets no absolute paths: it
+					// has no use for them, and they name the user's home folder.
+					result := orderedResult{{"kind", string(description.Kind)}}
+					if description.Kind == backend.KindRemote {
+						var serverName *string
+						if description.Name != "" {
+							serverName = &description.Name
+						}
+						result = append(result, orderedResult{{"server", description.BaseURL}, {"serverName", serverName}}...)
+					}
+					result = append(result, orderedResult{
+						{"primaryNotesLocation", description.PrimaryNotesLocation},
+						{"topFolders", top},
+						{"subfolders", folders},
+						{"access", scoped.accessInfo(ctx)},
+						{"notes", switchNote + pathNotes},
+					}...)
+					return result, nil
+				}
 				if description.Kind == backend.KindRemote {
 					notes := "This vault lives on a self-hosted ZenNotes server, the workspace the desktop app currently has open. Every tool works on it through the server API; paths are vault-relative POSIX paths exactly as the server reports them. " + pathNotes
 					if !description.AuthConfigured {
@@ -259,6 +292,12 @@ func tools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
+				// A tag filter is a tag search, which skips the template
+				// folder (ZenNotes/zennotes#1024).
+				templateFolder := ""
+				if hasTag {
+					templateFolder = backend.TemplateFolder(ctx, b)
+				}
 				notes := []vault.NoteMeta{}
 				prefix := ""
 				if hasSub && sub != "" {
@@ -275,7 +314,7 @@ func tools() []toolDef {
 					if prefix != "" && !strings.HasPrefix(n.Path, prefix) {
 						continue
 					}
-					if hasTag && !containsFold(n.Tags, strings.ToLower(tag)) {
+					if hasTag && (!containsFold(n.Tags, strings.ToLower(tag)) || vault.IsPathInTemplateFolder(n.Path, templateFolder)) {
 						continue
 					}
 					if hasWiki && !containsFold(n.Wikilinks, strings.ToLower(wikilinkTo)) {
@@ -674,9 +713,10 @@ func tools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
+				templateFolder := backend.TemplateFolder(ctx, b)
 				matches := []vault.NoteMeta{}
 				for _, n := range all {
-					if n.Folder != vault.FolderTrash && containsFold(n.Tags, tag) {
+					if n.Folder != vault.FolderTrash && containsFold(n.Tags, tag) && !vault.IsPathInTemplateFolder(n.Path, templateFolder) {
 						matches = append(matches, n)
 					}
 				}
@@ -696,9 +736,11 @@ func tools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
+				// A note in the template folder contributes no tags (#1024).
+				templateFolder := backend.TemplateFolder(ctx, b)
 				counts := map[string]int{}
 				for _, n := range all {
-					if n.Folder == vault.FolderTrash {
+					if n.Folder == vault.FolderTrash || vault.IsPathInTemplateFolder(n.Path, templateFolder) {
 						continue
 					}
 					for _, t := range n.Tags {
@@ -736,7 +778,7 @@ func tools() []toolDef {
 "tag":{"type":"string"},
 "folder":{"type":"string","enum":["inbox","quick","archive"]},
 "tags":{"type":"array","items":{"type":"string"},"description":"Alternative to tag: require ALL of these tags."},
-"includeExcluded":{"type":"boolean","description":"Also scan notes opted out of Tasks (frontmatter ` + "`tasks: false`" + ` / ` + "`tasks: note`" + `) and folders on the vault's excluded list. Default false: excluded tasks are invisible."}}}`,
+"includeExcluded":{"type":"boolean","description":"Also scan notes opted out of Tasks (frontmatter ` + "`tasks: false`" + ` / ` + "`tasks: note`" + `), folders on the vault's excluded list, its template folder, and notes outside its Task folders. Default false: excluded tasks are invisible."}}}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				status, has, err := a.optionalString("status")
 				if err != nil {
@@ -992,12 +1034,30 @@ func ToolNames() []string {
 // CallTool runs one tool by name: the seam tests use; the stdio server goes
 // through the same handlers.
 func CallTool(ctx context.Context, name string, a map[string]any, b Backend) (any, error) {
+	return CallToolScoped(ctx, name, a, b, nil)
+}
+
+// CallToolScoped is CallTool under a scope, as the stdio server runs it: a
+// tool the scope does not offer is unknown, and the rest see the vault
+// through the scope.
+func CallToolScoped(ctx context.Context, name string, a map[string]any, b Backend, scope *Scope) (any, error) {
+	if !toolAllowed(name, scope) {
+		return nil, fmt.Errorf("Unknown tool: %s", name)
+	}
 	for _, d := range tools() {
 		if d.name == name {
-			return d.handler(ctx, args(a), b)
+			return d.handler(ctx, args(a), scopeBackend(b, scope))
 		}
 	}
 	return nil, fmt.Errorf("Unknown tool: %s", name)
+}
+
+// scopeBackend wraps a call's backend in its scope; full access runs bare.
+func scopeBackend(b Backend, scope *Scope) Backend {
+	if scope == nil || !scope.Active() {
+		return b
+	}
+	return newScopedBackend(b, *scope)
 }
 
 // DescribeToolError phrases a failure for the agent. A server that turns
@@ -1007,6 +1067,12 @@ func CallTool(ctx context.Context, name string, a map[string]any, b Backend) (an
 // against, nil when none resolved.
 func DescribeToolError(err error, b Backend) string {
 	msg := err.Error()
+	if b != nil {
+		if _, scoped := b.(*scopedBackend); scoped {
+			msg = scrubPaths(msg, b)
+		}
+		b = unwrapBackend(b)
+	}
 	if status := remote.StatusOf(err); status == 401 || status == 403 {
 		serverURL := ""
 		if r, ok := b.(*backend.Remote); ok {
@@ -1060,16 +1126,26 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	vaults := &session{resolve: opts.ResolveTarget, open: opts.OpenBackend}
 
+	instructions := ResolveInstructions()
+	if opts.Scope != nil && opts.Scope.Active() {
+		instructions += scopeInstructions(*opts.Scope)
+	}
 	server := sdk.NewServer(&sdk.Implementation{Name: "zennotes", Version: version}, &sdk.ServerOptions{
-		Instructions: ResolveInstructions(),
+		Instructions: instructions,
 		Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}},
 	})
 	for _, def := range tools() {
 		def := def
+		// A tool the scope does not offer is not listed, so the model never
+		// plans around it, and an SDK call to it is an unknown tool.
+		if !toolAllowed(def.name, opts.Scope) {
+			continue
+		}
 		server.AddTool(&sdk.Tool{
 			Name:        def.name,
 			Description: def.description,
 			InputSchema: json.RawMessage(def.schema),
+			Annotations: toolAnnotations(def.name),
 		}, func(ctx context.Context, req *sdk.CallToolRequest) (*sdk.CallToolResult, error) {
 			a := map[string]any{}
 			if len(req.Params.Arguments) > 0 {
@@ -1084,6 +1160,7 @@ func Run(ctx context.Context, opts Options) error {
 			if previous != nil {
 				ctx = context.WithValue(ctx, previousVaultKey{}, *previous)
 			}
+			b = scopeBackend(b, opts.Scope)
 			// An edit to a note is recorded so the user can review it in the app.
 			agent := "Assistant"
 			if req.Session != nil {

@@ -61,6 +61,10 @@ func cmdConfig(ctx context.Context, args Args) error {
 	return nil
 }
 
+// viewModeRulePrefix names a frontmatter view-mode rule under terminal; the
+// rest of the name is the rule's "<key>=<value>" as written in config.toml.
+const viewModeRulePrefix = "view_mode_rules."
+
 func preferenceValues(p config.Prefs) map[string]map[string]any {
 	values := config.ValueTables(p)
 	for section, entries := range map[string]map[string]string{"keymaps": p.KeymapOverrides, "saved_filters": p.SavedTaskFilters, "kanban_column_titles": p.KanbanColumnTitles, "tweaks": p.ThemeTweaks} {
@@ -68,6 +72,9 @@ func preferenceValues(p config.Prefs) map[string]map[string]any {
 		for key, value := range entries {
 			values[section][key] = value
 		}
+	}
+	for _, e := range config.ViewModeRuleEntries(p.ViewModeRules) {
+		values["terminal"][viewModeRulePrefix+e.Key] = e.Mode
 	}
 	return values
 }
@@ -109,7 +116,8 @@ func cmdConfigAction(ctx context.Context, args Args, action string) error {
 	}
 	value, exists := values[section][name]
 	if !exists {
-		if action != "set" || (section != "keymaps" && section != "saved_filters" && section != "kanban_column_titles" && section != "tweaks") {
+		isRule := section == "terminal" && strings.HasPrefix(name, viewModeRulePrefix)
+		if action != "set" || (!isRule && section != "keymaps" && section != "saved_filters" && section != "kanban_column_titles" && section != "tweaks") {
 			return fmt.Errorf("unknown preference %q; `zn config list` shows supported keys", key)
 		}
 		value = ""
@@ -119,6 +127,18 @@ func cmdConfigAction(ctx context.Context, args Args, action string) error {
 			return errors.New("usage: zn config set <section.key> <value>")
 		}
 		raw := args.Positional(1)
+		if name, isRule := strings.CutPrefix(name, viewModeRulePrefix); isRule && section == "terminal" {
+			if err := config.SetViewModeRule(name, raw); err != nil {
+				return fmt.Errorf("invalid value for %s: %w", key, err)
+			}
+			mode := strings.ToLower(strings.TrimSpace(raw))
+			if args.Bool("json") {
+				emitJSON(map[string]any{"ok": true, "key": key, "value": mode})
+			} else {
+				emitOK(fmt.Sprintf("%s = %v", key, mode))
+			}
+			return nil
+		}
 		switch value.(type) {
 		case bool:
 			value, err = strconv.ParseBool(raw)

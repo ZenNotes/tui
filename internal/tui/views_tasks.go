@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // tasksView is the Tasks tab: list, board and calendar modes.
@@ -28,17 +28,12 @@ type tasksView struct {
 	col     int
 	card    int
 
-	month     time.Time
-	day       time.Time
-	dayTasks  []vault.Task
-	dayCursor int
-	dayFocus  bool
-	byDay     map[string][]vault.Task
-	pageRows  int
+	month    time.Time
+	day      time.Time
+	cal      *taskCalendar
+	pageRows int
 
 	boardStarts []int
-	calFirst    time.Time
-	calWeeks    int
 }
 
 type taskRow struct {
@@ -67,6 +62,14 @@ func newTasksView(a *App) *tasksView {
 	}
 	v.refresh(a)
 	return v
+}
+
+// calc is the calendar state, made on first use.
+func (v *tasksView) calc() *taskCalendar {
+	if v.cal == nil {
+		v.cal = newTaskCalendar()
+	}
+	return v.cal
 }
 
 func (v *tasksView) title() string { return "Tasks" }
@@ -120,11 +123,7 @@ func (v *tasksView) refresh(a *App) {
 		v.list.cursor++
 	}
 	v.buildColumns(a)
-	v.byDay = vault.BucketTasksByDueDate(v.tasks)
-	v.dayTasks = v.byDay[v.day.Format("2006-01-02")]
-	if v.dayCursor >= len(v.dayTasks) {
-		v.dayCursor = max(0, len(v.dayTasks)-1)
-	}
+	v.calc().rebuild(v.tasks, v.day)
 }
 
 // filterTasks applies the cross-view filter: free words match content and
@@ -499,7 +498,7 @@ func (v *tasksView) render(a *App, w, h int, focused bool) string {
 	case "kanban":
 		body = v.renderBoard(a, w, h-1, focused)
 	case "calendar":
-		body = v.renderCalendar(a, w, h-1, focused)
+		body = v.calc().render(a, v.month, v.day, w, h-1, focused)
 	default:
 		body = v.renderList(a, w, h-1, focused)
 	}
@@ -662,39 +661,6 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, blocks...)
 }
 
-func (v *tasksView) renderCalendar(a *App, w, h int, focused bool) string {
-	th := a.theme
-	weekStartMonday := a.prefs.CalendarWeekStart != "sunday"
-	grid, first, weeks := renderMonthGrid(a, v.month, v.day, weekStartMonday, a.prefs.CalendarShowWeekNumbers, func(day time.Time) (string, lipgloss.Style) {
-		tasks := v.byDay[day.Format("2006-01-02")]
-		open := 0
-		for _, t := range tasks {
-			if !t.Checked && !t.Cancelled && !t.Forwarded {
-				open++
-			}
-		}
-		if open == 0 {
-			return "", th.Base
-		}
-		return fmt.Sprint(open), th.Marker
-	}, focused && !v.dayFocus)
-	v.calFirst, v.calWeeks = first, weeks
-	gridLines := strings.Split(grid, "\n")
-	lines := []string{}
-	for _, gl := range gridLines {
-		lines = append(lines, padRight(" "+gl, w))
-	}
-	lines = append(lines, padRight(th.Bold.Render(" "+v.day.Format("Monday, January 2")+fmt.Sprintf("  (%d tasks)", len(v.dayTasks))), w))
-	listH := h - len(lines)
-	if len(v.dayTasks) == 0 {
-		lines = append(lines, padRight(" "+th.Muted.Render("No tasks due this day. n adds one to the daily note."), w))
-	}
-	for i := 0; i < len(v.dayTasks) && i < listH; i++ {
-		lines = append(lines, v.taskLine(a, v.dayTasks[i], w, focused && v.dayFocus && i == v.dayCursor))
-	}
-	return fitBlock(strings.Join(lines, "\n"), w, h)
-}
-
 // renderMonthGrid draws a month with a marker per day.
 func renderMonthGrid(a *App, month, selected time.Time, mondayFirst, weekNumbers bool, mark func(day time.Time) (string, lipgloss.Style), focused bool) (string, time.Time, int) {
 	th := a.theme
@@ -766,7 +732,17 @@ func sameDay(a, b time.Time) bool {
 
 // --- keys ---
 
-func (v *tasksView) handleKey(a *App, k helix.Key) bool {
+func (v *tasksView) ownsKey(a *App, k vim.Key) bool {
+	switch v.mode {
+	case "kanban":
+		return k.IsRune('g')
+	case "calendar":
+		return v.calc().focus == calFocusGrid && (k.IsRune('[') || k.IsRune(']'))
+	}
+	return false
+}
+
+func (v *tasksView) handleKey(a *App, k vim.Key) bool {
 	if k.IsRune('S') {
 		a.savedTaskFilters()
 		return true
@@ -847,11 +823,7 @@ func (v *tasksView) selectedTask() *vault.Task {
 		}
 		return nil
 	case "calendar":
-		if v.dayFocus && v.dayCursor < len(v.dayTasks) {
-			t := v.dayTasks[v.dayCursor]
-			return &t
-		}
-		return nil
+		return v.calc().selected(v.day)
 	}
 	if v.list.cursor < len(v.rows) {
 		return v.rows[v.list.cursor].task
@@ -859,7 +831,7 @@ func (v *tasksView) selectedTask() *vault.Task {
 	return nil
 }
 
-func (v *tasksView) listKey(a *App, k helix.Key) bool {
+func (v *tasksView) listKey(a *App, k vim.Key) bool {
 	n := len(v.rows)
 	before := v.list.cursor
 	if a.listNav(&v.list, k, n, v.pageRows) {
@@ -935,7 +907,7 @@ func (v *tasksView) listKey(a *App, k helix.Key) bool {
 }
 
 // taskEditKey handles the per-task edit keys shared by every mode.
-func (v *tasksView) taskEditKey(a *App, k helix.Key, t *vault.Task) bool {
+func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
 	if t == nil {
 		return false
 	}
@@ -966,7 +938,7 @@ func (v *tasksView) taskEditKey(a *App, k helix.Key, t *vault.Task) bool {
 	return true
 }
 
-func (v *tasksView) boardKey(a *App, k helix.Key) bool {
+func (v *tasksView) boardKey(a *App, k vim.Key) bool {
 	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
 		return false
 	}
@@ -1078,19 +1050,35 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 	v.col = target
 }
 
-func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
+func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	t := v.selectedTask()
-	if v.dayFocus {
+	if v.calc().focus != calFocusGrid {
+		// With Vim off a focused task, like the list, takes no letters.
+		if !a.listKeyAllowed(k) {
+			return false
+		}
 		switch {
+		case k.IsRune(':'):
+			a.openLocalEx()
 		case k.Is("esc") || k.IsRune('h') || k.Is("left"):
-			v.dayFocus = false
+			v.calc().focus = calFocusGrid
+		case k.Is("tab"):
+			v.calc().cycleFocus(v.day)
 		case k.IsRune('j') || k.Is("down"):
-			if v.dayCursor < len(v.dayTasks)-1 {
-				v.dayCursor++
+			if c := v.calc(); c.focus == calFocusStrip {
+				if c.strip < len(c.undated)-1 {
+					c.strip++
+				}
+			} else if c.cursor < len(c.dayEntries(v.day))-1 {
+				c.cursor++
 			}
 		case k.IsRune('k') || k.Is("up"):
-			if v.dayCursor > 0 {
-				v.dayCursor--
+			if c := v.calc(); c.focus == calFocusStrip {
+				if c.strip > 0 {
+					c.strip--
+				}
+			} else if c.cursor > 0 {
+				c.cursor--
 			}
 		case k.Is("enter") || k.IsRune('o'):
 			if t != nil {
@@ -1104,6 +1092,15 @@ func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
 			if t != nil {
 				a.taskMenu(*t)
 			}
+		case k.IsRune('T'):
+			// As in the desktop calendar: T moves the task to today, @ picks a date.
+			if t != nil {
+				a.setTaskDue(*t, vault.TodayISO(calendarNow()))
+			}
+		case k.IsRune('@'):
+			if t != nil {
+				v.calendarDueMenu(a, *t)
+			}
 		default:
 			return v.taskEditKey(a, k, t)
 		}
@@ -1112,7 +1109,14 @@ func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
 	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
 		return false
 	}
+	columns := v.calc().sub != calMonth
 	switch {
+	case k.Is("esc"):
+		v.calc().sub = (v.calc().sub + 1) % 3
+	case columns && (k.IsRune('j') || k.Is("down")):
+		v.calc().scrollColumn(v.day, 1)
+	case columns && (k.IsRune('k') || k.Is("up")):
+		v.calc().scrollColumn(v.day, -1)
 	case k.IsRune('h') || k.Is("left"):
 		v.selectDay(a, v.day.AddDate(0, 0, -1))
 	case k.IsRune('l') || k.Is("right"):
@@ -1121,6 +1125,10 @@ func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
 		v.selectDay(a, v.day.AddDate(0, 0, 7))
 	case k.IsRune('k') || k.Is("up"):
 		v.selectDay(a, v.day.AddDate(0, 0, -7))
+	case a.bound(k, "nav.halfPageUp"):
+		v.pageDay(a, -1)
+	case a.bound(k, "nav.halfPageDown"):
+		v.pageDay(a, 1)
 	case k.IsRune('[') || k.IsRune('H'):
 		v.month = v.month.AddDate(0, -1, 0)
 		v.selectDay(a, v.day.AddDate(0, -1, 0))
@@ -1128,14 +1136,13 @@ func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
 		v.month = v.month.AddDate(0, 1, 0)
 		v.selectDay(a, v.day.AddDate(0, 1, 0))
 	case k.IsRune('t') || k.IsRune('T'):
-		now := time.Now()
+		now := calendarNow()
 		v.month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 		v.selectDay(a, now)
+	case k.Is("tab"):
+		return v.calc().cycleFocus(v.day)
 	case k.Is("enter"):
-		if len(v.dayTasks) > 0 {
-			v.dayFocus = true
-			v.dayCursor = 0
-		} else {
+		if !v.calc().cycleFocus(v.day) {
 			a.openPeriodicOn(periodic.Daily, v.day)
 		}
 	case k.IsRune('o'):
@@ -1148,13 +1155,44 @@ func (v *tasksView) calendarKey(a *App, k helix.Key) bool {
 	return true
 }
 
+// calendarDueMenu offers the due dates the calendar can set at once. The
+// choices have no shortcut keys, so letters never act on the task by accident.
+func (v *tasksView) calendarDueMenu(a *App, t vault.Task) {
+	now := calendarNow()
+	set := func(d time.Time) func(a *App) {
+		return func(a *App) { a.setTaskDue(t, vault.TodayISO(d)) }
+	}
+	a.showMenu("Due date", []menuItem{
+		{label: "Today (" + vault.TodayISO(now) + ")", run: set(now)},
+		{label: "Tomorrow (" + vault.TodayISO(now.AddDate(0, 0, 1)) + ")", run: set(now.AddDate(0, 0, 1))},
+		{label: "Next week (" + vault.TodayISO(now.AddDate(0, 0, 7)) + ")", run: set(now.AddDate(0, 0, 7))},
+		{label: "Selected day (" + vault.TodayISO(v.day) + ")", run: set(v.day)},
+		{label: "Clear due date", run: func(a *App) { a.setTaskDue(t, "") }},
+		{label: "Other…", run: func(a *App) { a.taskDuePrompt(t) }},
+	})
+}
+
+// pageDay moves the selected day by one page of the current layout: a month,
+// a week or a day. dir is -1 or 1.
+func (v *tasksView) pageDay(a *App, dir int) {
+	switch v.calc().sub {
+	case calWeek:
+		v.selectDay(a, v.day.AddDate(0, 0, 7*dir))
+	case calDay:
+		v.selectDay(a, v.day.AddDate(0, 0, dir))
+	default:
+		v.month = v.month.AddDate(0, dir, 0)
+		v.selectDay(a, v.day.AddDate(0, dir, 0))
+	}
+}
+
 func (v *tasksView) selectDay(a *App, day time.Time) {
 	v.day = time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.Local)
 	if v.day.Month() != v.month.Month() || v.day.Year() != v.month.Year() {
 		v.month = time.Date(v.day.Year(), v.day.Month(), 1, 0, 0, 0, 0, time.Local)
 	}
-	v.dayTasks = v.byDay[v.day.Format("2006-01-02")]
-	v.dayCursor = 0
+	v.calc().cursor = 0
+	v.calc().colScroll = 0
 }
 
 func (v *tasksView) hintTargets(a *App, p *pane) []hintTarget {

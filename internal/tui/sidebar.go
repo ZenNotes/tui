@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // sidebarRow is one visible line of the sidebar tree.
@@ -485,7 +485,7 @@ func sidebarGlyph(r sidebarRow) string {
 
 // --- keys ---
 
-func (s *sidebarState) handleKey(a *App, k helix.Key) {
+func (s *sidebarState) handleKey(a *App, k vim.Key) {
 	if isMarkKey(k) {
 		if s.cursor < len(s.rows) {
 			a.markSidebarRow(s.rows[s.cursor])
@@ -584,10 +584,7 @@ func (s *sidebarState) handleKey(a *App, k helix.Key) {
 		if r := s.row(); r != nil && r.kind == "note" {
 			a.openNote(r.path, false)
 			if t := a.activeTab(); t != nil {
-				t.mode = modePreview
-				if t.preview == nil {
-					t.preview = &previewState{}
-				}
+				forceTabMode(t, modePreview)
 			}
 		}
 	default:

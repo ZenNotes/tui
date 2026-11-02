@@ -14,12 +14,12 @@ func configPathInfo() (string, string, error) {
 // rows, plain prose. A filter keeps sections with a matching line.
 func helpLines(a *App, filter string) []string {
 	leader := "Space"
-	if a.keymap.Binding("helix.leaderPrefix") != "" {
-		leader = a.keymap.Binding("helix.leaderPrefix")
+	if a.keymap.Binding("vim.leaderPrefix") != "" {
+		leader = a.keymap.Binding("vim.leaderPrefix")
 	}
 	all := []string{
 		"# ZenNotes in the terminal",
-		"zn tui is ZenNotes without the window: the same vault, notes, tasks, tags, templates and Helix selections,",
+		"zn tui is ZenNotes without the window: the same vault, notes, tasks, tags, templates and Vim motions,",
 		"driven from the keyboard. Every key below assumes Vim mode ([vim] enabled = true in config.toml).",
 		"With Vim mode off, use arrows, Enter and Escape to navigate; F2 opens context actions and Ctrl+G opens commands.",
 		"",
@@ -31,6 +31,7 @@ func helpLines(a *App, filter string) []string {
 		"Alt+.\tZen mode (editor only)",
 		"Alt+1 … Alt+9\tJump to tab N",
 		"Alt+E / Alt+S / Alt+P\tEditor, split (editor + preview) or preview mode for the tab",
+		"[terminal] view_mode_field\tOff by default. A frontmatter field (view-mode is a good name) whose value edit, split or preview sets the mode of a note opened in a new tab; [terminal.view_mode_rules] \"key=value\" = \"mode\" does the same for any field (the field wins). A new note opens in edit; a restored tab and :ref keep theirs",
 		"Alt+Z\tToggle word wrap",
 		"Alt+Left / Alt+Right\tBack and forward through the jump list",
 		"Ctrl+P\tSearch notes (Enter opens; with no match Enter creates the note; Ctrl+D trashes the selected one)",
@@ -61,18 +62,14 @@ func helpLines(a *App, filter string) []string {
 		leader + " n\tNew note",
 		leader + " ;\tCommand palette (every ex command, searchable)",
 		leader + " ?\tThis manual",
-		"Leader hints appear immediately; timed expires the sequence, sticky keeps it open (helix.which_key_hint_mode).",
-		"Motions engine: [vim] motions = vim (operator-pending, default) or helix (selection-first).",
+		"Leader hints appear immediately; timed expires the sequence, sticky keeps it open (vim.which_key_hint_mode).",
 		"",
 		"## Editor: motions",
-		"h j k l 0 ^ $\tMoves; word and find motions select as they travel",
-		"w b e W B E\tSelect a whole word and the space after it; b takes the word it lands on",
-		"f t F T , ;\tSelect through a character; ; also collapses the selection",
-		"n N * # / ?\tSelect the next match, use the selection as the pattern, search",
-		"gg G { } H M L\tFile, paragraph and screen motions",
-		"] ] [[ ][ []\tNext and previous Markdown heading",
-		"Alt+O / Alt+Up\tGrow the selection: word, paragraph, code function, section, note",
-		"Alt+I / Alt+Down\tShrink the selection back to the smaller context",
+		"h j k l w b e W B E 0 ^ $\tThe usual",
+		"gg G { } ( ) H M L\tFile, paragraph, sentence and screen motions",
+		"f t F T ; ,\tFind a character on the line",
+		"% * # n N / ?\tMatching bracket, word search, pattern search (with incremental highlight)",
+		"]] [[ ][ []\tNext and previous Markdown heading",
 		"Ctrl+D Ctrl+U Ctrl+F Ctrl+B Ctrl+E Ctrl+Y zt zz zb\tScrolling",
 		"Ctrl+O Ctrl+I\tJump list, across notes too",
 		"gj gk\tMove by display row when a line wraps",
@@ -102,7 +99,7 @@ func helpLines(a *App, filter string) []string {
 		"Ctrl+Q / gqip\tReflow the paragraph",
 		"Enter in a list\tContinues the list or checkbox; Enter on an empty item ends it",
 		"Tab / Shift+Tab in a list\tIndent or outdent the item",
-		"jk\tLeaves insert mode (helix.insert_escape in config.toml)",
+		"jk\tLeaves insert mode (vim.insert_escape in config.toml)",
 		"Auto-pairs, `->` to → and other text replacements follow the editor preferences.",
 		"",
 		"## Ex commands",
@@ -110,7 +107,7 @@ func helpLines(a *App, filter string) []string {
 		":q :bd\tClose the current tab; closing the last tab quits",
 		":w :wa :wq :x\tSave, save all, or save and close the current tab",
 		":e <note> :new <title> :vs :sp :only\tOpen, create, split",
-		":bn :bp ]b [b gt gT\tNext and previous tab (gn gp with helix motions)",
+		":bn :bp ]b [b gt gT\tNext and previous tab, from any view or panel; the calendars keep [ ] for the month and the Kanban board keeps g for its grouping",
 		":pin :tabmove -1|+1|first|last\tPin or unpin the tab (pinned tabs sit first and survive :tabonly); reorder tabs",
 		":link, or [[ in insert mode\tPick a note and insert a wikilink to it",
 		"# and a letter in insert mode\tOffers the vault's tags under the cursor, most used first, as the desktop app does; inside a frontmatter tags: value it completes bare tags. Ctrl+N / Ctrl+P or ↑↓ move, Enter / Tab / Ctrl+Y accept, Ctrl+E dismisses, typing narrows",
@@ -123,7 +120,7 @@ func helpLines(a *App, filter string) []string {
 		":template <name> :insert <name>\tTemplates",
 		":newtask <text> :filter <query>\tTasks",
 		":outline :connections :calendar :closepanel :sidebar :zen\tPanels",
-		":editmode :splitmode :previewmode\tTab view mode",
+		":editmode :splitmode :previewmode\tTab view mode (a manual switch always wins over the note's frontmatter view mode)",
 		":fold :unfold :foldall :unfoldall :format :wrap :nu :theme :vim\tEditor state",
 		":db <name> :dbnew <name>\tDatabases",
 		":bind <id> <keys> :unbind <id> :keymaps\tPersistent keymaps; select an action in :keymaps to change its binding",
@@ -178,10 +175,12 @@ func helpLines(a *App, filter string) []string {
 		"[terminal] theme\tA theme for zn alone, when the terminal should not match the desktop app",
 		":style <name|path|zen>\tReading view style: auto (zennotes, matches the palette), dark, light, dracula, tokyo-night, pink, ascii, notty, a Glamour JSON file, or the built-in zen renderer",
 		"[terminal] preview_style\tThe same setting in config.toml, next to mouse = true|false",
+		"[terminal] math\tEngine for display math: typst (default) or latex. latex runs TeX on this computer, which zn does not include: install pdftex (TeX Live, MacTeX or MiKTeX) and pdftocairo (poppler) yourself; zn doctor prints the commands for your system. It renders $$, \\[ \\], align and tikzpicture blocks and ```tikz fences, with packages from preamble.tex next to config.toml. Leave latex off for vaults you do not trust: a note can show any file you can read",
+		"[terminal] render_timeout\tSeconds one diagram or math render may take (default 10); render_concurrency caps how many run at once (default 2, after a restart)",
 		"",
 		"## Preview mode",
 		"Esc / q / i / Ctrl+E\tBack to the editor (i lands on the line under the cursor); Space z e, :editmode and Alt+E do the same",
-		"Embeds\tPictures paint inline in Kitty and Ghostty ([terminal] images in config.toml; tmux needs allow-passthrough on); PDF, audio, video, drawings, files and YouTube or Vimeo links are cards, Enter opens them; ![[Note]] renders the note inline; mermaid blocks draw as text, or as pictures with mmdc installed; $$ math renders through typst when installed",
+		"Embeds\tPictures paint inline in Kitty and Ghostty ([terminal] images in config.toml; tmux needs allow-passthrough on); PDF, audio, video, drawings, files and YouTube or Vimeo links are cards, Enter opens them; ![[Note]] renders the note inline; mermaid blocks draw as text, or as pictures with mmdc installed; $$ math renders through typst when installed, or through latex with [terminal] math = \"latex\"",
 		"j k gg G Ctrl+D Ctrl+U\tScroll",
 		"Enter / gd\tFollow the link on the row",
 		"x\tToggle the task on the row",
@@ -198,7 +197,9 @@ func helpLines(a *App, filter string) []string {
 		"n f F A\tNew task in the daily note, filter, clear the filter, include archived",
 		"m\tTask menu (includes forward to today's daily note)",
 		"Board: h l j k\tMove between columns and cards; H L move the card; g cycles the grouping",
-		"Calendar: h j k l [ ] t\tMove days and months, t is today; Enter lists the day's tasks; o opens the daily note",
+		"Calendar: h j k l [ ] t\tMove days and months, t is today; Esc cycles month, week and day; Enter and Tab move focus to the day's tasks and the No-date strip; o opens the daily note",
+		"Calendar task: T @\tMove the focused task to today; pick its due date from a menu",
+		"Week and day: j k\tScroll a busy day's column",
 		"Filter syntax\tDesktop substring matching: task/note text, !high, #tag, @field:value. Terminal operators require where:, e.g. where: is:open due:today -meeting",
 		"Board status\tToday / Upcoming / No due date / In progress / Waiting / Done; custom status uses field:status. Folder boards do not move cards between folders.",
 		"F2 / :boardoptions\tView actions, saved filters, grouping, folder root, labels and persistent card order",
@@ -220,7 +221,7 @@ func helpLines(a *App, filter string) []string {
 		"i / Enter\tEdit the cell, type-aware: pickers for select, multi-select and note links (Tab toggles, Enter commits), toggles a checkbox, date shorthand for dates",
 		"[[ in a text cell\tLink a note from the cell",
 		"x / Ctrl+A / Esc\tSelect the row, select every row, clear the selection",
-		"a / dd / D\tAdd a row; delete the selected rows (or the current one); duplicate the row",
+		"a / dd / D\tAdd a row (in a view that shows picked rows, it joins them); delete the selected rows (or the current one); duplicate the row",
 		"m\tRow menu: open page, duplicate, delete, copy as CSV",
 		"o\tOpen (or create) the record's page; Ctrl+O comes back",
 		"k (into the header) / Esc\tEnter and leave the header row",
@@ -249,6 +250,7 @@ func helpLines(a *App, filter string) []string {
 		"Workflows, Atlas, sharing, cloud sync, Harper grammar checks and image resizing stay in the desktop app. Optional terminal renderers handle math/diagrams.",
 		"Space l o hands the current note to the desktop app when it is installed.",
 	}
+	all = append(all, helixHelpLines...)
 	if strings.TrimSpace(filter) == "" {
 		return all
 	}

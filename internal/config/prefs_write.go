@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/BurntSushi/toml"
@@ -31,6 +33,87 @@ func SetValue(section, key string, value any) error {
 		}
 		return nil
 	})
+}
+
+// SetViewModeRule adds or changes one [terminal.view_mode_rules] entry,
+// keeping every other key and table. An entry already in the file for the
+// same field and value, written in any case or quoting and valid or not,
+// is changed in place instead of gaining a duplicate. Rules already in the
+// file that are malformed never block the write.
+func SetViewModeRule(key, mode string) error {
+	if err := ValidateViewModeRule(key, mode); err != nil {
+		return err
+	}
+	want, _ := ParseViewModeRule(key, mode)
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	return UpdateConfig(func(doc map[string]any) error {
+		terminal, rules, err := viewModeTables(doc, true)
+		if err != nil {
+			return err
+		}
+		if _, exact := rules[key]; !exact {
+			existing := make([]string, 0, len(rules))
+			for k := range rules {
+				existing = append(existing, k)
+			}
+			sort.Strings(existing)
+			for _, k := range existing {
+				if r, reason := ParseViewModeRule(k, "edit"); reason == "" && r.Key == want.Key && r.Value == want.Value {
+					key = k
+					break
+				}
+			}
+		}
+		rules[key] = mode
+		terminal["view_mode_rules"] = rules
+		doc["terminal"] = terminal
+		return nil
+	})
+}
+
+// RemoveViewModeRule deletes the entry stored under the raw key exactly as
+// written, so malformed keys can be removed too. Removing the last rule
+// drops the empty table.
+func RemoveViewModeRule(key string) error {
+	return UpdateConfig(func(doc map[string]any) error {
+		terminal, rules, err := viewModeTables(doc, false)
+		if err != nil || rules == nil {
+			return err
+		}
+		delete(rules, key)
+		if len(rules) == 0 {
+			delete(terminal, "view_mode_rules")
+		}
+		return nil
+	})
+}
+
+// viewModeTables returns [terminal] and its rules sub-table, creating them
+// when create is set; otherwise missing tables come back nil.
+func viewModeTables(doc map[string]any, create bool) (terminal, rules map[string]any, err error) {
+	raw, exists := doc["terminal"]
+	terminal, ok := raw.(map[string]any)
+	if exists && !ok {
+		return nil, nil, fmt.Errorf("terminal is not a config table")
+	}
+	if !exists {
+		if !create {
+			return nil, nil, nil
+		}
+		terminal = map[string]any{}
+	}
+	raw, exists = terminal["view_mode_rules"]
+	rules, ok = raw.(map[string]any)
+	if exists && !ok {
+		return nil, nil, fmt.Errorf("terminal.view_mode_rules is not a config table")
+	}
+	if !exists {
+		if !create {
+			return terminal, nil, nil
+		}
+		rules = map[string]any{}
+	}
+	return terminal, rules, nil
 }
 
 // UpdateConfig applies a targeted edit to the latest file. A parse failure or
@@ -61,7 +144,7 @@ func UpdateConfig(edit func(map[string]any) error) error {
 	if err := edit(doc); err != nil {
 		return err
 	}
-	if err := validateKnownValues(doc); err != nil {
+	if err := validateKnownValues(doc, true); err != nil {
 		return err
 	}
 	var out bytes.Buffer

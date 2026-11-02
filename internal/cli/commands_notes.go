@@ -59,6 +59,11 @@ func cmdList(ctx context.Context, b backend.Backend, args Args) error {
 	if err != nil {
 		return err
 	}
+	// --tag is a tag search, which skips the template folder (#1024).
+	templateFolder := ""
+	if tag != "" {
+		templateFolder = backend.TemplateFolder(ctx, b)
+	}
 	notes := []vault.NoteMeta{}
 	for _, n := range all {
 		if hasFolder {
@@ -68,7 +73,7 @@ func cmdList(ctx context.Context, b backend.Backend, args Args) error {
 		} else if n.Folder == vault.FolderTrash {
 			continue
 		}
-		if tag != "" && !hasTag(n.Tags, tag) {
+		if tag != "" && (!hasTag(n.Tags, tag) || vault.IsPathInTemplateFolder(n.Path, templateFolder)) {
 			continue
 		}
 		notes = append(notes, n)

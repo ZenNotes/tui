@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -10,15 +12,15 @@ import (
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/database"
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
-func enterKey() helix.Key { return helix.Key{Name: "enter"} }
+func enterKey() vim.Key { return vim.Key{Name: "enter"} }
 
 func typeText(a *App, text string) {
 	for _, r := range text {
-		a.overlay.handleKey(a, helix.R(r))
+		a.overlay.handleKey(a, vim.R(r))
 	}
 }
 
@@ -41,7 +43,7 @@ func newDatabaseTestApp(t *testing.T) (*App, string) {
 		backend:   b,
 		keymap:    keymaps.NewResolver(nil),
 		theme:     buildTheme(true),
-		prefs:     prefsView{Prefs: config.Prefs{HelixMode: true}},
+		prefs:     prefsView{Prefs: config.Prefs{VimMode: true}},
 		panes:     newPaneTree(),
 		buffers:   map[string]*noteBuffer{},
 		noteModes: map[string]paneMode{},
@@ -95,24 +97,24 @@ func TestHeaderRowEditsFields(t *testing.T) {
 	a, _ := newDatabaseTestApp(t)
 	v := openTestDatabase(t, a)
 	v.render(a, 100, 20, true)
-	v.handleKey(a, helix.R('k'))
+	v.handleKey(a, vim.R('k'))
 	if !v.header {
 		t.Fatal("k on the first row enters the header")
 	}
-	v.handleKey(a, helix.R('L'))
+	v.handleKey(a, vim.R('L'))
 	if fieldNames(v) != "Status,Title,Done" || v.col != 1 {
 		t.Fatalf("L moves the column right: %s col %d", fieldNames(v), v.col)
 	}
-	v.handleKey(a, helix.R('t'))
+	v.handleKey(a, vim.R('t'))
 	m, ok := a.overlay.(*menu)
 	if !ok {
 		t.Fatal("t opens the type menu")
 	}
-	m.handleKey(a, helix.R('s'))
+	m.handleKey(a, vim.R('s'))
 	if v.doc.FieldByID(v.fields[1].ID).Type != "select" {
 		t.Fatal("s retypes the field to select")
 	}
-	v.handleKey(a, helix.R('x'))
+	v.handleKey(a, vim.R('x'))
 	if fieldNames(v) != "Status,Done" {
 		t.Fatalf("x hides the column: %s", fieldNames(v))
 	}
@@ -121,17 +123,17 @@ func TestHeaderRowEditsFields(t *testing.T) {
 	if fieldNames(v2) != "Status,Done" || v2.doc.HiddenColumns(v2.viewID)[0].Name != "Title" {
 		t.Fatalf("hidden column persists: %s", fieldNames(v2))
 	}
-	v.handleKey(a, helix.R('a'))
+	v.handleKey(a, vim.R('a'))
 	typeText(a, "Pages")
 	a.overlay.handleKey(a, enterKey())
-	a.overlay.handleKey(a, helix.R('n'))
+	a.overlay.handleKey(a, vim.R('n'))
 	if fieldNames(v) != "Status,Done,Pages" || v.fields[2].Type != "number" || v.col != 2 || v.header {
 		t.Fatalf("a adds a typed field and lands on it: %s col %d header %v", fieldNames(v), v.col, v.header)
 	}
 	v.header = true
-	v.handleKey(a, helix.R('d'))
-	v.handleKey(a, helix.R('d'))
-	a.overlay.handleKey(a, helix.R('y'))
+	v.handleKey(a, vim.R('d'))
+	v.handleKey(a, vim.R('d'))
+	a.overlay.handleKey(a, vim.R('y'))
 	if fieldNames(v) != "Status,Done" {
 		t.Fatalf("dd deletes the field after confirming: %s", fieldNames(v))
 	}
@@ -171,15 +173,15 @@ func TestSelectCellPickerAndSelection(t *testing.T) {
 		t.Fatal("Enter on a checkbox toggles it")
 	}
 	v.row = 0
-	v.handleKey(a, helix.R('x'))
+	v.handleKey(a, vim.R('x'))
 	if !v.selected[v.rows[0].ID] || v.row != 1 {
 		t.Fatal("x selects the row and moves down")
 	}
-	v.handleKey(a, helix.Key{Name: "esc"})
+	v.handleKey(a, vim.Key{Name: "esc"})
 	if len(v.selected) != 0 {
 		t.Fatal("Esc clears the selection")
 	}
-	v.handleKey(a, helix.R('D'))
+	v.handleKey(a, vim.R('D'))
 	if len(v.rows) != 3 || v.rows[2].Cells[v.fields[0].ID] != "Neuromancer" || v.row != 2 {
 		t.Fatalf("D duplicates the row after it: %d rows, cursor %d", len(v.rows), v.row)
 	}
@@ -222,25 +224,25 @@ func TestFiltersSortsAndBoard(t *testing.T) {
 	v.render(a, 120, 30, true)
 	v.board.col, v.board.card = 0, 0
 	dune := v.boardRow().ID
-	v.handleKey(a, helix.R('L'))
+	v.handleKey(a, vim.R('L'))
 	if v.doc.RowByID(dune).Cells[status.ID] != "done" || v.board.col != 1 || v.boardRow().ID != dune {
 		t.Fatalf("L moves the card to the next column and follows it: col %d", v.board.col)
 	}
-	v.handleKey(a, helix.R('L'))
+	v.handleKey(a, vim.R('L'))
 	if v.doc.RowByID(dune).Cells[status.ID] != "" {
 		t.Fatal("moving into the empty column clears the cell")
 	}
-	v.handleKey(a, helix.R('A'))
+	v.handleKey(a, vim.R('A'))
 	typeText(a, "later")
 	a.overlay.handleKey(a, enterKey())
 	if len(v.board.columns) != 4 || v.board.columns[v.board.col].Key != "later" {
 		t.Fatalf("A adds a column and focuses it: %d", len(v.board.columns))
 	}
-	v.handleKey(a, helix.R('<'))
+	v.handleKey(a, vim.R('<'))
 	if v.board.columns[1].Key != "later" {
 		t.Fatalf("< moves the column left: %v", v.boardOrder())
 	}
-	v.handleKey(a, helix.R('v'))
+	v.handleKey(a, vim.R('v'))
 	if v.isBoard() {
 		t.Fatal("v cycles back to the table view")
 	}
@@ -321,5 +323,109 @@ func TestOpenRecordPageLinksAPageFileAlreadyThere(t *testing.T) {
 	}
 	if kept, _ := os.ReadFile(filepath.Join(root, "Books.base", "Dune.md")); string(kept) != notes {
 		t.Fatalf("the page changed: %q", kept)
+	}
+}
+
+// As + Row does in the app's grid, a row added while a view with picked
+// rows is on screen joins that view's picks, or the app would leave it out
+// of the view it was added in. Other views keep their picks, and a view of
+// every row changes nothing.
+func TestAddRowJoinsThePicksOfTheViewOnScreen(t *testing.T) {
+	a, root := newDatabaseTestApp(t)
+	v := openTestDatabase(t, a)
+	ids := map[string]string{}
+	for _, row := range v.doc.Rows {
+		ids[v.doc.RecordTitle(row)] = row.ID
+	}
+	sidecarPath := filepath.Join(root, "Books.csv.base.json")
+	raw, err := os.ReadFile(sidecarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidecar, err := database.ParseObject(string(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	views := []any{}
+	for _, spec := range []string{
+		`{"id":"shelf","name":"Shelf","type":"table","filters":[],"sorts":[],"pickedRowIds":["` + ids["Dune"] + `"]}`,
+		`{"id":"all","name":"All","type":"table","filters":[],"sorts":[]}`,
+		`{"id":"later","name":"Later","type":"table","filters":[],"sorts":[],"pickedRowIds":["` + ids["Neuromancer"] + `"]}`,
+	} {
+		view, err := database.ParseObject(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		views = append(views, view)
+	}
+	sidecar.Set("views", views)
+	sidecar.Set("activeViewId", "shelf")
+	text, err := database.Stringify(sidecar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sidecarPath, []byte(text+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v.refresh(a)
+	v.render(a, 100, 20, true)
+
+	add := func(title string) string {
+		t.Helper()
+		v.handleKey(a, vim.R('a'))
+		typeText(a, title)
+		a.overlay.handleKey(a, enterKey())
+		for _, row := range v.doc.Rows {
+			if v.doc.RecordTitle(row) == title {
+				return row.ID
+			}
+		}
+		t.Fatalf("a did not add %q", title)
+		return ""
+	}
+	onDisk := func() map[string][]string {
+		t.Helper()
+		raw, err := os.ReadFile(sidecarPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var schema struct {
+			Views []struct {
+				ID           string    `json:"id"`
+				PickedRowIDs *[]string `json:"pickedRowIds"`
+			} `json:"views"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		out := map[string][]string{}
+		for _, view := range schema.Views {
+			if view.PickedRowIDs != nil {
+				out[view.ID] = *view.PickedRowIDs
+			}
+		}
+		return out
+	}
+
+	if v.activeView().ID != "shelf" {
+		t.Fatalf("opened on %q", v.activeView().ID)
+	}
+	ulysses := add("Ulysses")
+	want := map[string][]string{"shelf": {ids["Dune"], ulysses}, "later": {ids["Neuromancer"]}}
+	if got := onDisk(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after an add on Shelf: %v", got)
+	}
+
+	v.switchView(a, "later")
+	emma := add("Emma")
+	want["later"] = []string{ids["Neuromancer"], emma}
+	if got := onDisk(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after an add on Later: %v", got)
+	}
+
+	v.switchView(a, "all")
+	add("Persuasion")
+	if got := onDisk(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("an add on a view of every row changed picks: %v", got)
 	}
 }

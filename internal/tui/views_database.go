@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/database"
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // databaseView is a `.base` folder or loose `.csv` opened as a grid. The
@@ -31,7 +31,7 @@ type databaseView struct {
 	row, col        int
 	scroll, hscroll int
 	pageRows        int
-	navKeys         []helix.Key
+	navKeys         []vim.Key
 	colSpans        [][2]int
 	viewSpans       []viewSpan
 	widths          []int
@@ -638,7 +638,11 @@ func (v *databaseView) renderRaw(a *App, w, h int) []string {
 
 // --- keys ---
 
-func (v *databaseView) handleKey(a *App, k helix.Key) bool {
+func (v *databaseView) ownsKey(a *App, k vim.Key) bool {
+	return v.doc != nil && v.raw && k.IsRune('g')
+}
+
+func (v *databaseView) handleKey(a *App, k vim.Key) bool {
 	if v.doc == nil {
 		return false
 	}
@@ -654,7 +658,7 @@ func (v *databaseView) handleKey(a *App, k helix.Key) bool {
 }
 
 // commonKey handles the keys every layout shares.
-func (v *databaseView) commonKey(a *App, k helix.Key) bool {
+func (v *databaseView) commonKey(a *App, k vim.Key) bool {
 	switch {
 	case k.IsRune('v'):
 		v.nextView(a)
@@ -686,7 +690,7 @@ func (v *databaseView) moveCol(delta int) {
 	v.col = clampInt(v.col+delta, 0, len(v.fields)-1)
 }
 
-func (v *databaseView) tableKey(a *App, k helix.Key) bool {
+func (v *databaseView) tableKey(a *App, k vim.Key) bool {
 	switch {
 	case k.Is("enter"):
 		v.editCell(a)
@@ -759,7 +763,7 @@ func (v *databaseView) tableKey(a *App, k helix.Key) bool {
 	case k.IsCtrl('u'):
 		v.moveRow(-max(1, v.pageRows/2))
 	case k.IsRune('d') || k.IsRune('g') || k.IsRune('y'):
-		v.navKeys = []helix.Key{k}
+		v.navKeys = []vim.Key{k}
 	case k.IsRune('i') || k.IsRune('c') || k.IsRune('e'):
 		v.editCell(a)
 	case k.IsRune('x'):
@@ -782,7 +786,7 @@ func (v *databaseView) tableKey(a *App, k helix.Key) bool {
 	return true
 }
 
-func (v *databaseView) headerKey(a *App, k helix.Key) bool {
+func (v *databaseView) headerKey(a *App, k vim.Key) bool {
 	f := v.currentField()
 	switch {
 	case k.Is("esc") || k.Is("down"):
@@ -833,7 +837,7 @@ func (v *databaseView) headerKey(a *App, k helix.Key) bool {
 	case k.IsRune('a'):
 		v.addFieldFlow(a)
 	case k.IsRune('d'):
-		v.navKeys = []helix.Key{k}
+		v.navKeys = []vim.Key{k}
 	case k.IsRune('s'):
 		v.cycleSort(a, f)
 	case k.IsRune('f'):
@@ -850,7 +854,7 @@ func (v *databaseView) headerKey(a *App, k helix.Key) bool {
 	return true
 }
 
-func (v *databaseView) rawKey(a *App, k helix.Key) bool {
+func (v *databaseView) rawKey(a *App, k vim.Key) bool {
 	switch {
 	case k.Is("esc") || k.IsRune('q') || k.IsRune('R'):
 		v.raw = false
@@ -932,8 +936,15 @@ func (v *databaseView) addRow(a *App) {
 			groupID, groupValue = v.board.group.ID, key
 		}
 	}
+	viewID := ""
+	if view := v.activeView(); view != nil {
+		viewID = view.ID
+	}
 	a.promptFor("New row", "", "Title", func(a *App, text string) {
-		row := v.doc.AddRow()
+		// As + Row does in the app's grid: in a view that shows picked rows
+		// the new row joins its picks, or the app would leave it out of the
+		// view it was added in. Other views keep their picks.
+		row, _ := v.doc.AddRowInView(viewID)
 		if titleID != "" {
 			v.doc.SetCell(row.ID, titleID, strings.TrimSpace(text))
 		}

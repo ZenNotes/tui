@@ -45,7 +45,8 @@ vault too.
   core of everything. Prefer a plain editor? Turn Vim off. Files, comments,
   bulk actions, editable settings, themes, and per-vault sessions are included.
 - **`zn mcp`.** The same tools the desktop's MCP server offers, for Claude
-  Code, Codex and any MCP client.
+  Code, Codex and any MCP client, on the whole vault or only the folders you
+  share, read-only if you like.
 - **Local and self-hosted workspaces.** Keep several vaults and server
   connections, switch between them, and use the same note commands against
   either backend. Remote changes arrive over the live feed with polling fallback.
@@ -64,6 +65,10 @@ different connection and sync options.
 ## Install
 
 `zn` is a single static binary with no runtime dependencies. Pick one:
+
+> One optional feature is the exception: drawing LaTeX math as pictures
+> (`math = "latex"`) runs TeX installed on your own computer, and zn does not
+> include it. See [LaTeX math needs TeX on your computer](#latex-math-needs-tex-on-your-computer).
 
 **Homebrew (macOS and Linux).** Install from the same tap as the desktop app:
 
@@ -237,10 +242,19 @@ zn base rows "Reading list" --json
 zn base pages "Reading list"
 ```
 
+Notes in the vault's template folder (`templates.folder` in vault.json, set
+in the app) are templates, so `task list`, `task watch`, `search`, the tag
+list, tag searches and `zn mcp` leave them out; `--include-excluded` lists
+their tasks. In the terminal app, Search notes finds them once the query
+starts with the folder's path (`Templates/`).
+
 Use the stable ID returned by `task list` with `task toggle <id>`. Comment
 replies and resolve/reopen operations take a thread ID. `base add` and
 `base set` accept repeated `--set Field=Value` flags for existing fields;
-`base add --body` or `--page` also creates a record page. `base convert`
+`base add --body` or `--page` also creates a record page. When the view a
+database opens on shows only picked rows, `base add` adds the new row to
+them, as + Row does in the app, so the view still shows it; other views keep
+their picks, and `--json` names the view in `pickedInView`. `base convert`
 turns a loose CSV into a `.base` folder, and `base pages` gives every
 record that has no page its record page, so a database converted from a
 CSV can be linked right away. A page file already in the database folder
@@ -492,7 +506,7 @@ chrome.
 ### Moving around
 
 `Space` is the leader. The which-key panel appears immediately. Timed hints
-expire after `helix.which_key_hint_timeout_ms`; `helix.which_key_hint_mode = "sticky"`
+expire after `vim.which_key_hint_timeout_ms`; `vim.which_key_hint_mode = "sticky"`
 keeps them open until you choose an action, press Space again, or cancel.
 
 | Keys | What |
@@ -503,7 +517,7 @@ keeps them open until you choose an action, press Space again, or cancel.
 | `Ctrl+B` | Toggle the sidebar |
 | `Ctrl+W` then `v` `s` `h` `j` `k` `l` `q` `o` `=` | Split, move between and close panes |
 | `Ctrl+O` `Ctrl+I` | Jump back and forward across notes |
-| `gt` `gT` `]b` `[b` | Next and previous tab |
+| `gt` `gT` `]b` `[b` | Next and previous tab, from any view or panel (the calendars keep `[` `]` for the month, the Kanban board keeps `g` for its grouping) |
 | `:` | Ex commands; `Space ;` or `Ctrl+G` opens the command palette |
 | `?` | The keys of the current view; `:help` is the full manual |
 | `F2` | Context actions, including when Vim mode is off |
@@ -529,30 +543,10 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 
 ### Editing
 
-The editor ships two motion engines: Vim (default) and Helix. Pick one with
-`[vim] motions = "vim" | "helix"` in `config.toml` (or Settings). The Vim
-engine keeps classic operator-pending editing — `dw` `cw` `yiw`, visual,
-visual line and visual block, and the rest of the Vim toolkit. The Helix
-engine is selection-first — motions like `w` select as they travel, so `wd`
-deletes a word and `n` selects the next match; `miw` picks a word precisely.
-Tab switching works in either engine: `gt` `gT` and `]b` `[b` everywhere,
-plus `gn` `gp` with the Helix engine. The leader, registers and macros work
-in both.
-
-The Helix engine also grows and shrinks a selection by context: `Alt+O`
-(`Alt+Up`) expands it — word, paragraph, function in a code block, code
-block, heading section, note — and `Alt+I` (`Alt+Down`) shrinks it back, the
-way Helix walks the syntax tree. Its word motions follow one rule: the
-selection covers a whole word plus the space that follows it, and never the
-first character of the word the motion lands on. `w` moves over the word the
-cursor sits on, `b` lands on the previous word and selects it, so `wd` and
-`bd` both delete one word. The block cursor stays inside the selection. `w`
-runs to the end of the line when the last word of a line is reached, and the
-next `w` moves on to the next line.
-
-The editor also has counts, registers, marks, macros, dot-repeat, undo and
-redo, text objects, search, `:s` `:g` `:sort` `:norm` with ranges, `gq`, and
-heading motions `]]` `[[`.
+The editor is a full Vim: counts, registers, marks, macros, dot-repeat,
+undo and redo, text objects, visual, visual line and visual block, search,
+`:s` `:g` `:sort` `:norm` with ranges, `gq`, and heading motions `]]` `[[`.
+Prefer Helix? `[vim] motions = "helix"` switches to a select-then-act engine with its own `[keys]` bindings; see [`docs/helix.md`](docs/helix.md).
 Markdown on top: `Ctrl+L` toggles the checkbox on the line, `gd` follows a
 link, `gx` opens a URL, `gy` copies a link, `zc zo zM zR` fold headings,
 Enter continues lists, Tab indents list items, `[[` opens the note picker
@@ -565,27 +559,16 @@ linewise and blockwise selections, and delete history work across notes too.
 Closing the source note does not discard its yank. Each note keeps its own
 cursor and undo history; system-clipboard integration remains a separate preference.
 
-Modal editing follows `[vim] enabled` in `config.toml`. With it off, the editor
+Vim mode follows `[vim] enabled` in `config.toml`. With it off, the editor
 is a plain editor. Use arrows and Enter in lists, F2 for context actions,
 and Ctrl+G for the command palette. Ctrl+Z undoes plain-editor changes.
 
-All editor engine settings live under `[vim]`:
-
-```toml
-[vim]
-enabled = true                       # modal editing; false = plain editor
-motions = "vim"                      # or "helix": the selection-first engine
-insert_escape = "jk"                 # two-key escape from insert mode
-yank_to_clipboard = false            # yanks mirror the system clipboard
-which_key_hints = true               # leader hints
-which_key_hint_mode = "timed"        # timed, sticky or instant
-which_key_hint_timeout_ms = 2500
-wrapped_line_motions = "display"     # $, I, A follow the wrapped row
-```
-
-`motions` picks the engine for new buffers; individual keys are overridden
-under `[keymaps]` and listed by `:keymaps`. A `[helix]` section from earlier
-helix-branch builds is still honored when `[vim]` is absent.
+While you type, zn shows the terminal's own cursor: a bar in insert mode,
+with Vim mode off and in text fields, and an underline in replace mode and
+while `r` waits for its character. Normal and visual mode keep the block.
+zn puts the terminal's default cursor back when it quits, suspends or hands
+the note to `$EDITOR`. A terminal that cannot change the cursor's shape
+shows its usual cursor there instead.
 
 `Ctrl+Space` in insert mode (or `:complete`) completes tags, frontmatter
 tag values, callouts and code-fence languages. With `markdown_snippets`
@@ -615,11 +598,23 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   `g` regroups by status, priority, due date, folder or `field:<key>`.
   `:boardoptions` (also F2 → Board options) sets the folder root, column labels,
   custom statuses and card order. Folder boards keep cross-folder moves
-  disabled. On the calendar Enter lists a day's tasks and `o` opens its
-  daily note. Filters match the desktop's substring search over task text,
+  disabled. Filters match the desktop's substring search over task text,
   note titles, `!priority`, `#tags` and `@fields`. `:filters` / `:savefilter`
   manage shared named queries. Prefix terminal operators with `where:`,
   for example `where: is:open due:today -meeting`.
+  The calendar has month, week and day views; `Esc` cycles them, and a
+  start in `calendar` mode always opens the month grid. On a narrow
+  terminal the month shows a compact grid with a count per day and the
+  selected day's tasks under it. `h`/`j`/`k`/`l`
+  move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
+  by half a view, and `o` opens the day's daily note. In week and day view
+  each day is a column of its tasks, and `j`/`k` scroll a busy day's
+  column. `Enter` and `Tab` move focus
+  between the day grid, the selected day's items and the No-date strip. On
+  a focused item or strip task, `T` moves it to today and `@` opens a
+  due-date menu, as in the desktop calendar. Unlike the
+  desktop calendar, the terminal calendar also places a task on its
+  scheduled date (marked) as well as its due date.
 - **Tags**: `Tab` multi-selects, `a` toggles any/all, `r`/`x` rename or
   remove a tag everywhere.
 - **Databases**: every `.base` folder and every loose `.csv` file, with
@@ -662,8 +657,146 @@ sheet of your own, or `zen` for the built-in renderer).
   cards; Enter opens them.
 - **`![[Note]]`** renders the note inline.
 - **Mermaid** blocks draw as text through a pure-Go renderer, or as
-  pictures when `mmdc` is installed. **`$$` math** renders through `typst`
-  when it is installed.
+  pictures when `mmdc` is installed.
+- **`[terminal] math`** picks the engine for display math: `typst`, the
+  default, renders `$$` blocks when `typst` is installed; `latex` uses TeX on
+  your computer (next section).
+- **`render_timeout`** (seconds, default 10) bounds one diagram or math
+  render; **`render_concurrency`** (default 2) caps how many run at once and
+  takes effect after a restart.
+
+### LaTeX math needs TeX on your computer
+
+**zn does not include TeX.** `math = "latex"` runs two programs you install
+yourself: `pdftex`, from a TeX distribution (TeX Live, MacTeX, MiKTeX), and
+`pdftocairo`, from poppler. Until both are on your PATH, LaTeX blocks show
+their source and the preview says which one is missing. `zn doctor` checks for
+them and prints the install commands for your system.
+
+macOS, with Homebrew:
+
+```bash
+brew install --cask basictex
+brew install poppler
+eval "$(/usr/libexec/path_helper)"    # or open a new terminal
+sudo tlmgr update --self
+sudo tlmgr install standalone varwidth preview xcolor amsmath amsfonts mhchem pgf
+```
+
+Debian and Ubuntu:
+
+```bash
+sudo apt install texlive-latex-extra texlive-science texlive-pictures poppler-utils
+```
+
+Fedora:
+
+```bash
+sudo dnf install texlive-scheme-basic texlive-standalone texlive-varwidth texlive-preview texlive-xcolor texlive-amsmath texlive-amsfonts texlive-mhchem texlive-pgf poppler-utils
+```
+
+Arch:
+
+```bash
+sudo pacman -S texlive-basic texlive-latex texlive-latexextra texlive-science texlive-pictures poppler
+```
+
+Windows: install [MiKTeX](https://miktex.org), which fetches missing LaTeX
+packages on first use, and poppler for `pdftocairo`, for example with
+`scoop install poppler`.
+
+Then turn it on in `config.toml` (or under `:settings`) and check:
+
+```toml
+[terminal]
+math = "latex"
+```
+
+```bash
+zn doctor
+```
+
+Pictures need a terminal that shows images (Kitty, Ghostty); others show the
+source.
+
+What it draws: `$$` and `\[ \]` blocks, `tikzpicture` blocks, the amsmath
+display environments (`equation`, `align`, `gather`, `multline` and the rest,
+starred or not), and ` ```tikz ` fences the way the desktop app draws them
+(`\usepackage` and `\usetikzlibrary` lines above the picture are kept).
+Packages come from `preamble.tex` next to `config.toml`, written on the first
+render with `amsmath`, `amssymb`, `mhchem` and `tikz` with the TikZ libraries
+the desktop loads (`arrows.meta`, `calc`, `positioning`, `shapes`,
+`decorations.pathreplacing`, `intersections`, `patterns`); zn never rewrites
+it, so add your own packages there (and install them with your TeX
+distribution). The desktop also loads `pgfplots` and `circuitikz` when a fence
+uses them; for those, install them and add them to `preamble.tex`.
+
+Pictures are cached in the user cache directory under `zn/tex`; zn deletes
+the pictures and formats there that it has not used for 30 days. TeX can read
+files by absolute path, so under `latex` a note can show in the preview the
+contents of any file you can read. Leave latex off for vaults you do not
+trust.
+
+### Open notes in a pane mode from their frontmatter
+
+By default a note opens in the mode `editor.default_view_mode` gives (or the
+mode you last chose, with `keep_view_mode_across_notes`). Two `[terminal]`
+settings, both off by default, let a note's own frontmatter pick the mode when
+it opens in a new tab:
+
+- **`view_mode_field`** names a frontmatter field. It is empty by default;
+  `view-mode` is a good name. A note with `view-mode: preview` (or `edit`, or
+  `split`) opens in that mode. The key and value are not case sensitive. A
+  list, an empty value or any other word is ignored.
+- **`[terminal.view_mode_rules]`** maps a frontmatter `key=value` pair to a mode.
+  A list field matches when any element equals the value.
+
+```toml
+[terminal]
+view_mode_field = "view-mode"
+
+[terminal.view_mode_rules]
+"page-status=done" = "preview"
+"kind=journal" = "edit"
+```
+
+Rules are written `"<key>=<value>" = "<mode>"`, where the mode is `edit`,
+`split` or `preview`. Keys and values are trimmed, unquoted and compared in
+lower case. A rule is invalid, and ignored, when it has no `=`, an empty key,
+an empty value or a mode other than those three. Invalid rules never stop zn
+from starting; `:settings` lists them marked with their reason (`no "="`,
+`empty key`, `empty value` or `bad mode`), and `d` or the mode picker's
+`remove` deletes them.
+
+Precedence:
+
+- A valid `view_mode_field` value beats the rules. Among the rules, the first
+  one in sorted order of the lower-cased `key=value` wins, so
+  `kind=journal` is tried before `page-status=done`.
+- Frontmatter beats the remembered mode and `keep_view_mode_across_notes`.
+  Applying it never changes either of them; a mode you switch to yourself
+  still does.
+- A tab restored from the saved session keeps its saved mode.
+- A note you have just created opens in the editor, whatever its frontmatter
+  says. Reopening it later follows the frontmatter.
+- Reopening a closed tab follows the frontmatter too; the mode the tab was
+  closed in comes back only when the frontmatter asks for none.
+- The pane opened by `:ref`, and a peek from the sidebar, stay in preview.
+- Switching to a tab that is already open never changes its mode, and saving
+  new frontmatter does not either.
+
+Edit them in `:settings` (the `terminal.view_mode_field` row, and the
+`terminal.view_mode_rules` rows with their add row) or with `zn config`:
+
+```bash
+zn config set terminal.view_mode_field view-mode
+zn config set terminal.view_mode_rules.page-status=done preview
+```
+
+Only `zn tui` reads these settings, and zn never writes them into the vault.
+The desktop app does not use them, and like every `[terminal]` setting they
+do not survive the desktop app saving `config.toml` (see
+[Configuration](#configuration)).
 
 ### Vaults and servers inside the app
 
@@ -737,14 +870,19 @@ creates it with comments when it is missing. On Windows, it normally lives
 under `%APPDATA%\zennotes`. `XDG_CONFIG_HOME` and `ZENNOTES_CONFIG_DIR` can
 override the portable location.
 
-`:settings` is searchable and editable. Supported user preferences persist
-to `config.toml`; periodic-note and task-exclusion controls update the vault.
+`:settings` is searchable and editable, its rows grouped by where they are
+saved: User rows persist to `config.toml`, and Vault rows (periodic notes,
+Task folders, the template folder) to the vault's `.zennotes/vault.json`.
 `:config` opens the file in an external editor, and `:reloadconfig` reloads
 it immediately. External edits are otherwise picked up within a second.
 `:bind` / `:unbind` persist, and `:keymaps` can edit bindings interactively.
 Updates preserve unknown keys/tables and existing symlinks; TOML comments
 and formatting are normalized when the file is written. Invalid supported
 values produce an error while the running preferences remain active.
+The desktop app does not keep the `[terminal]` table: it rewrites
+`config.toml` at launch and whenever you change a setting there, and the
+rewritten file leaves `[terminal]` out. If you use both apps, keep a copy of
+your `[terminal]` settings to put back.
 
 Periodic note paths and named date tokens follow each kind's configured
 locale, including legacy patterns. The TUI keeps a horizontal tab strip
@@ -753,12 +891,12 @@ layout choices do not change these terminal layouts.
 
 | Section | Examples |
 | --- | --- |
-| `[vim]` | `enabled`, `motions` (`vim` or `helix`), `insert_escape`, `yank_to_clipboard`, `which_key_hints`, `which_key_hint_mode`, `wrapped_line_motions` (a `[helix]` section is still honored when `[vim]` is absent) |
-| `[editor]` | `motions` (`vim` or `helix`), `line_number_mode`, `word_wrap`, `completed_task_style` |
+| `[vim]` | `enabled`, `which_key_hints`, `insert_escape` |
+| `[editor]` | `line_number_mode`, `word_wrap`, `completed_task_style` |
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
-| `[terminal]` | `mouse`, `preview_style`, `images`, `theme` (terminal only) |
+| `[terminal]` | `mouse`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
 | `[saved_filters]` | `Important = "!high"` |
@@ -909,6 +1047,67 @@ zn connect https://notes.example.com --no-default
 `--no-default` saves the token without making the server zn's own default,
 so zn keeps following the app.
 
+### Scoped access
+
+By default an MCP client sees the whole vault. Flags on `zn mcp` narrow what it
+can see and change, and the server enforces them on every tool (listings,
+search, tags, tasks, backlinks, assets, comments, error messages), so hidden
+notes cannot be found indirectly:
+
+```bash
+zn mcp --allow-path Projects --allow-path Areas/Health --deny-path Projects/Clients --read-only
+```
+
+```json
+{ "mcpServers": { "zennotes": { "command": "zn", "args": ["mcp", "--allow-path", "Projects", "--read-only"] } } }
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--allow-path <path>` | Share only this folder or note, and what is inside it. Repeat for more. Without it, the whole vault is shared. |
+| `--deny-path <path>` | Hide this folder or note even inside an allowed one. Repeat for more. |
+| `--read-only` | Read tools only: no tool that creates, edits, moves or deletes is offered. Same as `--access read`. |
+| `--access read\|comment\|write` | `comment` adds the comment tools to the read tools; `write` (the default) is everything the paths allow. |
+
+Paths are vault-relative, as the tools report them (`Projects` in a root-mode
+vault, `inbox/Projects` in an inbox-mode one, remapped system folders under
+their own names), and a leading `/` is fine. A path matches the folder and
+everything below it, never a sibling that merely starts with the same letters.
+
+What the client gets:
+
+- A hidden note answers exactly like a missing one (`Note not found: <path>`).
+  Paths through a symlink, case variants of a hidden folder and the internal
+  `.zennotes` directory do not exist for it, and its errors and `vault_info`
+  never show the vault's absolute location.
+- Tools it cannot use are not listed at all. `empty_trash` is never offered
+  once paths are restricted, since it deletes every trashed note.
+- Notes can be created, moved and restored only inside allowed folders, and
+  never through a symbolic link (which the listings skip, so it would otherwise
+  look like a new folder). Archiving and trashing a visible note are allowed
+  even when the archive or trash is not shared; the note then leaves what the
+  client sees.
+- Renaming a note rewrites `[[links]]` only in notes the client can see. On a
+  ZenNotes server, which rewrites links in every note itself, a scoped client
+  cannot rename notes.
+- A folder is renamed or deleted as a whole only when nothing inside it is
+  hidden.
+- A `--deny-path` that matches nothing in the vault (renamed outside ZenNotes,
+  or meant for another vault) shares nothing at all until it is fixed, so a
+  rename can never quietly expose what it hid. The MCP server's stderr, which
+  clients keep in their logs, names the entry.
+
+The desktop app's bundled MCP server takes the same flags and gives the same
+answers (the shared fixture `internal/mcp/testdata/mcp-scope.json` holds both to
+it), with one difference: it never rewrites inbound links on a rename, scoped or
+not, so a rename through it leaves every other note as it was.
+
+The scope governs the ZenNotes tools only. An assistant that can also run
+commands or read files (Claude Code, Codex, OpenCode) can still read the vault
+from disk. The design, including what comes next (per-vault profiles chosen
+from the desktop app), is in
+[`docs/ideas/mcp-scoped-access.md`](docs/ideas/mcp-scoped-access.md).
+
 ## Layout of the code
 
 ```
@@ -916,6 +1115,7 @@ cmd/zn                   entry point
 internal/cli             argument parsing, every zn command, help text
 internal/tui             the terminal app (Bubble Tea)
 internal/vim             the Vim engine, host-agnostic
+internal/helix           the Helix engine, host-agnostic (docs/helix.md)
 internal/vault           vault semantics: layout, parsing, tasks, comments, edits, templates
 internal/backend         local and remote backends behind one interface
 internal/remote          HTTP client for the ZenNotes server

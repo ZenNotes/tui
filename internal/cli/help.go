@@ -49,7 +49,7 @@ var helpSections = []helpSection{
 		{"duplicate <path>", "Copy a note next to itself", ""},
 	}},
 	{"SEARCH", []helpRow{
-		{"search <query>", "Full-text search across live notes", "--limit <n>  --json"},
+		{"search <query>", "Full-text search across live notes, the template folder left out", "--limit <n>  --json"},
 		{"search-title <q>", "Match notes by title (substring)", "--json"},
 		{"backlinks <path>", "Notes linking to this one via [[wikilink]]", "--json"},
 	}},
@@ -60,11 +60,11 @@ var helpSections = []helpSection{
 		{"folder delete <p>", "Delete a subfolder and everything in it", "--yes"},
 	}},
 	{"TAGS", []helpRow{
-		{"tag list", "Every #tag with its note count", "--json"},
-		{"tag find <tag>", "Notes carrying this #tag", "--limit <n>  --json"},
+		{"tag list", "Every #tag with its note count, the template folder left out", "--json"},
+		{"tag find <tag>", "Notes carrying this #tag, the template folder left out", "--limit <n>  --json"},
 	}},
 	{"TASKS", []helpRow{
-		{"task list", "Open checkbox tasks across all notes", "--unchecked  --all  --tag <t>  --include-excluded  --json"},
+		{"task list", "Open checkbox tasks across all notes but the template folder", "--unchecked  --all  --tag <t>  --include-excluded  --json"},
 		{"task toggle <id>", "Flip a task checkbox by stable id", ""},
 		{"task watch", "Print task status changes as they happen. A server that cannot push them is asked every --interval seconds (default 5)", "--interval <s>  --include-excluded  --json"},
 	}},
@@ -91,7 +91,7 @@ var helpSections = []helpSection{
 		{"base create <title>", "Create an empty database", "--folder <f/sub>  --json"},
 		{"base rows <base>", "List a database’s rows (title or path picks the base)", "--json"},
 		{"base get <base> <row>", "One row by id or title value", "--json"},
-		{"base add <base>", "Add a row; --body (or --body - for stdin) also creates its record page", "--set Field=Value …  --body <text|->  --page  --json"},
+		{"base add <base>", "Add a row; --body (or --body - for stdin) also creates its record page. When the view the database opens on shows picked rows, the row joins them", "--set Field=Value …  --body <text|->  --page  --json"},
 		{"base set <base> <row>", "Set fields; select options mint, the page re-mirrors", "--set Field=Value …  --json"},
 		{"base convert <base>", "Turn a loose .csv into a .base folder so rows can have record pages", "--json"},
 		{"base pages <base>", "Give every record without one its record page, so each can be linked", "--dry-run  --json"},
@@ -106,7 +106,7 @@ var helpSections = []helpSection{
 		{"tui", "Open ZenNotes in the terminal: sidebar, tabs, splits, Vim motions, tasks, tags", "--vault <v>  --server <s>  [path]"},
 	}},
 	{"MCP", []helpRow{
-		{"mcp", "Start the MCP stdio server (Claude / Codex)", ""},
+		{"mcp", "Start the MCP stdio server (Claude / Codex). --allow-path and --deny-path share only part of the vault; --read-only, or --access comment, offers fewer tools", "--allow-path <p>…  --deny-path <p>…  --read-only  --access read|comment|write"},
 	}},
 	{"CONFIGURATION", []helpRow{
 		{"config", "Open config.toml in $EDITOR, creating a commented starter file", "--path  --no-edit"},

@@ -338,11 +338,20 @@ func cmdBaseAdd(ctx context.Context, b backend.Backend, args Args) error {
 	if err != nil {
 		return err
 	}
-	row := doc.AddRow()
+	// As + Row does in the app's grid: when the view the database opens on
+	// shows picked rows, the new row joins them, or it would be missing from
+	// that view the next time the database is opened. Other views keep their
+	// picks.
+	row, picksChanged := doc.AddRowInView(doc.ActiveViewID)
+	pickedIn := ""
+	if view := doc.ViewByID(doc.ActiveViewID); picksChanged && view != nil {
+		pickedIn = view.Name
+	}
 	schemaChanged, err := applyAssignments(doc, row.ID, assignments)
 	if err != nil {
 		return err
 	}
+	schemaChanged = schemaChanged || picksChanged
 	pagePath := ""
 	if wantPage {
 		current := *doc.RowByID(row.ID)
@@ -374,10 +383,14 @@ func cmdBaseAdd(ctx context.Context, b backend.Backend, args Args) error {
 		emitJSON(struct {
 			OK bool `json:"ok"`
 			rowView
-		}{true, view})
+			PickedInView string `json:"pickedInView,omitempty"`
+		}{true, view, pickedIn})
 		return nil
 	}
 	emitOK(fmt.Sprintf("Added %s (%s)", doc.RecordTitle(finalRow), row.ID))
+	if pickedIn != "" {
+		emitLine("  added to the picked rows of the " + pickedIn + " view")
+	}
 	if pagePath != "" {
 		emitLine("  page: " + pagePath)
 	}

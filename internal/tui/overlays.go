@@ -8,14 +8,14 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/ZenNotes/tui/internal/helix"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/vault"
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // overlay is a modal surface: a palette, prompt, menu or dialog.
 type overlay interface {
-	handleKey(a *App, k helix.Key)
+	handleKey(a *App, k vim.Key)
 	render(a *App, w, h int) string
 }
 
@@ -50,7 +50,7 @@ func (t *textInput) endsWith(suffix string) bool {
 }
 
 // handle applies an editing key; false means the key was not for the input.
-func (t *textInput) handle(k helix.Key) bool {
+func (t *textInput) handle(k vim.Key) bool {
 	switch {
 	case k.Printable():
 		t.runes = append(t.runes[:t.cursor], append([]rune{k.Rune}, t.runes[t.cursor:]...)...)
@@ -95,14 +95,42 @@ func (t *textInput) handle(k helix.Key) bool {
 	return true
 }
 
-func (t *textInput) render(th Theme, width int) string {
-	before := string(t.runes[:t.cursor])
-	after := ""
-	if t.cursor < len(t.runes) {
-		after = string(t.runes[t.cursor:])
-	}
-	line := before + th.Cursor.Render(firstCellOr(after, " ")) + restAfterFirst(after)
-	return padRight(line, width)
+// render draws the text padded to width. The cursor is not drawn: the
+// terminal's own cursor is placed at cell instead.
+func (t *textInput) render(width int) string {
+	return padRight(string(t.runes), width)
+}
+
+// cell is the column, within a field width cells wide, of the next typed
+// character; a cursor past the field's right edge stays on its last cell.
+func (t *textInput) cell(width int) int {
+	return min(cellWidth(string(t.runes[:t.cursor])), max(width-1, 0))
+}
+
+// cursorField is an overlay with its own text field. fieldCursor is the
+// cursor the field wants, with its cell relative to the overlay box and
+// taken from the last render; it is hidden when the field has none.
+type cursorField interface {
+	fieldCursor() cursorState
+}
+
+// overlayInset is the offset of an overlay's content inside its box: the
+// border plus the padding.
+func (a *App) overlayInset() (x, y int) {
+	s := a.theme.Overlay
+	return s.GetBorderLeftSize() + s.GetPaddingLeft(), s.GetBorderTopSize() + s.GetPaddingTop()
+}
+
+// titleRows is how many rows an overlay title takes once it wraps at inner cells.
+func titleRows(title string, inner int) int {
+	return lipgloss.Height(lipgloss.NewStyle().Width(inner).Render(title))
+}
+
+// fieldAt is the bar for a field whose first cell is at column col of the
+// given content row of an overlay.
+func (a *App) fieldAt(col, row int) cursorState {
+	ix, iy := a.overlayInset()
+	return cursorState{visible: true, x: ix + col, y: iy + row, shape: cursorShapeBar}
 }
 
 // --- palette ---
@@ -122,6 +150,7 @@ type palette struct {
 	title       string
 	placeholder string
 	input       textInput
+	cur         cursorState
 	items       []paletteItem
 	filtered    []paletteItem
 	cursor      int
@@ -182,7 +211,7 @@ func (p *palette) refilter(a *App) {
 	}
 }
 
-func (p *palette) handleKey(a *App, k helix.Key) {
+func (p *palette) handleKey(a *App, k vim.Key) {
 	if p.onMove != nil {
 		before := p.currentID()
 		defer func() {
@@ -249,6 +278,8 @@ func (p *palette) currentID() string {
 	return p.filtered[p.cursor].id
 }
 
+func (p *palette) fieldCursor() cursorState { return p.cur }
+
 func (p *palette) render(a *App, w, h int) string {
 	th := a.theme
 	width := min(w-4, max(40, w*2/3))
@@ -262,9 +293,11 @@ func (p *palette) render(a *App, w, h int) string {
 	}
 	lines := []string{th.OverlayTitle.Render(p.title)}
 	prompt := "› "
-	lines = append(lines, prompt+p.input.render(th, inner-lipgloss.Width(prompt)))
+	fieldW := inner - lipgloss.Width(prompt)
+	lines = append(lines, prompt+p.input.render(fieldW))
+	p.cur = a.fieldAt(lipgloss.Width(prompt)+p.input.cell(fieldW), titleRows(p.title, inner))
 	if p.input.String() == "" && p.placeholder != "" {
-		lines[len(lines)-1] = prompt + th.Cursor.Render(" ") + th.Muted.Render(padRight(p.placeholder, inner-3))
+		lines[len(lines)-1] = prompt + " " + th.Muted.Render(padRight(p.placeholder, inner-3))
 	}
 	lines = append(lines, th.Muted.Render(strings.Repeat("─", inner)))
 	if len(p.filtered) == 0 {
@@ -330,7 +363,10 @@ type prompt struct {
 	onLink func(a *App, p *prompt)
 	// masked hides what is typed: tokens and other secrets.
 	masked bool
+	cur    cursorState
 }
+
+func (p *prompt) fieldCursor() cursorState { return p.cur }
 
 func (a *App) promptFor(title, initial, help string, onSubmit func(a *App, text string)) {
 	a.overlay = &prompt{title: title, input: newTextInput(initial), help: help, onSubmit: onSubmit}
@@ -341,7 +377,7 @@ func (a *App) promptSecret(title, help string, onSubmit func(a *App, text string
 	a.overlay = &prompt{title: title, input: newTextInput(""), help: help, onSubmit: onSubmit, masked: true}
 }
 
-func (p *prompt) handleKey(a *App, k helix.Key) {
+func (p *prompt) handleKey(a *App, k vim.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c'):
 		a.overlay = nil
@@ -361,10 +397,12 @@ func (p *prompt) render(a *App, w, h int) string {
 	th := a.theme
 	width := min(w-4, max(40, w/2))
 	inner := width - 2
-	field := p.input.render(th, inner)
+	field := p.input.render(inner)
+	p.cur = a.fieldAt(p.input.cell(inner), titleRows(p.title, inner))
 	if p.masked {
 		dots := strings.Repeat("•", len(p.input.runes))
-		field = padRight(dots+th.Cursor.Render(" "), inner)
+		field = padRight(dots+" ", inner)
+		p.cur = a.fieldAt(min(len(p.input.runes), max(inner-1, 0)), titleRows(p.title, inner))
 	}
 	lines := []string{th.OverlayTitle.Render(p.title), field}
 	if p.help != "" {
@@ -385,7 +423,7 @@ func (a *App) confirm(message string, onYes func()) {
 	a.overlay = &confirmDialog{message: message, onYes: onYes}
 }
 
-func (c *confirmDialog) handleKey(a *App, k helix.Key) {
+func (c *confirmDialog) handleKey(a *App, k vim.Key) {
 	switch {
 	case k.IsRune('y') || k.IsRune('Y') || k.Is("enter"):
 		a.overlay = nil
@@ -435,7 +473,7 @@ func (a *App) showMenu(title string, items []menuItem) {
 	a.overlay = &menu{title: title, items: items, anchor: anchor}
 }
 
-func (m *menu) handleKey(a *App, k helix.Key) {
+func (m *menu) handleKey(a *App, k vim.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c') || k.IsRune('q'):
 		a.overlay = nil
@@ -505,20 +543,23 @@ func (m *menu) render(a *App, w, h int) string {
 // --- quick capture ---
 
 type captureOverlay struct {
-	ed modalEditor
+	ed  modalEditor
+	cur cursorState
 }
+
+func (c *captureOverlay) fieldCursor() cursorState { return c.cur }
 
 func (a *App) openQuickCapture() {
 	opts := a.editorOptions()
-	ed := a.newModalEditorWithOpts("", opts, helix.Hooks{}, nil)
+	ed := a.newModalEditorWithOpts("", opts, vim.Hooks{}, nil)
 	ed.SetViewport(8)
-	if a.prefs.HelixMode {
-		ed.HandleKey(helix.R('i'))
+	if a.prefs.VimMode {
+		ed.HandleKey(vim.R('i'))
 	}
 	a.overlay = &captureOverlay{ed: ed}
 }
 
-func (c *captureOverlay) handleKey(a *App, k helix.Key) {
+func (c *captureOverlay) handleKey(a *App, k vim.Key) {
 	text := strings.TrimSpace(c.ed.Text())
 	switch {
 	case k.IsCtrl('s'):
@@ -528,7 +569,7 @@ func (c *captureOverlay) handleKey(a *App, k helix.Key) {
 	case k.IsCtrl('c'):
 		a.overlay = nil
 		return
-	case k.Is("esc") && (!a.prefs.HelixMode || c.ed.Mode() == helix.ModeNormal):
+	case k.Is("esc") && (!a.prefs.VimMode || c.ed.Mode() == vim.ModeNormal):
 		if text == "" {
 			a.overlay = nil
 			return
@@ -546,10 +587,16 @@ func (c *captureOverlay) render(a *App, w, h int) string {
 	lines := []string{th.OverlayTitle.Render("Quick capture") + th.Muted.Render("  first line becomes the title · Ctrl+S save · Esc cancel")}
 	c.ed.SetViewport(8)
 	c.ed.EnsureCursorVisible()
-	body := renderPlainEditor(a, c.ed, inner, 8, true)
+	body, edCur := renderPlainEditor(a, c.ed, inner, 8, true)
+	c.cur = cursorState{}
+	if edCur.visible {
+		ix, iy := a.overlayInset()
+		titleRows := lipgloss.Height(lipgloss.NewStyle().Width(inner).Render(lines[0]))
+		c.cur = cursorState{visible: true, x: ix + edCur.x, y: iy + titleRows + edCur.y, shape: edCur.shape}
+	}
 	lines = append(lines, strings.Split(body, "\n")...)
-	mode := c.ed.ModeLabel()
-	if !a.prefs.HelixMode {
+	mode := modeLabel(c.ed)
+	if !a.prefs.VimMode {
 		mode = "EDIT"
 	}
 	lines = append(lines, th.Muted.Render(mode))
@@ -679,7 +726,7 @@ func (a *App) startHintMode() {
 	a.overlay = &hintOverlay{targets: targets}
 }
 
-func (h *hintOverlay) handleKey(a *App, k helix.Key) {
+func (h *hintOverlay) handleKey(a *App, k vim.Key) {
 	if k.Is("esc") || k.IsCtrl('c') || !k.Printable() {
 		a.overlay = nil
 		return
@@ -767,7 +814,10 @@ type exPrompt struct {
 	compBase    string
 	histIdx     int
 	saved       string
+	cur         cursorState
 }
+
+func (p *exPrompt) fieldCursor() cursorState { return p.cur }
 
 func (p *exPrompt) resetCompletion() {
 	p.completions = nil
@@ -812,7 +862,7 @@ func (p *exPrompt) complete(a *App, backward bool) {
 	p.input = newTextInput(p.compBase + p.completions[p.compIdx])
 }
 
-func (p *exPrompt) handleKey(a *App, k helix.Key) {
+func (p *exPrompt) handleKey(a *App, k vim.Key) {
 	switch {
 	case k.Is("esc") || k.IsCtrl('c'):
 		a.overlay = nil
@@ -866,7 +916,8 @@ func (p *exPrompt) render(a *App, w, h int) string {
 	th := a.theme
 	width := min(w-4, max(50, w*2/3))
 	inner := width - 2
-	lines := []string{th.OverlayTitle.Render(":") + " " + p.input.render(th, inner-2)}
+	p.cur = a.fieldAt(2+p.input.cell(inner-2), 0)
+	lines := []string{th.OverlayTitle.Render(":") + " " + p.input.render(inner-2)}
 	if len(p.completions) > 1 {
 		parts := []string{}
 		shown := 0

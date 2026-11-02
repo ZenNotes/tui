@@ -1,4 +1,5 @@
 import copy
+import re
 from pathlib import Path
 import unittest
 
@@ -47,6 +48,19 @@ class UpdateFormulaTests(unittest.TestCase):
         formula = self.formula.replace("linux_amd64.tar.gz", "linux_386.tar.gz")
         with self.assertRaises(ValueError):
             render_formula(formula, "1.2.3", self.release)
+
+    def test_formula_has_latex_caveats_without_dependencies(self):
+        # The caveats name the latex tools; no depends_on is added for them.
+        caveats = re.search(r"^  def caveats\n(.*?)^  end\n", self.formula, re.M | re.S)
+        self.assertIsNotNone(caveats, "formula has no def caveats")
+        for want in ('math = "latex"', "pdftex", "pdftocairo"):
+            self.assertIn(want, caveats.group(1))
+        for line in self.formula.splitlines():
+            if "depends_on" in line:
+                for tool in ("pdftex", "pdftocairo", "poppler", "texlive", "mactex"):
+                    self.assertNotIn(tool, line.lower())
+        result = render_formula(self.formula, "1.2.3", self.release)
+        self.assertIn(caveats.group(0), result)
 
 
 if __name__ == "__main__":

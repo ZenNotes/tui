@@ -3,3 +3,4 @@
 # Windows runners whose Git defaults to CRLF conversion.
 internal/remote/testdata/** text eol=lf
 internal/vault/testdata/** text eol=lf
+internal/mcp/testdata/** text eol=lf

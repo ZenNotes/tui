@@ -1,0 +1,2 @@
+FROM texlive/texlive:latest-basic
+RUN tlmgr install standalone varwidth preview xcolor amsmath amsfonts mhchem pgf

@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/ZenNotes/tui/internal/helix"
+	"github.com/ZenNotes/tui/internal/vim"
 	"time"
 )
 
@@ -52,11 +52,11 @@ func (a *App) contextActions() {
 			a.noteContextMenu(n.Path)
 		}
 	case *filesView:
-		v.handleKey(a, helix.KeyEnter)
+		v.handleKey(a, vim.KeyEnter)
 	case *templatesView:
-		v.handleKey(a, helix.KeyEnter)
+		v.handleKey(a, vim.KeyEnter)
 	case *settingsView:
-		v.handleKey(a, helix.KeyEnter)
+		v.handleKey(a, vim.KeyEnter)
 	default:
 		if t.view == nil {
 			a.noteContextMenu(t.path)
