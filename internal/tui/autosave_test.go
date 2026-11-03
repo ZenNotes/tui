@@ -494,7 +494,6 @@ func TestFollowLinkReportsLinksItCannotOpen(t *testing.T) {
 		name, want string
 		line       int
 	}{
-		{"missing note", "Note not found: Daily/1999-01-01", 4},
 		{"not a note", "Not a note: photo.png", 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

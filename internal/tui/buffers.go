@@ -272,14 +272,35 @@ func (a *App) closeBufferIfUnused(path string) {
 
 var (
 	wikilinkAtRe = regexp.MustCompile(`!?\[\[([^\]\n]+)\]\]`)
-	mdLinkAtRe   = regexp.MustCompile(`!?\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
-	urlAtRe      = regexp.MustCompile(`(?:https?://|mailto:)[^\s<>()\[\]]+`)
+	// mdLinkAtRe is the editor's reading of a Markdown link, as loose as the
+	// desktop's LINK_SHAPES: the destination may hold spaces with or without
+	// angle brackets, and angle brackets may hold a `)`.
+	mdLinkAtRe = regexp.MustCompile(`!?\[([^\]]*)\]\((<[^>]+>|[^)]+)\)`)
+	urlAtRe    = regexp.MustCompile(`(?:https?://|mailto:)[^\s<>()\[\]]+`)
 )
 
 type linkTarget struct {
-	kind   string // "wikilink" | "url" | "path"
-	target string
+	kind   string // "wikilink" | "url" | "path" | "file"
+	target string // a wikilink's or path's keeps its #heading or ^block anchor
 	alias  string
+}
+
+// wikilinkTargetOf builds the link for what sits inside `[[...]]`.
+func wikilinkTargetOf(content string) linkTarget {
+	target, anchor, alias := vault.SplitWikilinkContent(content)
+	return linkTarget{kind: "wikilink", target: strings.TrimSpace(target + anchor), alias: strings.TrimPrefix(alias, "|")}
+}
+
+// mdLinkTargetOf builds the link for a Markdown link's raw destination.
+func mdLinkTargetOf(label, dest string) linkTarget {
+	target := vault.UnwrapMarkdownDest(dest)
+	if url, ok := vault.ExternalLinkURL(target); ok {
+		return linkTarget{kind: "url", target: url, alias: label}
+	}
+	if strings.Contains(target, "://") {
+		return linkTarget{kind: "url", target: target, alias: label}
+	}
+	return linkTarget{kind: "path", target: target, alias: label}
 }
 
 // linkAt finds the link covering a rune column on a line.
@@ -289,19 +310,12 @@ func linkAt(line string, col int) (linkTarget, bool) {
 	byteCol := byteAt(col)
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
 		if m[0] <= byteCol && byteCol < m[1] {
-			content := line[m[2]:m[3]]
-			target, _, alias := vault.SplitWikilinkContent(content)
-			return linkTarget{kind: "wikilink", target: strings.TrimSpace(target), alias: strings.TrimPrefix(alias, "|")}, true
+			return wikilinkTargetOf(line[m[2]:m[3]]), true
 		}
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
 		if m[0] <= byteCol && byteCol < m[1] {
-			target := line[m[4]:m[5]]
-			kind := "path"
-			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
-				kind = "url"
-			}
-			return linkTarget{kind: kind, target: strings.Trim(target, "<>"), alias: line[m[2]:m[3]]}, true
+			return mdLinkTargetOf(line[m[2]:m[3]], line[m[4]:m[5]]), true
 		}
 	}
 	for _, m := range urlAtRe.FindAllStringIndex(line, -1) {
@@ -317,17 +331,11 @@ func linksOnLine(line string) []linkTarget {
 	out := []linkTarget{}
 	seen := map[int]bool{}
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
-		target, _, alias := vault.SplitWikilinkContent(line[m[2]:m[3]])
-		out = append(out, linkTarget{kind: "wikilink", target: strings.TrimSpace(target), alias: strings.TrimPrefix(alias, "|")})
+		out = append(out, wikilinkTargetOf(line[m[2]:m[3]]))
 		seen[m[0]] = true
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
-		target := line[m[4]:m[5]]
-		kind := "path"
-		if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
-			kind = "url"
-		}
-		out = append(out, linkTarget{kind: kind, target: strings.Trim(target, "<>"), alias: line[m[2]:m[3]]})
+		out = append(out, mdLinkTargetOf(line[m[2]:m[3]], line[m[4]:m[5]]))
 	}
 	for _, m := range urlAtRe.FindAllStringIndex(line, -1) {
 		inside := false
@@ -373,20 +381,7 @@ func (a *App) followLink(link linkTarget) {
 			}
 		}
 		a.copyText(link.target)
-	case "wikilink":
-		if a.idx == nil {
-			return
-		}
-		if meta, ok := vault.ResolveWikilink(a.idx.notes, link.target); ok {
-			a.openNote(meta.Path, true)
-			return
-		}
-		target := link.target
-		a.confirm("Create note \""+target+"\"?", func() {
-			folder, sub := a.currentFolderContext()
-			a.createNote(folder, target, sub, nil, true)
-		})
-	case "path":
+	case "wikilink", "path":
 		if a.idx == nil {
 			return
 		}
@@ -394,23 +389,117 @@ func (a *App) followLink(link linkTarget) {
 		if active := a.activeBuffer(); active != nil {
 			from = active.path
 		}
-		// In the desktop's order: relative to this note, then as a wikilink,
-		// which also finds a path written from the vault root.
-		if meta, ok := vault.ResolveNoteHref(a.idx.notes, from, link.target); ok {
-			a.openNote(meta.Path, true)
+		if notePath, anchor, ok := resolveNoteLink(a.idx.notes, from, link); ok {
+			a.openNoteAtAnchor(notePath, anchor)
 			return
 		}
-		if meta, ok := vault.ResolveWikilink(a.idx.notes, link.target); ok {
-			a.openNote(meta.Path, true)
-			return
-		}
-		target, _, _ := strings.Cut(strings.TrimPrefix(link.target, "./"), "#")
-		if ext := path.Ext(target); target == "" || (ext != "" && !strings.EqualFold(ext, ".md")) {
-			a.notify("Not a note: " + target)
-			return
-		}
-		a.notify("Note not found: " + target)
+		a.offerNoteFromLink(from, link)
 	}
+}
+
+// resolveNoteLink finds the note a link opens and the anchor to land on, in the
+// desktop's order: a same-note anchor, then a wikilink by name and a Markdown
+// link relative to this note, each falling back on the other's reading.
+func resolveNoteLink(notes []vault.NoteMeta, from string, link linkTarget) (notePath, anchor string, ok bool) {
+	if from != "" && vault.IsSameNoteAnchor(link.target) {
+		return from, link.target, true
+	}
+	byHref := func() (string, string, bool) {
+		meta, ok := vault.ResolveNoteHref(notes, from, link.target)
+		return meta.Path, "#" + vault.HrefFragment(link.target), ok
+	}
+	byName := func() (string, string, bool) {
+		meta, ok := vault.ResolveWikilink(notes, link.target)
+		return meta.Path, link.target, ok
+	}
+	first, second := byHref, byName
+	if link.kind == "wikilink" {
+		first, second = byName, byHref
+	}
+	if notePath, anchor, ok = first(); ok {
+		return notePath, anchor, true
+	}
+	return second()
+}
+
+// openNoteAtAnchor opens a note and puts the anchor at the top of the view. An
+// anchor the note no longer carries opens it where it was, as on the desktop.
+func (a *App) openNoteAtAnchor(notePath, anchor string) {
+	a.openNote(notePath, true)
+	t := a.activeTab()
+	a.withLoadedBuffer(notePath, func(buf *noteBuffer) {
+		line, ok := vault.AnchorLine(buf.ed.Text(), anchor)
+		if !ok {
+			return
+		}
+		buf.ed.GotoLine(line)
+		buf.ed.SetScrollTop(line - 1)
+		buf.ed.EnsureCursorVisible()
+		if t != nil && t.path == notePath && t.mode == modePreview {
+			if t.preview == nil {
+				t.preview = &previewState{}
+			}
+			t.preview.jumpLine, t.preview.jumpPending = line-1, true
+		}
+	})
+}
+
+// offerNoteFromLink asks before creating the note a dead link names, so a link
+// to a note not written yet is never a dead end.
+func (a *App) offerNoteFromLink(from string, link linkTarget) {
+	if link.kind == "path" {
+		folder, sub, title, ok := a.hrefNoteLocation(from, link.target)
+		if !ok {
+			shown, _, _ := strings.Cut(strings.TrimPrefix(link.target, "./"), "#")
+			a.notify("Not a note: " + shown)
+			return
+		}
+		shown := title
+		if sub != "" {
+			shown = sub + "/" + title
+		}
+		a.confirm("Create note \""+shown+"\"?", func() {
+			a.createNote(folder, title, sub, nil, true)
+		})
+		return
+	}
+	name, _, _ := vault.SplitWikilinkContent(link.target)
+	name = strings.TrimSpace(name)
+	a.confirm("Create note \""+name+"\"?", func() {
+		folder, sub := a.currentFolderContext()
+		a.createNote(folder, name, sub, nil, true)
+	})
+}
+
+// hrefNoteLocation is where the note a dead href names goes: the path the href
+// points at, so the link resolves once the note exists. A path from the vault
+// root starts at the Inbox, as the desktop reads it, and false means the href
+// cannot name a note at all.
+func (a *App) hrefNoteLocation(from, href string) (folder vault.NoteFolder, sub, title string, ok bool) {
+	if vault.HrefNamesFile(href) {
+		return "", "", "", false
+	}
+	rel, ok := vault.NoteHrefPath(from, href)
+	if !ok || strings.ContainsAny(rel, `\:*?"<>|#^[]`) {
+		return "", "", "", false
+	}
+	if strings.HasSuffix(strings.ToLower(rel), ".md") {
+		rel = rel[:len(rel)-len(".md")]
+	}
+	folder, known := vault.FolderForRelativePath(rel, a.folderPaths())
+	if !known {
+		return "", "", "", false
+	}
+	dir, title := path.Split(rel)
+	dir = strings.TrimSuffix(dir, "/")
+	if folder == vault.FolderTrash {
+		return vault.FolderInbox, "", title, true
+	}
+	sub = vault.FolderSubpathOf(rel, folder, a.primaryAtRoot(), a.folderPaths())
+	if sub == "" && folder == vault.FolderInbox && dir != "" && !strings.EqualFold(dir, vault.ResolveFolderPath(folder, a.folderPaths())) {
+		sub = dir
+	}
+	return folder, sub, title, true
 }
 
 func (a *App) copyLinkAtCursor(buf *noteBuffer) {
