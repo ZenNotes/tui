@@ -895,13 +895,36 @@ layout choices do not change these terminal layouts.
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
-| `[terminal]` | `mouse`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
+| `[terminal]` | `mouse`, `autosave`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
 | `[saved_filters]` | `Important = "!high"` |
 
 Per-vault settings (daily notes, favorites, folder layout) live in the
 vault's `.zennotes/vault.json`, also shared with the app.
+
+### Autosave
+
+`zn tui` saves a note a moment after you stop typing, and when you close it.
+To save only when you ask:
+
+```toml
+[terminal]
+autosave = false
+```
+
+or `zn config set terminal.autosave false`, or the `terminal.autosave` row in
+`:settings`. With it off, `:w`, `Ctrl+S`, `:wq` and `:wa` save. `:q`, `:qa` and
+`Ctrl+C` refuse while a note has unsaved edits, and `:q!` or `:qa!` discards
+them. If zn exits any other way, such as the terminal closing, the edits go to
+a recovery copy instead of the note. Commands that work on the file itself
+(rename, move, trash, toggling a task, opening it in `$EDITOR`) still save the
+note first. The desktop app has no such setting and always autosaves.
+
+With autosave on or off, undo stops at the note as it was opened. If undo or
+redo leaves a note blank when its file has text (undoing all the typing in a
+note you created empty, say), zn does not write that on its own. Redo brings
+the text back, and `:w` saves the note empty if that is what you want.
 
 ### Individual settings
 

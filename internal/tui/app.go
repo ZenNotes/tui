@@ -135,8 +135,10 @@ type App struct {
 	sessionDirty bool
 	sessionSaved time.Time
 	quitting     bool
-	program      *tea.Program
-	leaderSeq    int
+	// discardUnsaved is :qa! with autosave off: leave without saving anything.
+	discardUnsaved bool
+	program        *tea.Program
+	leaderSeq      int
 
 	pendingCmds         []tea.Cmd
 	leaderHintScheduled int
@@ -315,7 +317,14 @@ func (a *App) shutdown() error {
 	for _, p := range a.tempFiles {
 		_ = os.Remove(p)
 	}
-	err := a.saveAllBuffers()
+	var err error
+	if a.prefs.Autosave {
+		err = a.saveAllBuffers()
+	} else if !a.discardUnsaved && a.hasUnsaved() {
+		// Exiting without :q or :qa, such as the terminal closing. The edits
+		// were never saved, so they go to a recovery copy, not the vault.
+		err = errors.New("autosave is off and notes had unsaved edits")
+	}
 	if err != nil {
 		err = a.writeRecovery(err)
 	}
@@ -560,7 +569,7 @@ func (a *App) armAutosave() {
 	}
 	var earliest time.Time
 	for _, buf := range a.buffers {
-		if !buf.saving && !buf.diskChanged && buf.dirty() && !buf.saveAt.IsZero() && (earliest.IsZero() || buf.saveAt.Before(earliest)) {
+		if a.autosavePending(buf) && (earliest.IsZero() || buf.saveAt.Before(earliest)) {
 			earliest = buf.saveAt
 		}
 	}

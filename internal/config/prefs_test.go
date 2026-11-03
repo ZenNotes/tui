@@ -234,3 +234,31 @@ func TestPrefsRenderConcurrencyWrongType(t *testing.T) {
 		t.Fatalf("doctor: %v", err)
 	}
 }
+
+func TestPrefsAutosaveDefaultsOnAndTurnsOff(t *testing.T) {
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	prefs, _, err := LoadPrefs()
+	if err != nil || !prefs.Autosave {
+		t.Fatalf("no file: autosave %v, err %v", prefs.Autosave, err)
+	}
+	if err := SetValue("terminal", "autosave", false); err != nil {
+		t.Fatal(err)
+	}
+	prefs, _, err = LoadPrefs()
+	if err != nil || prefs.Autosave {
+		t.Fatalf("after set: autosave %v, err %v", prefs.Autosave, err)
+	}
+	if got := ValueTables(prefs)["terminal"]["autosave"]; got != false {
+		t.Fatalf("value table has %v, so zn config and :settings miss it", got)
+	}
+}
+
+func TestPrefsAutosaveRejectsANonBoolean(t *testing.T) {
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	if err := os.WriteFile(ConfigTomlPath(), []byte("[terminal]\nautosave = \"no\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadPrefs(); err == nil || !strings.Contains(err.Error(), "terminal.autosave") {
+		t.Fatalf("got %v", err)
+	}
+}

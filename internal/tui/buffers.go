@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -27,9 +28,12 @@ type noteBuffer struct {
 	saveAt      time.Time
 	saving      bool
 	loading     bool
-	afterLoad   []func(*noteBuffer)
-	loadErr     error
-	rows        []rowInfo
+	// seeded marks an editor still holding the empty placeholder of a note no
+	// read has returned yet. The first read replaces it outside the history.
+	seeded    bool
+	afterLoad []func(*noteBuffer)
+	loadErr   error
+	rows      []rowInfo
 	// focusRows is the wrapping of the pane that last drew this buffer with
 	// focus; rows belongs to whichever pane drew it last.
 	focusRows []rowInfo
@@ -77,7 +81,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	}
 	if a.deferReads {
 		meta, _ := a.noteMeta(path)
-		buf := &noteBuffer{path: path, meta: meta, loading: true}
+		buf := &noteBuffer{path: path, meta: meta, loading: true, seeded: true}
 		buf.ed = vim.NewWithRegisters("", a.editorOptions(), a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[path] = buf
@@ -134,6 +138,9 @@ func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
 		},
 		Changed: func() {
 			buf.saveAt = time.Now().Add(autosaveDelay)
+			if a.prefs.Autosave && buf.undoEmptied() {
+				a.notify("Undo emptied this note, so it was not saved. Redo brings the text back; :w saves it empty")
+			}
 			a.armAutosave()
 		},
 	}
@@ -153,8 +160,24 @@ func (b *noteBuffer) dirty() bool {
 	return !b.loading && b.ed.Text() != b.savedText
 }
 
-// saveBuffer writes a dirty buffer through the backend.
+// undoEmptied reports a buffer that undo or redo left blank while its file has
+// text. Only a save the user names may write that: everything else leaves the
+// file alone, so an undo can never wipe a note on its own.
+func (b *noteBuffer) undoEmptied() bool {
+	return b.ed.ChangedByUndo() && strings.TrimSpace(b.ed.Text()) == "" && strings.TrimSpace(b.savedText) != ""
+}
+
+// saveBuffer saves for the commands that flush first: closing, quitting and
+// whatever acts on the file itself. An undo-emptied buffer is not written.
 func (a *App) saveBuffer(buf *noteBuffer) error {
+	if buf != nil && buf.undoEmptied() {
+		return nil
+	}
+	return a.writeBuffer(buf)
+}
+
+// writeBuffer writes a dirty buffer through the backend.
+func (a *App) writeBuffer(buf *noteBuffer) error {
 	if buf != nil && buf.loading {
 		return fmt.Errorf("note is still loading")
 	}
@@ -191,11 +214,26 @@ func (a *App) saveAllBuffers() error {
 	return first
 }
 
+// hasUnsaved reports a buffer with edits that are not on disk.
+func (a *App) hasUnsaved() bool {
+	for _, buf := range a.buffers {
+		if buf.dirty() {
+			return true
+		}
+	}
+	return false
+}
+
+// autosavePending reports a buffer autosave should write when its timer ends.
+func (a *App) autosavePending(buf *noteBuffer) bool {
+	return a.prefs.Autosave && !buf.saving && !buf.diskChanged && buf.dirty() && !buf.undoEmptied() && !buf.saveAt.IsZero()
+}
+
 // autosaveDue lists buffers whose autosave timer expired.
 func (a *App) autosaveDue(now time.Time) []*noteBuffer {
 	out := []*noteBuffer{}
 	for _, buf := range a.buffers {
-		if !buf.saving && !buf.diskChanged && buf.dirty() && !buf.saveAt.IsZero() && now.After(buf.saveAt) {
+		if a.autosavePending(buf) && now.After(buf.saveAt) {
 			out = append(out, buf)
 		}
 	}
@@ -219,9 +257,12 @@ func (a *App) closeBufferIfUnused(path string) {
 		}
 	}
 	if buf, ok := a.buffers[path]; ok {
-		if err := a.saveBuffer(buf); err != nil {
-			a.notifyError(err.Error())
-			return
+		// With autosave off, closeTab already asked before dropping edits.
+		if a.prefs.Autosave {
+			if err := a.saveBuffer(buf); err != nil {
+				a.notifyError(err.Error())
+				return
+			}
 		}
 		delete(a.buffers, path)
 	}
@@ -346,29 +387,27 @@ func (a *App) followLink(link linkTarget) {
 			a.createNote(folder, target, sub, nil, true)
 		})
 	case "path":
-		target := strings.TrimPrefix(link.target, "./")
-		if i := strings.IndexAny(target, "#?"); i >= 0 {
-			target = target[:i]
+		if a.idx == nil {
+			return
 		}
-		if !strings.HasSuffix(strings.ToLower(target), ".md") {
+		from := ""
+		if active := a.activeBuffer(); active != nil {
+			from = active.path
+		}
+		// In the desktop's order: relative to this note, then as a wikilink,
+		// which also finds a path written from the vault root.
+		if meta, ok := vault.ResolveNoteHref(a.idx.notes, from, link.target); ok {
+			a.openNote(meta.Path, true)
+			return
+		}
+		if meta, ok := vault.ResolveWikilink(a.idx.notes, link.target); ok {
+			a.openNote(meta.Path, true)
+			return
+		}
+		target, _, _ := strings.Cut(strings.TrimPrefix(link.target, "./"), "#")
+		if ext := path.Ext(target); target == "" || (ext != "" && !strings.EqualFold(ext, ".md")) {
 			a.notify("Not a note: " + target)
 			return
-		}
-		if _, ok := a.noteMeta(target); ok {
-			a.openNote(target, true)
-			return
-		}
-		// Relative to the current note's folder.
-		if active := a.activeBuffer(); active != nil {
-			dir := ""
-			if i := strings.LastIndex(active.path, "/"); i >= 0 {
-				dir = active.path[:i+1]
-			}
-			candidate := vault.NormalizeRelPath(dir + target)
-			if _, ok := a.noteMeta(candidate); ok {
-				a.openNote(candidate, true)
-				return
-			}
 		}
 		a.notify("Note not found: " + target)
 	}

@@ -37,6 +37,7 @@ func helpLines(a *App, filter string) []string {
 		"Ctrl+P\tSearch notes (Enter opens; with no match Enter creates the note; Ctrl+D trashes the selected one)",
 		"Ctrl+N\tNew note in the current folder",
 		"Ctrl+S\tSave now (notes autosave a moment after you stop typing)",
+		"[terminal] autosave\tOn by default. false writes a note only when you save it (:w, Ctrl+S); :q and :qa ask before dropping unsaved edits, and :q! or :qa! discards them",
 		"Ctrl+C\tEscape in insert or visual mode; quits from normal mode after saving",
 		"Ctrl+Z\tSuspend to the shell; fg returns",
 		"?\tIn lists and views: the keys of that surface, following your [keymaps] overrides",

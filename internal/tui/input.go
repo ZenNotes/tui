@@ -266,7 +266,12 @@ func (a *App) refreshIndex() {
 }
 
 func (a *App) quit() {
-	if err := a.saveAllBuffers(); err != nil {
+	if !a.prefs.Autosave {
+		if a.hasUnsaved() {
+			a.notifyError(errUnsavedEdits.Error())
+			return
+		}
+	} else if err := a.saveAllBuffers(); err != nil {
 		a.notifyError("Save failed: " + err.Error())
 		return
 	}
@@ -769,6 +774,11 @@ func (a *App) closeBufferIfUnusedExcept(path string, keep *pane) {
 		}
 	}
 	if buf, ok := a.buffers[path]; ok {
+		// With autosave off the edits stay in memory: reopening the note finds
+		// them, and quitting still asks.
+		if !a.prefs.Autosave && buf.dirty() {
+			return
+		}
 		_ = a.saveBuffer(buf)
 		delete(a.buffers, path)
 	}

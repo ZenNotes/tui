@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -281,8 +282,31 @@ func (a *App) openVirtual(path string, factory func() view) {
 	a.markSessionDirty()
 }
 
-// closeTab closes a tab, saving its note first.
-func (a *App) closeTab(p *pane, idx int) {
+// errUnsavedEdits refuses to drop edits with autosave off.
+var errUnsavedEdits = errors.New("Unsaved edits, and autosave is off: :w saves them, :q! or :qa! discards them")
+
+// lastViewOfUnsaved reports a dirty note that closing its one tab would drop.
+func (a *App) lastViewOfUnsaved(buf *noteBuffer) bool {
+	if !buf.dirty() {
+		return false
+	}
+	views := 0
+	for _, pane := range a.panes.leaves() {
+		for _, tab := range pane.tabs {
+			if tab.path == buf.path {
+				views++
+			}
+		}
+	}
+	return views <= 1
+}
+
+// closeTab closes a tab, saving its note first, or with autosave off refusing
+// when that would drop edits.
+func (a *App) closeTab(p *pane, idx int) { a.closeTabWith(p, idx, false) }
+
+// closeTabWith closes a tab; discard lets it drop edits when autosave is off.
+func (a *App) closeTabWith(p *pane, idx int, discard bool) {
 	if idx < 0 || idx >= len(p.tabs) {
 		return
 	}
@@ -293,7 +317,12 @@ func (a *App) closeTab(p *pane, idx int) {
 	}
 	if !isVirtualPath(t.path) {
 		if buf, ok := a.buffers[t.path]; ok {
-			if err := a.saveBuffer(buf); err != nil {
+			if !a.prefs.Autosave {
+				if !discard && a.lastViewOfUnsaved(buf) {
+					a.notifyError(errUnsavedEdits.Error())
+					return
+				}
+			} else if err := a.saveBuffer(buf); err != nil {
 				a.notifyError(err.Error())
 				return
 			}

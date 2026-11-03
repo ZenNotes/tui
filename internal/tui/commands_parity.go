@@ -220,6 +220,10 @@ func (a *App) switchTarget(target backend.Target) {
 		a.notify("Already on " + a.vaultLabel())
 		return
 	}
+	if !a.prefs.Autosave && a.hasUnsaved() {
+		a.notifyError(errUnsavedEdits.Error())
+		return
+	}
 	if err := a.saveAllBuffers(); err != nil {
 		a.notifyError("Save failed: " + err.Error())
 		return

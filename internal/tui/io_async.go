@@ -108,6 +108,8 @@ func (a *App) reconcileBuffer(buf *noteBuffer, content vault.NoteContent, err er
 		return
 	}
 	buf.loadErr = nil
+	firstRead := buf.seeded
+	buf.seeded = false
 	if content.Body == buf.savedText {
 		return
 	}
@@ -123,7 +125,11 @@ func (a *App) reconcileBuffer(buf *noteBuffer, content vault.NoteContent, err er
 		return
 	}
 	cur, scroll := buf.ed.Cursor(), buf.ed.ScrollTop()
-	buf.ed.ReplaceText(content.Body)
+	if firstRead {
+		buf.ed.LoadText(content.Body)
+	} else {
+		buf.ed.ReplaceText(content.Body)
+	}
 	buf.ed.SetCursor(cur)
 	buf.ed.SetScrollTop(scroll)
 	buf.savedText = content.Body
