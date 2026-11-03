@@ -15,9 +15,20 @@ var hrefSchemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z\d+.-]*:`)
 // starts at the vault root. The `.md` may be left off, the path may be
 // percent-encoded, and a fragment is ignored. Trashed notes never resolve.
 func ResolveNoteHref(notes []NoteMeta, fromPath, href string) (NoteMeta, bool) {
+	target, ok := NoteHrefPath(fromPath, href)
+	if !ok {
+		return NoteMeta{}, false
+	}
+	return matchNoteHref(notes, target)
+}
+
+// NoteHrefPath is the vault-relative path an href points at, whether or not a
+// note is there. False for what cannot be a path in the vault: a URL, a bare
+// `#anchor`, or a path climbing out of the vault.
+func NoteHrefPath(fromPath, href string) (string, bool) {
 	raw := strings.TrimSpace(href)
 	if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(raw, "//") || hrefSchemeRe.MatchString(raw) {
-		return NoteMeta{}, false
+		return "", false
 	}
 	rawPath, _, _ := strings.Cut(raw, "#")
 	decoded, err := url.PathUnescape(rawPath)
@@ -30,9 +41,9 @@ func ResolveNoteHref(notes []NoteMeta, fromPath, href string) (NoteMeta, bool) {
 	}
 	target = path.Clean(target)
 	if target == "." || target == ".." || strings.HasPrefix(target, "../") {
-		return NoteMeta{}, false
+		return "", false
 	}
-	return matchNoteHref(notes, target)
+	return target, true
 }
 
 func matchNoteHref(notes []NoteMeta, target string) (NoteMeta, bool) {

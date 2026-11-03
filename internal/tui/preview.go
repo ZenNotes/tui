@@ -11,12 +11,21 @@ import (
 	"github.com/ZenNotes/tui/internal/vim"
 )
 
+// mdLinkRenderRe is what reading mode draws as a Markdown link. Stricter than
+// the editor's mdLinkAtRe, as the desktop's renderer is stricter than its `gd`:
+// a destination holding spaces needs angle brackets to be a link at all.
+var mdLinkRenderRe = regexp.MustCompile(`!?\[([^\]]*)\]\((<[^>]+>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)`)
+
 // previewState is the reading-mode state of a tab.
 type previewState struct {
 	scroll     int
 	cursor     int
 	followLine int
-	cache      *previewCache
+	// jumpLine is a source line the next draw brings to the top, for a link
+	// followed to an anchor; jumpPending says one is waiting.
+	jumpLine    int
+	jumpPending bool
+	cache       *previewCache
 }
 
 type previewCache struct {
@@ -242,19 +251,15 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		if alias != "" {
 			display = alias
 		}
-		links = append(links, linkTarget{kind: "wikilink", target: target, alias: alias})
+		links = append(links, wikilinkTargetOf(content))
 		add(m[0:2], stLink, display, len(links)-1)
 	}
-	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(text, -1) {
+	for _, m := range mdLinkRenderRe.FindAllStringSubmatchIndex(text, -1) {
 		label := text[m[2]:m[3]]
-		target := text[m[4]:m[5]]
-		kind := "path"
-		if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
-			kind = "url"
-		}
-		links = append(links, linkTarget{kind: kind, target: target, alias: label})
+		link := mdLinkTargetOf(label, text[m[4]:m[5]])
+		links = append(links, link)
 		if label == "" {
-			label = target
+			label = link.target
 		}
 		add(m[0:2], stLink, label, len(links)-1)
 	}
@@ -494,6 +499,17 @@ func (a *App) previewLinesFor(t *tab, buf *noteBuffer, width int) []previewLine 
 	return pv.cache.lines
 }
 
+// previewRowFor is the last reading row at or before a source line.
+func previewRowFor(lines []previewLine, srcLine int) int {
+	row := 0
+	for i, l := range lines {
+		if l.srcLine <= srcLine {
+			row = i
+		}
+	}
+	return row
+}
+
 // renderPreview draws reading mode.
 func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) string {
 	th := a.theme
@@ -503,17 +519,17 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	pv := t.preview
 	if t.mode == modeSplit {
 		// Follow the editor cursor.
-		target := 0
-		for i, l := range lines {
-			if l.srcLine <= pv.followLine {
-				target = i
-			}
-		}
+		target := previewRowFor(lines, pv.followLine)
 		pv.cursor = target
 		if target < pv.scroll || target >= pv.scroll+h {
 			pv.scroll = max(0, target-h/3)
 		}
 	} else {
+		if pv.jumpPending {
+			pv.jumpPending = false
+			pv.cursor = previewRowFor(lines, pv.jumpLine)
+			pv.scroll = pv.cursor
+		}
 		if pv.cursor >= len(lines) {
 			pv.cursor = max(0, len(lines)-1)
 		}
