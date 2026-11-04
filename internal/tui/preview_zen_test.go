@@ -127,6 +127,11 @@ func TestZenPreviewFencesCloseOnlyOnTheirOwnMarker(t *testing.T) {
 			"┌\n│ ``` not yet\n│ ![[pic.png]]\n└\n⟦image: out.png⟧",
 		},
 		{
+			"tab-indented marker does not close",
+			"```\n\t```\n![[pic.png]]\n```\n![[out.png]]",
+			"┌\n│     ```\n│ ![[pic.png]]\n└\n⟦image: out.png⟧",
+		},
+		{
 			"a code span on its own line is no fence",
 			"``` ![[pic.png]] ```\n![[out.png]]",
 			"![[pic.png]]\n⟦image: out.png⟧",
