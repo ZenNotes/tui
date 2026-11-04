@@ -24,8 +24,6 @@ type NoteSection struct {
 	End    int `json:"endLineNumber"`
 }
 
-var sectionATXRe = regexp.MustCompile(`^#{1,6}\s+\S`)
-
 func splitNoteLines(body string) []string {
 	return strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
 }
@@ -38,7 +36,9 @@ func NoteSections(body string) []NoteSection {
 	for i, item := range outline {
 		line := item.Line - 1
 		start := line + 1
-		if !sectionATXRe.MatchString(lines[line]) {
+		// Outline's own test: a heading with only spaces after its `#`s is ATX too,
+		// and treating it as setext would skip the first line of its text.
+		if !atxHeadingRe.MatchString(lines[line]) {
 			start = line + 2
 		}
 		end := len(lines)
@@ -176,5 +176,11 @@ func EditSectionInBody(body string, s NoteSection, mode SectionEditMode, text st
 	if end < len(lines) {
 		out = append(out, lines[end:]...)
 	}
-	return strings.Join(out, "\n")
+	edited := strings.Join(out, "\n")
+	// A Windows note stays one, the new lines included. A note mixing endings
+	// comes out with plain newlines.
+	if crlf := strings.Count(body, "\r\n"); crlf > 0 && crlf == strings.Count(body, "\n") {
+		return strings.ReplaceAll(edited, "\n", "\r\n")
+	}
+	return edited
 }

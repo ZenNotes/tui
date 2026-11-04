@@ -350,7 +350,7 @@ func coreTools() []toolDef {
 		},
 		{
 			name:        "list_assets",
-			description: "List files under the vault’s attachments directory (images, PDFs, audio, video, other binaries). Useful when a note references an asset you need to inspect. With deleted: true, lists the attachments in the app's Trash instead, with the undoToken restore_asset takes.",
+			description: "List the vault’s attachments: every file that is not a note, wherever it is (images, PDFs, audio, video, other binaries). Useful when a note references an asset you need to inspect. With deleted: true, lists the attachments in the app's Trash instead, with the undoToken restore_asset takes.",
 			schema:      `{"type":"object","properties":{"deleted":{"type":"boolean","description":"List deleted attachments instead."}}}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				if a.boolIs("deleted") {
@@ -360,7 +360,11 @@ func coreTools() []toolDef {
 					}
 					return m.ListDeletedAssets(ctx)
 				}
-				return b.ListAssets(ctx)
+				all, err := b.ListAssets(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return shownAssets(all), nil
 			},
 		},
 		{
@@ -881,8 +885,8 @@ func coreTools() []toolDef {
 		},
 		{
 			name:        "toggle_task",
-			description: "Flip a task’s checkbox state using its stable id from list_tasks (\"<path>#<index>\"). Returns the updated task, or null if the id no longer matches a task (content drifted).",
-			schema:      `{"type":"object","properties":{"id":{"type":"string","description":"Stable task id: sourcePath#taskIndex."}},"required":["id"]}`,
+			description: "Flip a task’s checkbox state using its id from list_tasks (\"<path>#<index>\"). An id counts the task’s position in its note, so list_tasks again after that note changes. Finishing a task with `@repeat:` writes its next occurrence above it and returns the finished one under its new id. Returns the updated task, or null if the id no longer matches a task.",
+			schema:      `{"type":"object","properties":{"id":{"type":"string","description":"Task id: sourcePath#taskIndex."}},"required":["id"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				id, err := a.requireString("id")
 				if err != nil {
@@ -1146,6 +1150,13 @@ func Run(ctx context.Context, opts Options) error {
 		scoped:  opts.Scope != nil && opts.Scope.Active(),
 	}
 
+	// Tool calls are served concurrently, and most writes read a note first: an
+	// append, a task edit, the link rewrite after a rename, a server's whole round
+	// trip. Whatever landed between the read and the write would be lost, so writes
+	// take turns. One turn rather than one per note, because a rename rewrites any
+	// number of notes, and on a server it does so where no lock here can reach.
+	writeTurn := make(chan struct{}, 1)
+
 	instructions := ResolveInstructions()
 	if opts.Scope != nil && opts.Scope.Active() {
 		instructions += scopeInstructions(*opts.Scope)
@@ -1192,6 +1203,14 @@ func Run(ctx context.Context, opts Options) error {
 			if req.Session != nil {
 				if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
 					agent = agentForClient(params.ClientInfo.Name)
+				}
+			}
+			if classOf(def.name) != classRead {
+				select {
+				case writeTurn <- struct{}{}:
+					defer func() { <-writeTurn }()
+				case <-ctx.Done():
+					return errorResult("Error: " + ctx.Err().Error()), nil
 				}
 			}
 			result, err := runRecording(ctx, def.name, args(a), b, agent, func() (any, error) {

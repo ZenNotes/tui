@@ -26,6 +26,10 @@ type UpdateTaskInput struct {
 	Status *string
 	// Text replaces everything after a line's checkbox, tokens included.
 	Text *string
+	// ExpectedText is the task's content as the caller last saw it. An id counts
+	// the task's position, so after an edit above it the id names another task;
+	// when this no longer matches, nothing changes and the call fails.
+	ExpectedText *string
 }
 
 // taskFieldValueRe is what the task parser reads as an `@key:value` value.
@@ -81,18 +85,22 @@ func UpdateTask(ctx context.Context, b Backend, in UpdateTaskInput) (*vault.Task
 	if err != nil || task == nil {
 		return nil, err
 	}
+	if in.ExpectedText != nil && strings.TrimSpace(*in.ExpectedText) != strings.TrimSpace(task.Content) {
+		return nil, fmt.Errorf("Task %s now reads %q, not %q: the note changed. Run list_tasks again for its id.", in.ID, task.Content, *in.ExpectedText)
+	}
 	note, err := b.ReadNote(ctx, task.SourcePath)
 	if err != nil {
 		return nil, err
 	}
 	var next string
+	finalLine := task.LineNumber
 	if task.Kind == "file" {
-		if next, err = updateFileTask(note.Body, in); err != nil {
+		if next, err = updateFileTask(note.Body, *task, in); err != nil {
 			return nil, err
 		}
 	} else {
 		var found bool
-		if next, found, err = updateTaskLine(note.Body, *task, in); err != nil {
+		if next, finalLine, found, err = updateTaskLine(note.Body, *task, in); err != nil {
 			return nil, err
 		}
 		if !found {
@@ -104,11 +112,18 @@ func UpdateTask(ctx context.Context, b Backend, in UpdateTaskInput) (*vault.Task
 			return nil, err
 		}
 	}
+	if finalLine != task.LineNumber {
+		return findTaskOnLine(ctx, b, task.SourcePath, finalLine)
+	}
 	return findTask(ctx, b, task.SourcePath, index)
 }
 
+func taskScan(ctx context.Context, b Backend, rel string) ([]vault.Task, error) {
+	return b.ScanTasksForPath(ctx, rel, vault.ParseTasksOptions{IncludeExcluded: true, Dialect: vault.DialectCLI})
+}
+
 func findTask(ctx context.Context, b Backend, rel, index string) (*vault.Task, error) {
-	tasks, err := b.ScanTasksForPath(ctx, rel, vault.ParseTasksOptions{IncludeExcluded: true, Dialect: vault.DialectCLI})
+	tasks, err := taskScan(ctx, b, rel)
 	if err != nil {
 		return nil, err
 	}
@@ -120,15 +135,35 @@ func findTask(ctx context.Context, b Backend, rel, index string) (*vault.Task, e
 	return nil, nil
 }
 
-func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, bool, error) {
+func findTaskOnLine(ctx context.Context, b Backend, rel string, line int) (*vault.Task, error) {
+	tasks, err := taskScan(ctx, b, rel)
+	if err != nil {
+		return nil, err
+	}
+	for i := range tasks {
+		if tasks[i].Kind == "" && tasks[i].LineNumber == line {
+			return &tasks[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// updateTaskLine returns the note and the line the task now stands on, which
+// moves when finishing a recurring task writes its next occurrence above it.
+func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, int, bool, error) {
 	if task.Forwarded && in.State != nil {
-		return "", false, errors.New("That task was forwarded to another note; change it there.")
+		return "", 0, false, errors.New("That task was forwarded to another note; change it there.")
 	}
-	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
-	if task.LineNumber < 0 || task.LineNumber >= len(lines) || strings.TrimRight(lines[task.LineNumber], " \t") != strings.TrimRight(task.RawText, " \t") {
-		return "", false, nil
+	// Split on the bare newline, so every line keeps its own ending.
+	lines := strings.Split(body, "\n")
+	if task.LineNumber < 0 || task.LineNumber >= len(lines) || strings.TrimRight(lines[task.LineNumber], " \t\r") != strings.TrimRight(task.RawText, " \t\r") {
+		return "", 0, false, nil
 	}
-	line := lines[task.LineNumber]
+	ending := ""
+	if strings.HasSuffix(lines[task.LineNumber], "\r") {
+		ending = "\r"
+	}
+	line := strings.TrimSuffix(lines[task.LineNumber], "\r")
 	if in.Text != nil {
 		line = vault.SetTaskText(line, 0, *in.Text)
 	}
@@ -136,8 +171,6 @@ func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, b
 		switch *in.State {
 		case "open":
 			line = vault.SetTaskInProgress(vault.SetTaskChecked(line, 0, false), 0, false)
-		case "done":
-			line = vault.SetTaskChecked(line, 0, true)
 		case "in-progress":
 			line = vault.SetTaskInProgress(line, 0, true)
 		case "cancelled":
@@ -156,14 +189,33 @@ func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, b
 	if in.Status != nil {
 		line = vault.SetTaskField(line, 0, "status", *in.Status)
 	}
-	lines[task.LineNumber] = line
-	return strings.Join(lines, "\n"), true, nil
+	lines[task.LineNumber] = line + ending
+	if in.State != nil && *in.State == "done" {
+		// Last, so a due date changed in the same call is what the series counts from.
+		joined := strings.Join(lines, "\n")
+		if done, recurring := vault.CompleteRecurringTaskOnLine(joined, task.LineNumber, vault.DialectApp, vault.RecurringOptions{Today: vault.TodayISO(time.Now())}); recurring {
+			return done.Body, task.LineNumber + done.InsertedLines, true, nil
+		}
+		lines[task.LineNumber] = vault.SetTaskChecked(line, 0, true) + ending
+	}
+	return strings.Join(lines, "\n"), task.LineNumber, true, nil
 }
 
-// updateFileTask edits a whole-note task, whose fields are its frontmatter.
-func updateFileTask(body string, in UpdateTaskInput) (string, error) {
+// updateFileTask edits a whole-note task, whose fields are its frontmatter. Its
+// state, its column and whether it is waiting are all one `status`, so asking for
+// two of them in one call would have to drop one.
+func updateFileTask(body string, task vault.Task, in UpdateTaskInput) (string, error) {
 	if in.Text != nil {
 		return "", fmt.Errorf("A task note has no line of text to change; use rename_note for its title.")
+	}
+	asked := 0
+	for _, set := range []bool{in.State != nil, in.Status != nil, in.Waiting != nil} {
+		if set {
+			asked++
+		}
+	}
+	if asked > 1 {
+		return "", errors.New("A task note keeps state, status and waiting in its one frontmatter status: pass only one of them.")
 	}
 	now := time.Now()
 	if in.State != nil {
@@ -171,7 +223,10 @@ func updateFileTask(body string, in UpdateTaskInput) (string, error) {
 		case "open":
 			body = vault.SetTaskFileStatus(body, false, now)
 		case "done":
-			body = vault.SetTaskFileStatus(body, true, now)
+			// Already finished keeps the day it was finished.
+			if !task.Checked {
+				body = vault.SetTaskFileStatus(body, true, now)
+			}
 		case "in-progress":
 			body = vault.SetTaskFileInProgress(body, true)
 		case "cancelled":
@@ -185,14 +240,14 @@ func updateFileTask(body string, in UpdateTaskInput) (string, error) {
 		body = vault.SetTaskFileField(body, "priority", vault.TaskFilePriorityValue(*in.Priority))
 	}
 	if in.Waiting != nil {
-		value := ""
 		if *in.Waiting {
-			value = "true"
+			body = vault.SetTaskFileStatusValue(body, "waiting", task.Checked, now)
+		} else if task.Waiting {
+			body = vault.SetTaskFileStatusValue(body, "open", task.Checked, now)
 		}
-		body = vault.SetTaskFileField(body, "waiting", value)
 	}
 	if in.Status != nil {
-		body = vault.SetTaskFileField(body, "status", *in.Status)
+		body = vault.SetTaskFileStatusValue(body, *in.Status, task.Checked, now)
 	}
 	return body, nil
 }

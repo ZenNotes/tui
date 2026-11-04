@@ -1094,8 +1094,9 @@ func (v *Vault) ScanTasksForPath(rel string, opts ParseTasksOptions) ([]Task, er
 	return ParseTasks(relPosix, title, folder, string(body), opts), nil
 }
 
-// ToggleTask flips the task named by a stable id, counted in the given
-// grammar. Exclusion-blind on purpose: an explicit id is an explicit ask.
+// ToggleTask flips the task named by an id, counted in the given grammar.
+// Finishing a recurring task writes its next occurrence and returns the finished
+// one, whose id moved down past it. Exclusion-blind on purpose: an explicit id is an explicit ask.
 // Returns (nil, nil) when the id no longer matches a task.
 func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	rel, indexStr, err := SplitTaskID(taskID)
@@ -1133,7 +1134,7 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	next, found := ToggleTaskInBody(string(body), targetIndex, dialect)
+	next, finalIndex, found := ToggleTaskRepeating(string(body), targetIndex, dialect, time.Now())
 	if !found {
 		return nil, nil
 	}
@@ -1141,7 +1142,7 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 		return nil, err
 	}
 	for _, t := range ParseTasks(relPosix, title, folder, next, opts) {
-		if t.Kind == "" && t.TaskIndex == targetIndex {
+		if t.Kind == "" && t.TaskIndex == finalIndex {
 			return &t, nil
 		}
 	}

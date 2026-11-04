@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -97,7 +98,7 @@ func workTools() []toolDef {
 	return []toolDef{
 		{
 			name:        "update_task",
-			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes. Returns the updated task, or null if the id no longer matches one.",
+			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes, except that state done on a task with `@repeat:` writes its next occurrence above it, as toggle_task does, and returns the finished one. An id counts the task's position in its note, so pass expectedText to be told when an edit moved it. On a task note, state, status and waiting are one field: pass only one. Returns the updated task, or null if the id no longer matches one.",
 			schema: `{"type":"object","properties":{
 "id":{"type":"string","description":"Task id from list_tasks: sourcePath#taskIndex."},
 "due":{"type":"string","description":"YYYY-MM-DD, or \"\" to clear."},
@@ -105,14 +106,15 @@ func workTools() []toolDef {
 "waiting":{"type":"boolean"},
 "state":{"type":"string","enum":["open","done","in-progress","cancelled"]},
 "status":{"type":"string","description":"The column a Kanban board groups it under, one word, or \"\" to clear."},
-"text":{"type":"string","description":"Replaces everything after the checkbox, one line, due and priority tokens included. Not for a task note: use rename_note."}},"required":["id"]}`,
+"text":{"type":"string","description":"Replaces everything after the checkbox, one line, due and priority tokens included. Not for a task note: use rename_note."},
+"expectedText":{"type":"string","description":"The task's content from list_tasks. If it no longer reads this, nothing changes and the call fails."}},"required":["id"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				in := backend.UpdateTaskInput{}
 				var err error
 				if in.ID, err = a.requireString("id"); err != nil {
 					return nil, err
 				}
-				for key, target := range map[string]**string{"due": &in.Due, "priority": &in.Priority, "state": &in.State, "status": &in.Status, "text": &in.Text} {
+				for key, target := range map[string]**string{"due": &in.Due, "priority": &in.Priority, "state": &in.State, "status": &in.Status, "text": &in.Text, "expectedText": &in.ExpectedText} {
 					if *target, err = optionalStringPtr(a, key); err != nil {
 						return nil, err
 					}
@@ -132,7 +134,7 @@ func workTools() []toolDef {
 		},
 		{
 			name:        "daily_note",
-			description: "Find the daily note for a date (or the weekly or monthly note holding it) under this vault's own folder and naming settings, which you cannot guess. Changes nothing. If `exists`, use its `path`. If not, pass `createWith` to create_note as it is, which starts the note from the vault's template, and use the `path` create_note returns. `enabled: false` means the user has this kind of note turned off, so ask before creating one.",
+			description: "Find the daily note for a date (or the weekly or monthly note holding it) under this vault's own folder and naming settings, which you cannot guess. Changes nothing. If `exists`, use its `path`. If not, pass `createWith` to create_note as it is, which starts the note from the vault's template, and use the `path` create_note returns. `cannotCreate` means this assistant may not create it. `enabled: false` means the user has this kind of note turned off, so ask before creating one.",
 			schema: `{"type":"object","properties":{
 "kind":{"type":"string","enum":["daily","weekly","monthly"],"description":"Default: daily."},
 "date":{"type":"string","description":"today, yesterday, tomorrow or YYYY-MM-DD. Default: today."}}}`,
@@ -207,6 +209,11 @@ func workTools() []toolDef {
 				if found != nil {
 					return append(result, orderedResult{{"exists", true}, {"path", found.Path}, {"note", *found}}...), nil
 				}
+				// A folder this client cannot see stays unnamed, and starting the note
+				// anywhere else would only misfile it.
+				if s, scoped := b.(*scopedBackend); scoped && (!s.sharesPath(ctx, path.Dir(rel)) || !s.sharesPath(ctx, rel)) {
+					return append(result, orderedResult{{"exists", false}, {"cannotCreate", "This note's folder is not shared with this assistant, so it cannot be created here."}}...), nil
+				}
 				return append(result, orderedResult{
 					{"exists", false},
 					{"createWith", orderedResult{
@@ -261,7 +268,7 @@ func workTools() []toolDef {
 		},
 		{
 			name:        "edit_section",
-			description: "Edit the part of a note under one heading: `append` (the usual choice, such as a new item under Action Items; it goes above any subheading), `prepend`, or `replace`, which rewrites everything under the heading, subheadings included. The heading and the rest of the note keep their bytes. Fails with the note's headings if there is no such heading.",
+			description: "Edit the part of a note under one heading: `append` (the usual choice, such as a new item under Action Items; it goes above any subheading), `prepend`, or `replace`, which rewrites everything under the heading, subheadings included. The heading and the rest of the note keep their text. Fails with the note's headings if there is no such heading.",
 			schema: `{"type":"object","properties":{
 "path":{"type":"string"},
 "heading":{"type":"string","description":"Heading text, any case, without the #s."},

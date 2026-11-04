@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -49,5 +50,30 @@ func TestTaskListLeavesCancelledTasksOut(t *testing.T) {
 	}
 	if got := listed("--all"); !slices.Contains(got, "Cancelled plan") {
 		t.Fatalf("--all: %v", got)
+	}
+}
+
+// Finishing a recurring task moves it below its next occurrence, so the id to
+// print is the one it has now.
+func TestTaskTogglePrintsWhereARecurringTaskWent(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "n.md"), []byte("- [ ] water @repeat:daily due:2026-01-01\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := captureOutput(t, func() {
+		if code := Main([]string{"task", "toggle", "n.md#0", "--vault", root}); code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+	})
+	if !strings.Contains(out, "n.md#1") {
+		t.Fatalf("%q", out)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "n.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- [x] water due:2026-01-01") || !strings.Contains(string(data), "- [ ] water @repeat:daily due:") {
+		t.Fatalf("%q", data)
 	}
 }

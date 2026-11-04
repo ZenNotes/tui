@@ -3,7 +3,7 @@
 The TUI owns its Go implementation and its release. It consumes versioned
 behavior fixtures from `ZenNotes/zennotes`, not another repository's source tree.
 
-- `internal/vault/testdata/task-roundtrip.json` covers stable task identity and
+- `internal/vault/testdata/task-roundtrip.json` covers task identity and
   exact Markdown reads and due-date writes in Los Angeles and Auckland.
 - `internal/remote/testdata/self-hosted-http.json` covers authentication, note
   metadata, exact Unicode/whitespace, missing resources and invalid paths at both
@@ -17,14 +17,18 @@ behavior fixtures from `ZenNotes/zennotes`, not another repository's source tree
   from the desktop's fixture, added here by hand and held in both files. The two
   copies differ for now, because the asset cases have not reached the desktop's.
   Do not sync over this file until they match.
+- `internal/vault/testdata/task-recurrence.cases.json` is the check-off table for
+  recurring tasks, from `packages/shared-domain`, which the desktop runs too.
 - Adjacent `.source.json` files record each upstream path and SHA-256. Tests
   verify the checked-in bytes before interpreting the contract.
 
 `internal/mcp/testdata/mcp-scope.json` is ahead of upstream for now. It holds the
 cases for the attachment tools of #34 and for `update_task`, `daily_note`,
 `note_sections` and `edit_section`, which the desktop's server does not have yet,
-so its checksum matches nothing in `ZenNotes/zennotes`. When the desktop mirrors
-them, this file moves upstream as it is. Until then, `npm run sync:contract-fixtures
+so its checksum matches nothing in `ZenNotes/zennotes`. It also expects two things
+the desktop's copy does not yet: a rewrite under a path scope writes the full path,
+and `daily_note` offers no way to start a note in a hidden folder. When the desktop mirrors them, this file
+moves upstream as it is. Until then, `npm run sync:contract-fixtures
 -- --tui` from a zennotes checkout overwrites it and `go test ./internal/mcp` fails
 on the tool counts: do not sync over it.
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -96,17 +95,6 @@ func reviewAgentEditsEnabled() bool {
 	return *doc.MCP.ReviewAgentEdits
 }
 
-// Tool calls are served concurrently, and two edits to one note racing on its
-// record would lose one of them, so edits to the same note take turns.
-var noteLocks sync.Map
-
-func lockNote(key string) func() {
-	value, _ := noteLocks.LoadOrStore(key, &sync.Mutex{})
-	mu := value.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
-}
-
 func noteText(ctx context.Context, b Backend, rel string) (string, bool) {
 	content, err := b.ReadNote(ctx, rel)
 	if err != nil {
@@ -116,7 +104,7 @@ func noteText(ctx context.Context, b Backend, rel string) (string, bool) {
 }
 
 // runRecording runs a tool, recording its edit when it rewrites a note of a
-// local vault. Recording never stands in the way of the edit the user asked
+// local vault. Run gives each write its turn, so the record cannot race. Recording never stands in the way of the edit the user asked
 // for: if the record cannot be written, the tool still runs and the change is
 // simply not offered for review.
 func runRecording(ctx context.Context, tool string, a args, b Backend, agent string, run func() (any, error)) (any, error) {
@@ -130,9 +118,6 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 	if rel == "" {
 		return run()
 	}
-	unlock := lockNote(b.Root() + "\x00" + rel)
-	defer unlock()
-
 	if !reviewAgentEditsEnabled() {
 		return run()
 	}

@@ -91,6 +91,9 @@ type AssetMeta struct {
 	UpdatedAt int64  `json:"updatedAt"`
 	// Symlink marks an asset a server listed from a link rather than a file.
 	Symlink bool `json:"symlink,omitempty"`
+	// LinksNotUpdated is set by a rename or move that rewrites links: the notes it
+	// could not change, which may still use the old name.
+	LinksNotUpdated []string `json:"linksNotUpdated,omitempty"`
 }
 
 // TextSearchMatch is one matching line from a full-text search.
