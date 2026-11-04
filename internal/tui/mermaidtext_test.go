@@ -230,9 +230,9 @@ func TestMermaidLayoutFollowsWidthFromOneCachedParse(t *testing.T) {
 	}
 }
 
-// Sequence, class and ER diagrams still come from the library; when one is
-// wider than the pane it shows its source instead of being cut off.
-func TestMermaidOtherDiagramsTooWideShowSource(t *testing.T) {
+// A sequence diagram the library draws in full is still wider than a narrow
+// pane; it shows its source instead of being cut off.
+func TestMermaidSequenceTooWideShowsSource(t *testing.T) {
 	src := "sequenceDiagram\n  participant Alice\n  participant Bob\n  Alice->>Bob: hello"
 	wide := mermaidTestApp().mermaidLines(src, 0, 80)
 	if all := joinPreview(wide); strings.Contains(all, "source") || !strings.Contains(all, "Alice") || !strings.Contains(all, "┌") {
@@ -387,5 +387,217 @@ func TestEscapedAliasPipeFollowsTheNote(t *testing.T) {
 	links := linksOnLine(`| [[Bookmarks\|escaped]] | why |`)
 	if len(links) != 1 || links[0].target != "Bookmarks" {
 		t.Fatalf("links = %+v", links)
+	}
+}
+
+// mermaidTestWidths runs from a narrow split to a very wide pane.
+var mermaidTestWidths = []int{4, 7, 12, 22, 31, 40, 60, 80, 120, 200, 300}
+
+// assertMermaidKeeps checks that every piece of a diagram can be read at every
+// width, however it was wrapped.
+func assertMermaidKeeps(t *testing.T, src string, want []string) {
+	t.Helper()
+	for _, width := range mermaidTestWidths {
+		lines := mermaidTestApp().mermaidLines(src, 3, width)
+		assertFits(t, lines, width)
+		all := joinPreview(lines)
+		flat := squeezed(all)
+		for _, piece := range want {
+			if !strings.Contains(flat, squeezed(piece)) {
+				t.Fatalf("width %d loses %q:\n%s", width, piece, all)
+			}
+		}
+		for _, l := range lines {
+			if l.srcLine != 3 {
+				t.Fatalf("row maps to source line %d, want the block's 3", l.srcLine)
+			}
+		}
+	}
+}
+
+// A message longer than the space between two participants is whole, even in a
+// pane far wider than the diagram, where the library clipped it at its own edge.
+func TestMermaidSequenceLongMessageIsWholeAtEveryWidth(t *testing.T) {
+	long := "a really long message about the thing we need to discuss"
+	src := "sequenceDiagram\n  Alice->>Bob: " + long + "\n  Bob-->>Alice: ok"
+	assertMermaidKeeps(t, src, []string{"Alice", "Bob", long, "ok"})
+	if all := joinPreview(mermaidTestApp().mermaidLines(src, 0, 300)); !strings.Contains(all, "source") {
+		t.Fatalf("no note that the source is shown:\n%s", all)
+	}
+}
+
+// The library's sequence drawing has no place for these, or its parser skips
+// them, so each one has to bring the source up.
+func TestMermaidSequenceShowsSourceForWhatItCannotDraw(t *testing.T) {
+	for _, tc := range []struct{ name, statement, want string }{
+		{"note", "Note over Alice,Bob: the secret note", "the secret note"},
+		{"loop", "loop every minute\n  Alice->>Bob: ping\nend", "every minute"},
+		{"alternative", "alt is ready\n  Alice->>Bob: go\nelse is not ready\n  Alice->>Bob: wait\nend", "is not ready"},
+		{"numbering", "autonumber", "autonumber"},
+		{"title", "title: The handshake", "The handshake"},
+		{"lost message", "Alice-xBob: dropped", "Alice-xBob"},
+		{"async message", "Alice-)Bob: later", "Alice-)Bob"},
+		{"two-way message", "Alice<<->>Bob: both ways", "Alice<<->>Bob"},
+		{"no arrowhead", "Alice->Bob: plain line", "Alice->Bob"},
+		{"activation", "Alice->>+Bob: wake up", "Alice->>+Bob"},
+		{"activate", "activate Bob", "activate Bob"},
+		{"semicolon in a message", "Alice->>Bob: first; second part", "second part"},
+		{"name starting with a block word", "parser->>Bob: parsed", "parser->>Bob"},
+		{"accented message", "Alice->>Bob: héllo wörld", "héllo wörld"},
+		{"accented name", "Renée->>Bob: hi", "Renée"},
+		{"wide message", "Alice->>Bob: 日本語", "日本語"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "sequenceDiagram\n  Alice->>Bob: hello\n  " + tc.statement
+			assertMermaidKeeps(t, src, []string{tc.want})
+			if all := joinPreview(mermaidTestApp().mermaidLines(src, 0, 300)); !strings.Contains(all, "source") {
+				t.Fatalf("no note that the source is shown:\n%s", all)
+			}
+		})
+	}
+}
+
+// What the drawing shows in full stays a drawing: declared names, messages in
+// both directions, a dashed reply and a message to itself.
+func TestMermaidPlainSequenceIsStillDrawn(t *testing.T) {
+	src := `sequenceDiagram
+  %% who talks to whom
+  participant A as Alice
+  actor B as Bob
+  A->>B: hello
+  B-->>A: hi back
+  B->>B: think
+  api-gateway->>A: done`
+	all := joinPreview(mermaidTestApp().mermaidLines(src, 0, 120))
+	if strings.Contains(all, "source") || !strings.Contains(all, "┌") {
+		t.Fatalf("a plain sequence diagram is drawn:\n%s", all)
+	}
+	for _, want := range []string{"Alice", "Bob", "api-gateway", "hello", "hi back", "think", "done", "╌"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("drawing loses %q:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "A->>B") {
+		t.Fatalf("a plain sequence diagram shows its source:\n%s", all)
+	}
+}
+
+const mermaidTestER = `erDiagram
+  ZEBRA ||--o{ APPLE : eats
+  APPLE }o--|| MANGO : "grows on"
+  MANGO |o--o| ZEBRA : tempts
+  KIWI ||..|{ MANGO : "sits by"
+  MANGO {
+    string name PK "the common name"
+    int weight
+  }`
+
+// Every relationship has its cardinality and label, entities keep the author's
+// order, and attributes keep their comments.
+func TestMermaidERKeepsEveryRelationship(t *testing.T) {
+	assertMermaidKeeps(t, mermaidTestER, []string{
+		"ZEBRA ||--o{ APPLE : eats",
+		`APPLE }o--|| MANGO : "grows on"`,
+		"MANGO |o--o| ZEBRA : tempts",
+		`KIWI ||..|{ MANGO : "sits by"`,
+		`string name PK "the common name"`,
+		"int weight",
+	})
+	all := joinPreview(mermaidTestApp().mermaidLines(mermaidTestER, 0, 200))
+	if !strings.Contains(all, "source") {
+		t.Fatalf("no note that the source is shown:\n%s", all)
+	}
+	if strings.Index(all, "ZEBRA") > strings.Index(all, "APPLE") || strings.Index(all, "APPLE") > strings.Index(all, "KIWI") {
+		t.Fatalf("entities are not in the author's order:\n%s", all)
+	}
+}
+
+// With two entities the library draws one relationship and may swap the boxes,
+// which puts each cardinality on the wrong entity.
+func TestMermaidERWithTwoEntitiesKeepsTheRelationship(t *testing.T) {
+	src := "erDiagram\n  ZEBRA ||--o{ APPLE : eats\n  ZEBRA ||--|| APPLE : guards"
+	assertMermaidKeeps(t, src, []string{"ZEBRA ||--o{ APPLE : eats", "ZEBRA ||--|| APPLE : guards"})
+}
+
+// The same note always reads the same: the library takes entities and classes
+// out of a map, so its order changes from one parse to the next.
+func TestMermaidERAndClassReadTheSameEveryTime(t *testing.T) {
+	for _, src := range []string{mermaidTestER, mermaidTestClass} {
+		first := joinPreview(mermaidTestApp().mermaidLines(src, 0, 120))
+		for i := 0; i < 30; i++ {
+			if got := joinPreview(mermaidTestApp().mermaidLines(src, 0, 120)); got != first {
+				t.Fatalf("parse %d reads differently:\n%s\n--- first:\n%s", i, got, first)
+			}
+		}
+	}
+}
+
+const mermaidTestClass = `classDiagram
+  Zebra <|-- Animal
+  Car *-- Engine : has
+  Car "1" --> "4" Wheel : rolls on
+  Duck ..|> Swimmer
+  Goose<|--Gosling
+  Fox <-- Hen
+  class Animal {
+    <<abstract>>
+    +String name
+    +eat(food, amount) void
+    +create()$ Animal
+    +speak()* String
+  }
+  namespace Zoo {
+    class Tiger
+  }
+  note for Car "a note about cars"`
+
+// Relationship types, cardinalities and labels, method arguments and return
+// types, static and abstract marks, namespaces and notes can all be read.
+func TestMermaidClassKeepsMembersAndRelationships(t *testing.T) {
+	assertMermaidKeeps(t, mermaidTestClass, []string{
+		"Zebra <|-- Animal",
+		"Car *-- Engine : has",
+		`Car "1" --> "4" Wheel : rolls on`,
+		"Duck ..|> Swimmer",
+		"Goose<|--Gosling",
+		"Fox <-- Hen",
+		"<<abstract>>",
+		"+String name",
+		"+eat(food, amount) void",
+		"+create()$ Animal",
+		"+speak()* String",
+		"namespace Zoo",
+		"class Tiger",
+		`note for Car "a note about cars"`,
+	})
+	all := joinPreview(mermaidTestApp().mermaidLines(mermaidTestClass, 0, 200))
+	if !strings.Contains(all, "source") {
+		t.Fatalf("no note that the source is shown:\n%s", all)
+	}
+	if strings.Index(all, "Zebra") > strings.Index(all, "Car") || strings.Index(all, "Car") > strings.Index(all, "Tiger") {
+		t.Fatalf("classes are not in the author's order:\n%s", all)
+	}
+}
+
+// A pane narrower than the preview's old floor of ten cells cut the end off every
+// row, so wrapping has to follow the pane all the way down.
+func TestMermaidSourceIsWholeInAVeryNarrowPane(t *testing.T) {
+	src := "erDiagram\n  ZEBRA ||--o{ APPLE : eats"
+	a, _ := linkTestApp(t, map[string]string{"Index.md": "```mermaid\n" + src + "\n```\n"})
+	a.openNote("Index.md", true)
+	tb, buf := a.activeTab(), a.activeBuffer()
+	if tb == nil || buf == nil {
+		t.Fatal("no open note")
+	}
+	for _, w := range []int{5, 7, 9, 11} {
+		out := stripAnsi(a.renderPreview(tb, buf, w, 200, false))
+		for _, row := range strings.Split(out, "\n") {
+			if got := cellWidth(row); got != w {
+				t.Fatalf("row is %d cells in a pane of %d: %q", got, w, row)
+			}
+		}
+		if flat := squeezed(out); !strings.Contains(flat, squeezed("ZEBRA ||--o{ APPLE : eats")) {
+			t.Fatalf("pane of %d loses the relationship:\n%s", w, out)
+		}
 	}
 }

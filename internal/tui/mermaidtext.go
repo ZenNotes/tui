@@ -8,6 +8,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/yashikota/mermaigo/pkg/mermaid"
+	"github.com/yashikota/mermaigo/pkg/mermaid/ascii"
 	"github.com/yashikota/mermaigo/pkg/mermaid/parser"
 	"github.com/yashikota/mermaigo/pkg/mermaid/types"
 )
@@ -22,8 +23,12 @@ import (
 // boxes when a left-to-right diagram fits, otherwise a column. An edge to the
 // box drawn next is an arrow between them, and any other edge is listed under
 // its source by the name of its target, so every node and edge can be read at
-// any width. Sequence, class and ER diagrams still come from the library, and
-// show their source when they do not fit.
+// any width.
+//
+// The library's sequence drawing is kept only when it shows everything in the
+// source, and when it fits. Its class and ER drawings never do: relationships,
+// their types and labels, method arguments and comments are lost, and the order
+// changes from one parse to the next, so those diagrams show their source.
 //
 // When the parser cannot have read a whole statement, the block shows its
 // source and says so, since a tidy drawing with an edge missing misleads.
@@ -34,16 +39,16 @@ type mermaidText struct {
 	flow    *flowchart // drawn here, at any width
 	rows    []string   // the library's drawing, at its own width
 	err     string     // why it could not be parsed
-	partial bool       // the parser skipped part of the source
+	partial bool       // a drawing would lose part of the source
 }
 
 func parseMermaidText(src string) *mermaidText {
-	if mermaid.DetectDiagramType(src) != mermaid.DiagramTypeFlowchart {
-		rendered, err := mermaid.RenderText(src, &mermaid.TextRenderOptions{})
-		if err != nil {
-			return &mermaidText{err: err.Error()}
-		}
-		return &mermaidText{rows: strings.Split(strings.TrimRight(rendered, "\n"), "\n")}
+	switch mermaid.DetectDiagramType(src) {
+	case mermaid.DiagramTypeSequence:
+		rows := sequenceRows(src)
+		return &mermaidText{rows: rows, partial: rows == nil}
+	case mermaid.DiagramTypeClass, mermaid.DiagramTypeER:
+		return &mermaidText{partial: true}
 	}
 	flow, partial, err := parseFlowchart(src)
 	if err != nil {
@@ -87,6 +92,72 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 		out = append(out, previewLine{text: " " + th.Base.Render(row), srcLine: srcLine})
 	}
 	return out
+}
+
+// --- sequence diagrams ---
+
+var (
+	mermaidActorRe = regexp.MustCompile(`^(?:participant|actor)\s+\S+(?:\s+as\s+.+)?$`)
+	// Only the arrows the drawing tells apart: it gives every other kind the
+	// same head, and it has no place for activation marks.
+	mermaidMessageRe = regexp.MustCompile(`^([^\s<]+?)\s*--?>>\s*([^\s+-]\S*?)\s*:\s*(.+)$`)
+)
+
+// sequenceRows is the library's drawing of a sequence diagram, or nil when that
+// would lose anything. Only participants and plain messages are drawn, so a
+// note, a block or any statement not known here brings up the source.
+func sequenceRows(src string) []string {
+	statements := []string{}
+	for _, line := range strings.Split(src, "\n") {
+		for _, s := range strings.Split(line, ";") {
+			if s = strings.TrimSpace(s); s != "" && !strings.HasPrefix(s, "%%") {
+				statements = append(statements, s)
+			}
+		}
+	}
+	messages := [][]string{}
+	for _, s := range statements[1:] {
+		if m := mermaidMessageRe.FindStringSubmatch(s); m != nil {
+			messages = append(messages, m[1:])
+		} else if !mermaidActorRe.MatchString(s) {
+			return nil
+		}
+	}
+
+	// The parser skips a name like parser->>db, reading it as a par block.
+	diagram := parser.ParseSequenceDiagram(statements)
+	if len(diagram.Messages) != len(messages) {
+		return nil
+	}
+	for i, m := range diagram.Messages {
+		if m.From != messages[i][0] || m.To != messages[i][1] || m.Label != messages[i][2] {
+			return nil
+		}
+	}
+
+	// The drawing stops at its own right edge and spaces out a label with
+	// non-ASCII letters, so each label must be there whole, on its own row.
+	rendered := ascii.RenderSequenceAscii(diagram, nil)
+	rows := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	if len(rows) < 3 {
+		return nil
+	}
+	for _, actor := range diagram.Actors {
+		if !strings.Contains(rows[1], actor.Label) {
+			return nil
+		}
+	}
+	at := 3 // below the participants' boxes
+	for _, m := range diagram.Messages {
+		for at < len(rows) && !strings.Contains(rows[at], m.Label) {
+			at++
+		}
+		if at == len(rows) {
+			return nil
+		}
+		at++
+	}
+	return rows
 }
 
 // --- reading the source ---
