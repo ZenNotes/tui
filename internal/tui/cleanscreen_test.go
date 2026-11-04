@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,36 +157,45 @@ func TestNoteTextInViewsCannotSetColours(t *testing.T) {
 	const colour = "\x1b[8m"
 	root := newSessionParityVault(t)
 	body := "# Head " + colour + "ing\n\n- [ ] task " + colour + "one\n"
-	name := "Name" + colour + "d.md"
-	if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "Plain.md"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"Plain.md", "Other.md"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	a := newSessionParityApp(t, root)
 	a.sidebarOpen = false
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	if _, err := backend.AddComment(context.Background(), a.backend, backend.AddCommentInput{Path: "Plain.md", AnchorText: "task", Body: "said " + colour + "this"}); err != nil {
-		t.Fatal(err)
-	}
 	a.openNote("Plain.md", true)
 	a.idx.tasks = []vault.Task{{ID: "t", Content: "task " + colour + "one", NoteTitle: "Name" + colour + "d", SourcePath: "Plain.md"}}
+	// A title holding an escape, set here because Windows refuses it in a file name.
+	for i := range a.idx.notes {
+		if a.idx.notes[i].Path == "Other.md" {
+			a.idx.notes[i].Title = "Name" + colour + "d"
+		}
+	}
 
-	for _, line := range []string{"tasklist", "kanban", "home", "comments", "outline"} {
-		a.runCommandLine(line)
-		if a.commentsOpen {
-			a.comments.refresh(a)
-			for i := 0; i < 50 && a.comments.loading; i++ {
-				time.Sleep(10 * time.Millisecond)
-			}
+	for _, view := range []struct{ line, want string }{
+		{"tasklist", "task \u241b[8mone"},
+		{"kanban", "task \u241b[8mone"},
+		{"comments", "said \u241b[8mthis"},
+		{"outline", "Head \u241b[8ming"},
+		{"home", "Name\u241b[8md"},
+	} {
+		a.openNote("Plain.md", true)
+		a.commentsOpen, a.outlineOpen = false, false
+		a.runCommandLine(view.line)
+		if view.line == "comments" {
+			a.comments.loading = false
+			thread := backend.CommentThreadView{Line: 1, AnchorText: "task"}
+			thread.Body = "said " + colour + "this"
+			a.comments.threads = []backend.CommentThreadView{thread}
 		}
 		frame := a.View()
 		if strings.Contains(frame, colour) {
-			t.Errorf(":%s sends the note's colour:\n%s", line, stripAnsi(frame))
+			t.Errorf(":%s sends the note's colour:\n%s", view.line, stripAnsi(frame))
 		}
-		if !strings.ContainsRune(frame, '␛') {
-			t.Errorf(":%s does not show the note's text:\n%s", line, stripAnsi(frame))
+		if !strings.Contains(stripAnsi(frame), view.want) {
+			t.Errorf(":%s does not show %q:\n%s", view.line, view.want, stripAnsi(frame))
 		}
 	}
 }
