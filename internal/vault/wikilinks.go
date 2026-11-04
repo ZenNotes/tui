@@ -136,9 +136,18 @@ func SplitWikilinkContent(content string) (target, anchor, alias string) {
 	return rest, anchor, alias
 }
 
+// wikiKeepSpaces puts back the spaces written around a target, such as the one
+// before a table's `\|`, so a rewrite changes only the name.
+func wikiKeepSpaces(written, next string) string {
+	trimmed := strings.TrimSpace(written)
+	lead := strings.Index(written, trimmed)
+	return written[:lead] + next + written[lead+len(trimmed):]
+}
+
 func wikiSwapBasename(target, newTitle string) string {
 	dir, base := "", target
-	if slash := strings.LastIndexByte(target, '/'); slash >= 0 {
+	// The resolver reads a backslash as a path separator too.
+	if slash := strings.LastIndexAny(target, `/\`); slash >= 0 {
 		dir, base = target[:slash+1], target[slash+1:]
 	}
 	md := ""
@@ -264,7 +273,7 @@ func RewriteWikilinksForRename(body string, notes []NoteMeta, oldPath, newTitle 
 		if n, ok := ResolveWikilink(notes, target); !ok || n.Path != oldPath {
 			continue
 		}
-		newTarget := wikiSwapBasename(target, newTitle)
+		newTarget := wikiKeepSpaces(target, wikiSwapBasename(strings.TrimSpace(target), newTitle))
 		if newTarget == target {
 			continue
 		}

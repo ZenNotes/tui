@@ -14,7 +14,8 @@ import (
 // readings); the ones that resolve to the asset are re-targeted in the
 // author's own style (relative stays relative, rooted stays rooted, a bare
 // name stays bare while unique) and keep everything else: `|alias` / `|300`
-// hints, `#page=3` fragments, percent-encoding, angle brackets, link titles.
+// hints (a table's `\|300` stays escaped), `#page=3` fragments, percent-encoding,
+// angle brackets, link titles.
 
 var (
 	assetWikilinkRe = regexp.MustCompile(`(!?)\[\[([^\]\n]+?)\]\]`)
@@ -22,6 +23,21 @@ var (
 	// (`[![alt](a.png)](a.png)`) is found as readily as the outer link's own.
 	assetMdDestRe = regexp.MustCompile(`\]\(\s*(<[^>\n]*>|[^)\n]+?)((?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?)\s*\)`)
 )
+
+// assetSplitWikilink separates a wikilink's target from its `|alias` or `|300`,
+// keeping the separator, which a table escapes as `\|`, on the second part. The
+// app never creates a name with a backslash, so one right before the pipe is read
+// as that escape.
+func assetSplitWikilink(content string) (target, rest string) {
+	p := strings.IndexByte(content, '|')
+	if p < 0 {
+		return content, ""
+	}
+	if p > 0 && content[p-1] == '\\' {
+		p--
+	}
+	return content[:p], content[p:]
+}
 
 func assetStripQueryAndHash(href string) string {
 	if i := strings.IndexByte(href, '#'); i >= 0 {
@@ -227,6 +243,9 @@ func assetEncodeLike(original, next string) string {
 // and otherwise gets the full path; a markdown href is a real relative path,
 // so it follows the file with `..` where needed.
 func assetRetarget(reference string, resolution assetReferenceResolution, noteDir, newPath string, bareStillUnique, wikilink bool) string {
+	if trimmed := strings.TrimSpace(reference); wikilink && trimmed != reference {
+		return wikiKeepSpaces(reference, assetRetarget(trimmed, resolution, noteDir, newPath, bareStillUnique, true))
+	}
 	angled := strings.HasPrefix(reference, "<") && strings.HasSuffix(reference, ">")
 	inner := reference
 	if angled {
@@ -325,11 +344,7 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteM
 			continue
 		}
 		embed := body[m[2]:m[3]]
-		content := body[m[4]:m[5]]
-		target, rest := content, ""
-		if p := strings.IndexByte(content, '|'); p >= 0 {
-			target, rest = content[:p], content[p:]
-		}
+		target, rest := assetSplitWikilink(body[m[4]:m[5]])
 		r, ok := resolveOld(target)
 		if !ok {
 			continue
@@ -409,7 +424,7 @@ func AssetsReferencedBy(body string, assets []AssetMeta, notes []NoteMeta, noteP
 		if mask[m[0]] {
 			continue
 		}
-		target, _, _ := strings.Cut(body[m[4]:m[5]], "|")
+		target, _ := assetSplitWikilink(body[m[4]:m[5]])
 		if p, ok := resolve(target); ok {
 			if _, isNote := ResolveWikilink(notes, target); !isNote {
 				found[p] = true

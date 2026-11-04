@@ -1,6 +1,7 @@
 package database
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -82,6 +83,27 @@ func TestMoveHideAndViews(t *testing.T) {
 	}
 	if err := d.RemoveView("v1"); err == nil {
 		t.Fatal("the last view must stay")
+	}
+}
+
+func TestSplitNoteLinksReadsAnEscapedPipe(t *testing.T) {
+	for _, c := range []struct {
+		cell string
+		want []string
+	}{
+		{`[[C\|d]]`, []string{"C"}},
+		{`[[C\|]]`, []string{"C"}},
+		{`[[C\|d]] and [[Other|e]]`, []string{"C", "Other"}},
+		{`[[C|d]]`, []string{"C"}},
+		{`[[C|]]`, []string{"C"}},
+		{`[[C]]`, []string{"C"}},
+		{`[[C\]]`, []string{`C\`}},
+		{`[[\|d]]`, []string{}},
+		{`[[\]]`, []string{}},
+	} {
+		if got := SplitNoteLinks(c.cell); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("SplitNoteLinks(%q) = %q, want %q", c.cell, got, c.want)
+		}
 	}
 }
 

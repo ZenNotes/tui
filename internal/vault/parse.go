@@ -6,15 +6,20 @@ import (
 	"unicode"
 )
 
-// Regexes mirror the extractors in the desktop's vault-ops.ts and the
-// server's parse.go so the extracted metadata matches those builds.
+// Regexes follow the extractors in the desktop's vault-ops.ts and the server's
+// parse.go so the extracted metadata matches those builds. A table writes a
+// wikilink's separator as `\|`, the escape GFM needs to keep the pipe in its cell,
+// so the separator takes an optional backslash: the app never creates a name with
+// one, so a file named `C\.md` made elsewhere is not what `[[C\|d]]` reaches. A
+// build without that reading reports `C\`, so a listing from an older server still
+// can.
 var (
 	fenceLineRe  = regexp.MustCompile("^[ \t]*(`{3,}|~{3,})(.*)$")
 	inlineCodeRe = regexp.MustCompile("`[^`\n]*`")
 	tagRe        = regexp.MustCompile(`(?:^|\s)#(\p{L}[\p{L}\d_/-]*)`)
 	wikilinkRe   = regexp.MustCompile(`(!?)\[\[([^\]|]+?)(?:\\?\|[^\]]+)?\]\]`)
 	linkRe       = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
-	embedRe      = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
+	embedRe      = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\\?\|[^\]]+)?\]\]`)
 	// A block may be empty (`---\n---`): record pages without properties
 	// are written that way, and failing to see such a block made every
 	// re-mirror prepend another one. The empty form is tried first so a
@@ -199,7 +204,8 @@ func ExtractWikilinks(body string) []string {
 	out := []string{}
 	for _, m := range wikilinkRe.FindAllStringSubmatch(stripped, -1) {
 		target := strings.TrimSpace(m[2])
-		if target == "" {
+		// `[[\|d]]` and `[[\]]` name nothing.
+		if target == "" || target == `\` {
 			continue
 		}
 		if !seen[target] {
