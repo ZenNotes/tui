@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -731,6 +732,15 @@ func TestMermaidSequenceShowsSourceForWhatItCannotDraw(t *testing.T) {
 		{"accented message", "Alice->>Bob: héllo wörld", "héllo wörld"},
 		{"accented name", "Renée->>Bob: hi", "Renée"},
 		{"wide message", "Alice->>Bob: 日本語", "日本語"},
+		{"wide letter ending a message", "Alice->>Bob: done 🎉", "done 🎉"},
+		{"wide name", "participant 日", "participant 日"},
+		{"tab in a message", "Alice->>Bob: a\tb", "Alice->>Bob"},
+		{"combining mark in a message", "Alice->>Bob: cafe\u0301", "cafe\u0301"},
+		{"late alias", "participant Alice as Al", "Alice as Al"},
+		{"stick figure", "actor Carol", "actor Carol"},
+		{"name ending in a dash", "Alice--->>Bob: q", "Alice--->>Bob"},
+		{"name holding an arrow", "Alice->>Bob->>Carol: q", "Bob->>Carol"},
+		{"line break in a message", "Alice->>Bob: one<br/>two", "one<br/>two"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src := "sequenceDiagram\n  Alice->>Bob: hello\n  " + tc.statement
@@ -746,9 +756,9 @@ func TestMermaidSequenceShowsSourceForWhatItCannotDraw(t *testing.T) {
 // both directions, a dashed reply and a message to itself.
 func TestMermaidPlainSequenceIsStillDrawn(t *testing.T) {
 	src := `sequenceDiagram
-  %% who talks to whom
+  %% who talks to whom; and why
   participant A as Alice
-  actor B as Bob
+  participant B as Bob
   A->>B: hello
   B-->>A: hi back
   B->>B: think
@@ -883,6 +893,149 @@ func TestMermaidSourceIsWholeInAVeryNarrowPane(t *testing.T) {
 		}
 		if flat := squeezed(out); !strings.Contains(flat, squeezed("ZEBRA ||--o{ APPLE : eats")) {
 			t.Fatalf("pane of %d loses the relationship:\n%s", w, out)
+		}
+	}
+}
+
+// A name declared twice keeps only its first label, so the second is not drawn.
+func TestMermaidSequenceRepeatedAliasShowsSource(t *testing.T) {
+	src := "sequenceDiagram\n  participant A as Alice\n  participant A as Alicia\n  A->>B: hi"
+	assertMermaidKeeps(t, src, []string{"Alice", "Alicia", "A->>B: hi"})
+	if all := joinPreview(mermaidTestApp().mermaidLines(src, 0, 200)); !strings.Contains(all, "source") {
+		t.Fatalf("no note that the source is shown:\n%s", all)
+	}
+}
+
+// A fence the note never closes still holds its last line.
+func TestMermaidUnclosedFenceKeepsTheLastStatement(t *testing.T) {
+	for _, tc := range []struct{ name, md, want string }{
+		{"sequence", "```mermaid\nsequenceDiagram\n  A->>B: one\n  B->>A: lastmsg", "lastmsg"},
+		{"er", "```mermaid\nerDiagram\n  ZEBRA ||--o{ APPLE : lastrel", "lastrel"},
+		{"flowchart", "```mermaid\ngraph TD\n  A --> B\n  B --> LastNode", "LastNode"},
+		{"one statement", "```mermaid\ngraph TD", "graph TD"},
+		{"trailing newline", "```mermaid\nsequenceDiagram\n  A->>B: lastmsg\n", "lastmsg"},
+		{"closed", "```mermaid\nsequenceDiagram\n  A->>B: lastmsg\n```\n", "lastmsg"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if all := joinPreview(glamourTestLines(t, tc.md, 60)); !strings.Contains(all, tc.want) {
+				t.Fatalf("loses %q:\n%s", tc.want, all)
+			}
+		})
+	}
+	if all := joinPreview(glamourTestLines(t, "```mermaid\nsequenceDiagram\n  A->>B: hi\n```\n", 60)); strings.Contains(all, "```") {
+		t.Fatalf("a closed fence shows its closing line:\n%s", all)
+	}
+}
+
+// A note written on Windows comes through an embed with its carriage returns.
+func TestMermaidEmbeddedCRLFNoteHasCleanRows(t *testing.T) {
+	for name, fence := range map[string]string{
+		"class":    "classDiagram\r\n  Zebra <|-- Animal\r\n",
+		"er":       "erDiagram\r\n  ZEBRA ||--o{ APPLE : eats\r\n",
+		"sequence": "sequenceDiagram\r\n  Alice->>Bob: hello\r\n",
+		"graph":    "graph TD\r\n  A --> B\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, _ := linkTestApp(t, map[string]string{"Crlf.md": "```mermaid\r\n" + fence + "```\r\n"})
+			lines, err := a.renderGlamourLinesFrom("![[Crlf]]\n", 60, "Index.md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			all := joinPreview(lines)
+			if strings.Contains(all, "\r") {
+				t.Fatalf("carriage return in a row: %q", all)
+			}
+			if strings.Contains(all, "mermaid:") {
+				t.Fatalf("does not parse:\n%s", all)
+			}
+		})
+	}
+}
+
+// Formula source wraps in a narrow pane rather than ending in an ellipsis.
+func TestMathSourceWrapsInANarrowPane(t *testing.T) {
+	for _, width := range []int{5, 8, 12, 20, 80} {
+		lines := mermaidTestApp().mathLines("$$x^2+y^2+a_long_term_here$$", 0, width)
+		all := joinPreview(lines)
+		if strings.Contains(all, "…") || !strings.Contains(squeezed(strings.ReplaceAll(all, "▎", "")), "x^2+y^2+a_long_term_here") {
+			t.Fatalf("width %d cuts the formula:\n%s", width, all)
+		}
+	}
+}
+
+// The library draws on a grid of width times height, so a huge diagram shows its
+// source before that grid is allocated.
+func TestMermaidHugeSequenceShowsSourceWithoutDrawing(t *testing.T) {
+	var many strings.Builder
+	many.WriteString("sequenceDiagram\n")
+	for i := 0; i < 2000; i++ {
+		fmt.Fprintf(&many, "  participant P%d\n", i)
+	}
+	for i := 0; i < 2000; i++ {
+		fmt.Fprintf(&many, "  P%d->>P%d: m\n", i, (i+1)%2000)
+	}
+	if parsed := parseMermaidText(many.String()); !parsed.partial || parsed.rows != nil {
+		t.Fatal("a huge diagram is drawn")
+	}
+	small := parseMermaidText("sequenceDiagram\n  A->>B: hi")
+	if small.partial || small.rows == nil {
+		t.Fatal("a small diagram is not drawn")
+	}
+}
+
+// The preview follows the pane all the way down, so nothing it draws may assume
+// a minimum width.
+func TestPreviewSurvivesVeryNarrowPanes(t *testing.T) {
+	note := `---
+title: Rich
+---
+# A heading that is rather long
+
+A paragraph with a [[Target|link]], a [web link](https://example.com), and ` + "`code`" + `.
+
+- a list item that goes on for a while
+- [ ] a task that goes on for a while
+  - nested item
+
+> a quote that goes on
+
+> [!note] A callout
+> with a body
+
+| one | two |
+|-----|-----|
+| [[Target|x]] | y |
+
+---
+
+` + "```go\nfunc main() {}\n```" + `
+
+` + "```mermaid\ngraph LR\n  A[One long label] -->|edge| B\n  B --> A\n```" + `
+
+` + "```mermaid\nsequenceDiagram\n  A->>B: hi\n```" + `
+
+$$x^2+y^2$$
+
+![[Target]]
+
+![[missing.png]]
+
+![a picture](missing.png)
+
+![a file](report.pdf)
+
+https://www.youtube.com/watch?v=abc123
+`
+	for _, style := range []string{"auto", "zen"} {
+		a, _ := linkTestApp(t, map[string]string{"Index.md": note, "Target.md": "# Target\n\nbody\n"})
+		a.prefs.PreviewStyle = style
+		a.openNote("Index.md", true)
+		tb, buf := a.activeTab(), a.activeBuffer()
+		if tb == nil || buf == nil {
+			t.Fatal("no open note")
+		}
+		for w := 1; w <= 16; w++ {
+			a.renderPreview(tb, buf, w, 400, true)
 		}
 	}
 }

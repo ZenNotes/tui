@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 	"github.com/yashikota/mermaigo/pkg/mermaid"
 	"github.com/yashikota/mermaigo/pkg/mermaid/ascii"
 	"github.com/yashikota/mermaigo/pkg/mermaid/parser"
@@ -54,7 +55,8 @@ func parseMermaidText(src string) *mermaidText {
 	if err != nil {
 		return &mermaidText{err: err.Error()}
 	}
-	return &mermaidText{flow: flow, partial: partial}
+	// A diagram with no node yet, as while one is being typed, has nothing to draw.
+	return &mermaidText{flow: flow, partial: partial || len(flow.order) == 0}
 }
 
 // mermaidTextLines lays a parsed diagram out for a pane width.
@@ -96,11 +98,17 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 
 // --- sequence diagrams ---
 
+// mermaidSequenceMaxCells caps the library's drawing, which allocates a grid of
+// its width times its height before anything else happens.
+const mermaidSequenceMaxCells = 1 << 20
+
 var (
-	mermaidActorRe = regexp.MustCompile(`^(?:participant|actor)\s+\S+(?:\s+as\s+.+)?$`)
+	mermaidParticipantRe = regexp.MustCompile(`^participant\s+(\S+)(?:\s+as\s+.+)?$`)
 	// Only the arrows the drawing tells apart: it gives every other kind the
 	// same head, and it has no place for activation marks.
 	mermaidMessageRe = regexp.MustCompile(`^([^\s<]+?)\s*--?>>\s*([^\s+-]\S*?)\s*:\s*(.+)$`)
+	// A name holding an arrow is more likely a misread statement than a name.
+	mermaidArrowInNameRe = regexp.MustCompile(`->|-$`)
 )
 
 // sequenceRows is the library's drawing of a sequence diagram, or nil when that
@@ -109,6 +117,9 @@ var (
 func sequenceRows(src string) []string {
 	statements := []string{}
 	for _, line := range strings.Split(src, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "%%") {
+			continue
+		}
 		for _, s := range strings.Split(line, ";") {
 			if s = strings.TrimSpace(s); s != "" && !strings.HasPrefix(s, "%%") {
 				statements = append(statements, s)
@@ -116,10 +127,18 @@ func sequenceRows(src string) []string {
 		}
 	}
 	messages := [][]string{}
+	seen := map[string]bool{}
 	for _, s := range statements[1:] {
 		if m := mermaidMessageRe.FindStringSubmatch(s); m != nil {
+			if mermaidArrowInNameRe.MatchString(m[1]) || mermaidArrowInNameRe.MatchString(m[2]) {
+				return nil
+			}
+			seen[m[1]], seen[m[2]] = true, true
 			messages = append(messages, m[1:])
-		} else if !mermaidActorRe.MatchString(s) {
+		} else if m := mermaidParticipantRe.FindStringSubmatch(s); m != nil && !seen[m[1]] {
+			// The parser keeps a name's first label and ignores any later one.
+			seen[m[1]] = true
+		} else {
 			return nil
 		}
 	}
@@ -133,6 +152,24 @@ func sequenceRows(src string) []string {
 		if m.From != messages[i][0] || m.To != messages[i][1] || m.Label != messages[i][2] {
 			return nil
 		}
+		if !sequenceLabelDrawable(m.Label) || strings.Contains(strings.ToLower(m.Label), "<br") {
+			return nil
+		}
+	}
+	width, height := 1, 7
+	for _, actor := range diagram.Actors {
+		if !sequenceLabelDrawable(actor.Label) {
+			return nil
+		}
+		width += max(len(actor.Label)+4, 9) + 10
+	}
+	longest := 0
+	for _, m := range diagram.Messages {
+		longest = max(longest, len(m.Label))
+		height += 4
+	}
+	if (width+longest+11)*height > mermaidSequenceMaxCells {
+		return nil
 	}
 
 	// The drawing stops at its own right edge and spaces out a label with
@@ -142,10 +179,13 @@ func sequenceRows(src string) []string {
 	if len(rows) < 3 {
 		return nil
 	}
+	boxes := rows[1]
 	for _, actor := range diagram.Actors {
-		if !strings.Contains(rows[1], actor.Label) {
+		i := strings.Index(boxes, actor.Label)
+		if i < 0 {
 			return nil
 		}
+		boxes = boxes[i+len(actor.Label):]
 	}
 	at := 3 // below the participants' boxes
 	for _, m := range diagram.Messages {
@@ -158,6 +198,18 @@ func sequenceRows(src string) []string {
 		at++
 	}
 	return rows
+}
+
+// sequenceLabelDrawable says each rune of a label takes one cell. The library's
+// grid holds one rune per cell, so a wide letter, a combining mark, a tab or a
+// control character moves everything after it on the row.
+func sequenceLabelDrawable(label string) bool {
+	for _, r := range label {
+		if runewidth.RuneWidth(r) != 1 {
+			return false
+		}
+	}
+	return true
 }
 
 // --- reading the source ---
