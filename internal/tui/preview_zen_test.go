@@ -29,6 +29,7 @@ func TestZenPreviewKeepsEmbedsLiteralInCode(t *testing.T) {
 		{"task", "- [ ] `![[pic.png]]`", "☐ ![[pic.png]]"},
 		{"quote", "> `![[pic.png]]`", "▍ ![[pic.png]]"},
 		{"table cell", "| a |\n|---|\n| `![[pic.png]]` |", "│ ![[pic.png]] │"},
+		{"table cell with an alias pipe", "| `![[pic.png|small]]` | x |", "│ ![[pic.png|small]] │ x │"},
 		{"fence", "```\n![[pic.png]]\n![alt](b.png)\n```", "│ ![[pic.png]]\n│ ![alt](b.png)"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -145,6 +146,32 @@ func TestZenPreviewFencesCloseOnlyOnTheirOwnMarker(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := zenPreviewText(a, tc.body); got != tc.want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, tc.want)
+			}
+		})
+	}
+}
+
+// Glamour's code guards and its hiding of a note's own token brackets both pass
+// over a row, and neither may undo the other.
+func TestGlamourKeepsBracketsInCodeBesideTokens(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"code span beside a link", "`⟦x⟧` and ⟦y⟧ and [[Note|an alias]]", "⟦x⟧ and ⟦y⟧ and an alias"},
+		{"code span with a hard space", "`a b` and [[Note|an alias]]", "a b and an alias"},
+		{"code block", "```\nlet a = ⟦1, 2⟧;\n```", "let a = ⟦1, 2⟧;"},
+		{"list item", "- `⟦x⟧` and [[Note|an alias]]", "⟦x⟧ and an alias"},
+		{"table cell", "| a | b |\n|---|---|\n| `⟦x⟧` | [[Note|alias]] |", "⟦x⟧"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := []string{}
+			for _, line := range glamourTestLines(t, tc.body, 80) {
+				rows = append(rows, ansi.Strip(line.text))
+			}
+			all := strings.Join(rows, "\n")
+			if !strings.Contains(all, tc.want) {
+				t.Fatalf("want %q in:\n%s", tc.want, all)
+			}
+			if strings.ContainsAny(all, "﷑﷘\U0010FFF0\U0010FFF1\U0010FFF2") {
+				t.Fatalf("a guard reached the row: %q", all)
 			}
 		})
 	}
