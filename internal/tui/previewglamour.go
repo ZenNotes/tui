@@ -158,9 +158,10 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			}
 			blocks = append(blocks, mdBlock{kind: "blank", start: i, end: j})
 			i = j
-		case fenceRe.MatchString(line):
+		case isFenceOpen(line):
+			char, n, _ := fenceOpens(line)
 			j := i + 1
-			for j < len(lines) && !fenceRe.MatchString(lines[j]) {
+			for j < len(lines) && !fenceCloses(lines[j], char, n) {
 				j++
 			}
 			if j < len(lines) {
@@ -221,7 +222,7 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			j := i + 1
 			for j < len(lines) {
 				next := lines[j]
-				if blankRe.MatchString(next) || fenceRe.MatchString(next) || headingRe.MatchString(next) || tableRowRe.MatchString(next) || quoteRe.MatchString(next) || listLineRe.MatchString(next) || hrRe.MatchString(next) || mathFenceRe.MatchString(next) || mathInlineOpen.MatchString(next) || latex && texBlockEnd(lines, j) > 0 {
+				if blankRe.MatchString(next) || isFenceOpen(next) || headingRe.MatchString(next) || tableRowRe.MatchString(next) || quoteRe.MatchString(next) || listLineRe.MatchString(next) || hrRe.MatchString(next) || mathFenceRe.MatchString(next) || mathInlineOpen.MatchString(next) || latex && texBlockEnd(lines, j) > 0 {
 					break
 				}
 				j++
@@ -235,8 +236,10 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 
 // prepareMarkdown rewrites the pieces Glamour does not know: wikilinks and
 // embeds become tokens that are styled after rendering, callout markers
-// become bold labels.
+// become bold labels. Code is guarded first, so it stays as written; the
+// result still carries guards that postStyleRow removes.
 func prepareMarkdown(text string) string {
+	text = guardCode(text)
 	text = embedWikiRe.ReplaceAllString(text, "⟦image: $1⟧")
 	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
 	text = wikilinkAtRe.ReplaceAllStringFunc(text, func(m string) string {
@@ -268,7 +271,7 @@ func prepareMarkdown(text string) string {
 		}
 		return "> " + label
 	})
-	return text
+	return unguardBracket.Replace(text)
 }
 
 // activeSGR returns the color and attribute codes in force at the end of
@@ -384,7 +387,7 @@ func (a *App) postStyleRow(row string) string {
 	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") {
 		row = styleInline(row, regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
 	}
-	return row
+	return unguardRow.Replace(row)
 }
 
 // renderGlamourLines renders a note block by block.
@@ -417,8 +420,7 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 		case "blank":
 			out = append(out, previewLine{text: "", srcLine: b.start})
 		default:
-			src := strings.Join(lines[b.start:b.end], "\n")
-			rendered, err := r.Render(prepareMarkdown(src))
+			rendered, err := r.Render(prepareMarkdown(blockSource(b, lines)))
 			if err != nil {
 				return nil, err
 			}
@@ -437,16 +439,25 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 
 // mapRows assigns source lines to the rendered rows of a block. Lists get
 // per-item mapping by spotting item markers in the output; everything else
-// maps to the block's first line.
+// maps to the block's first line. Links and tasks are read with the block's
+// code made inert, since neither exists inside code.
 func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 	out := make([]previewLine, 0, len(rows))
+	source := blockSource(b, lines)
+	mask, codeOnly := markdownCode(source)
+	live := strings.Split(inertCode(source, mask), "\n")
+	liveLine := func(i int) string { return live[i-b.start] }
+	style := a.postStyleRow
+	if codeOnly {
+		style = unguardRow.Replace
+	}
 	if b.kind != "list" {
 		links := []linkTarget{}
 		for i := b.start; i < b.end; i++ {
-			links = append(links, linksOnLine(lines[i])...)
+			links = append(links, linksOnLine(liveLine(i))...)
 		}
 		for i, row := range rows {
-			pl := previewLine{text: a.postStyleRow(row), srcLine: b.start}
+			pl := previewLine{text: style(row), srcLine: b.start}
 			if i == 0 {
 				pl.links = links
 			}
@@ -454,6 +465,8 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 		}
 		return out
 	}
+	// Items count the raw lines: a list marker in code renders as a row that
+	// looks like an item, so the two walks below stay in step.
 	items := []int{}
 	for i := b.start; i < b.end; i++ {
 		if listLineRe.MatchString(lines[i]) {
@@ -470,12 +483,12 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 		if k >= 0 {
 			src = items[k]
 		}
-		pl := previewLine{text: a.postStyleRow(row), srcLine: src}
+		pl := previewLine{text: style(row), srcLine: src}
 		if k >= 0 && (len(out) == 0 || out[len(out)-1].srcLine != src) {
-			pl.links = linksOnLine(lines[src])
-			pl.task = taskLineRe.MatchString(lines[src])
+			pl.links = linksOnLine(liveLine(src))
+			pl.task = taskLineRe.MatchString(liveLine(src))
 		} else if k >= 0 {
-			pl.task = taskLineRe.MatchString(lines[src])
+			pl.task = taskLineRe.MatchString(liveLine(src))
 		}
 		out = append(out, pl)
 	}
@@ -552,6 +565,10 @@ func zennotesStyle(th Theme) ansi.StyleConfig {
 	cfg.ImageText.Color = str(string(th.FgDim))
 	cfg.Code.StylePrimitive.Color = str(string(th.Green))
 	cfg.Code.StylePrimitive.BackgroundColor = nil
+	// The base style pads inline code to fill out its background; with none
+	// the padding is only stray spaces.
+	cfg.Code.StylePrimitive.Prefix = ""
+	cfg.Code.StylePrimitive.Suffix = ""
 	cfg.CodeBlock.Theme = th.ChromaStyle
 	cfg.CodeBlock.Chroma = nil
 	cfg.CodeBlock.Margin = u(2)
