@@ -2,14 +2,14 @@ package tui
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
+	east "github.com/yuin/goldmark/extension/ast"
 	gmtext "github.com/yuin/goldmark/text"
-
-	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // The Glamour preview rewrites Markdown before rendering and restyles the rows
@@ -82,17 +82,21 @@ func isCodeOnly(text string) bool {
 }
 
 // Guards stand in for the characters the preview's rewrites and row styling look
-// for, so those simply find nothing in code. Noncharacters never occur in real
+// for, so those simply find nothing in code. Noncharacters do not occur in real
 // text, and each takes one cell like the character it replaces, so wrapping is
-// unchanged.
+// unchanged. A note that does hold one of them gets the character it stands for.
 const (
-	guardBracket = "﷐" // [ starts every wikilink, embed, task state and callout
-	guardToken   = "﷑" // ⟦ is how a link token looks to postStyleRow
-	guardBullet  = "﷒" // • precedes the task glyphs postStyleRow pulls out
-	guardHash    = "﷓"
-	guardAt      = "﷔"
-	guardBang    = "﷕"
-	guardColon   = "﷖"
+	guardBracket      = "\uFDD0" // [ and ] make every wikilink, embed, task state
+	guardBracketClose = "\uFDD7" // and callout the rewrites look for
+	guardToken        = "\uFDD1" // ⟦ and ⟧ are how a link token looks to the row
+	guardTokenClose   = "\uFDD8" // styling
+	guardBullet       = "\uFDD2" // • precedes the task glyphs postStyleRow pulls out
+	guardHash         = "\uFDD3"
+	guardAt           = "\uFDD4"
+	guardBang         = "\uFDD5"
+	guardColon        = "\uFDD6"
+	guardItem         = "\uFDD9" // follows a marker in code, see codeItemRe
+	guardGap          = "\uFDDA" // fills a blank line, see keepItemParagraphsApart
 )
 
 var (
@@ -100,17 +104,22 @@ var (
 	// only carries the guards no language gives a meaning to. mapRows spares
 	// a block that is all code the row styling, and the rest of its characters
 	// with it.
-	guardBlockCode = strings.NewReplacer("[", guardBracket, "⟦", guardToken, "•", guardBullet)
-	guardSpanCode  = strings.NewReplacer("[", guardBracket, "⟦", guardToken, "•", guardBullet, "#", guardHash, "@", guardAt, "!", guardBang, ":", guardColon)
+	guardBlockCode = strings.NewReplacer("[", guardBracket, "]", guardBracketClose, "⟦", guardToken, "⟧", guardTokenClose, "•", guardBullet)
+	guardSpanCode  = strings.NewReplacer("[", guardBracket, "]", guardBracketClose, "⟦", guardToken, "⟧", guardTokenClose, "•", guardBullet, "#", guardHash, "@", guardAt, "!", guardBang, ":", guardColon)
 	// unguardBracket runs before rendering, since the rewrites are done by then.
-	unguardBracket = strings.NewReplacer(guardBracket, "[")
-	// unguardRow runs last, once the row styling has passed over a row.
-	unguardRow = strings.NewReplacer(guardToken, "⟦", guardBullet, "•", guardHash, "#", guardAt, "@", guardBang, "!", guardColon, ":")
+	unguardBracket = strings.NewReplacer(guardBracket, "[", guardBracketClose, "]")
+	// unguardRow runs last, once every step has passed over a row. guardItem is
+	// one cell more than the source, which only costs a row a cell of padding.
+	unguardRow = strings.NewReplacer(guardToken, "⟦", guardTokenClose, "⟧", guardBullet, "•", guardHash, "#", guardAt, "@", guardBang, "!", guardColon, ":", guardItem, "", guardGap, "")
+	// codeItemRe finds a code line that would pass for a list item once it is a
+	// row (itemMarkerRe). In a block that is not all code, mapRows counts rows by
+	// their markers, so such a line carries guardItem after its marker.
+	codeItemRe = regexp.MustCompile(`(?m)^([ \t]*` + itemMarkerPattern + `)(\s|$)`)
 )
 
 // guardCode swaps the characters the preview looks for in text's code.
 func guardCode(text string) string {
-	mask, _ := markdownCode(text)
+	mask, only := markdownCode(text)
 	var out strings.Builder
 	out.Grow(len(text))
 	for i := 0; i < len(text); {
@@ -123,7 +132,11 @@ func guardCode(text string) string {
 		case spanCode:
 			out.WriteString(guardSpanCode.Replace(text[i:j]))
 		case blockCode:
-			out.WriteString(guardBlockCode.Replace(text[i:j]))
+			code := text[i:j]
+			if !only {
+				code = codeItemRe.ReplaceAllString(code, "${1}"+guardItem+"${2}")
+			}
+			out.WriteString(guardBlockCode.Replace(code))
 		default:
 			out.WriteString(text[i:j])
 		}
@@ -132,62 +145,253 @@ func guardCode(text string) string {
 	return out.String()
 }
 
-// inertCode blanks the link and task syntax in text's code, so a scan for those
-// only finds what renders as one. The words stay: a link written around a code
-// span, as in [`name`](url), keeps its label and target.
-func inertCode(text string, mask []codeKind) string {
-	out := []byte(text)
-	for i, kind := range mask {
-		if kind == notCode {
-			continue
-		}
-		switch out[i] {
-		case '[', ']', '(', ')', ':':
-			out[i] = ' '
-		}
-	}
-	return string(out)
-}
-
-// tableDelimRe is GFM's delimiter row, which makes rows a table at all. A single
-// dash is enough for GFM, unlike the stricter tableSepRe.
-var tableDelimRe = regexp.MustCompile(`^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$`)
-
-// blockSource is what a block hands the renderer. GFM ends a table cell at any
-// bare pipe, even inside code, which would cut `[[Note|alias]]` in two, so a
-// table's code spans get their pipes escaped; GFM drops the backslash again.
+// blockSource is what a block hands the renderer. Content cut off from its list
+// item loses the indent that would read as code on its own. GFM ends a table cell
+// at any bare pipe, even inside code, which would cut `[[Note|alias]]` in two.
 func blockSource(b mdBlock, lines []string) string {
 	rows := lines[b.start:b.end]
-	if b.kind != "table" || len(rows) < 2 || !tableDelimRe.MatchString(rows[1]) {
-		return strings.Join(rows, "\n")
+	if b.listChild {
+		rows = dedent(rows)
 	}
-	out := make([]string, len(rows))
-	for i, row := range rows {
-		out[i] = escapeCodePipes(row)
+	text := strings.Join(rows, "\n")
+	if b.kind == "list" {
+		text = keepItemParagraphsApart(text)
 	}
-	return strings.Join(out, "\n")
+	return escapeTableCodePipes(text)
 }
 
-// escapeCodePipes escapes the bare pipes inside a table row's code spans.
-func escapeCodePipes(row string) string {
-	if !strings.Contains(row, "`") {
-		return row
+// keepItemParagraphsApart stops Glamour running a list item's paragraphs into one
+// another, which it does with no space between their words. The blank lines
+// between two of them are filled, keeping every line in place, so they read as
+// one paragraph whose lines Glamour keeps, and the filler leaves a blank row.
+func keepItemParagraphsApart(text string) string {
+	if !strings.Contains(text, "\n\n") && !blankLineRe.MatchString(text) {
+		return text
 	}
-	mask := vault.CodeMask(row)
-	var out strings.Builder
-	for i := 0; i < len(row); i++ {
-		if row[i] == '|' && mask[i] && (i == 0 || row[i-1] != '\\') {
-			out.WriteByte('\\')
+	src := []byte(text)
+	lines := strings.Split(text, "\n")
+	lineOf := lineLocator(src)
+	_ = ast.Walk(codeParser.Parse(gmtext.NewReader(src)), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || n.Kind() != ast.KindListItem {
+			return ast.WalkContinue, nil
 		}
-		out.WriteByte(row[i])
+		for c := n.FirstChild(); c != nil && c.NextSibling() != nil; c = c.NextSibling() {
+			next := c.NextSibling()
+			if c.Kind() != ast.KindParagraph || next.Kind() != ast.KindParagraph || c.Lines().Len() == 0 || next.Lines().Len() == 0 {
+				continue
+			}
+			from := lineOf(c.Lines().At(c.Lines().Len()-1).Start) + 1
+			to := lineOf(next.Lines().At(0).Start)
+			indent := lines[to][:len(lines[to])-len(strings.TrimLeft(lines[to], " \t"))]
+			for i := from; i < to; i++ {
+				lines[i] = indent + guardGap
+			}
+		}
+		return ast.WalkContinue, nil
+	})
+	return strings.Join(lines, "\n")
+}
+
+var blankLineRe = regexp.MustCompile(`(?m)^[ \t]+$`)
+
+// lineLocator returns a function from a byte offset of src to its line number.
+func lineLocator(src []byte) func(int) int {
+	starts := []int{0}
+	for i, c := range src {
+		if c == '\n' {
+			starts = append(starts, i+1)
+		}
 	}
+	return func(offset int) int { return sort.SearchInts(starts, offset+1) - 1 }
+}
+
+// dedent removes the indent the lines share.
+func dedent(lines []string) []string {
+	indent := -1
+	for _, l := range lines {
+		if n := len(l) - len(strings.TrimLeft(l, " \t")); !blankRe.MatchString(l) && (indent < 0 || n < indent) {
+			indent = n
+		}
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = l[min(max(indent, 0), len(l)):]
+	}
+	return out
+}
+
+// escapeTableCodePipes escapes the pipes in the code spans of text's table rows;
+// GFM drops the backslash again. Goldmark says which rows those are, wherever
+// the table sits, so a fence or a lone row that only looks like one is left alone.
+func escapeTableCodePipes(text string) string {
+	if !strings.Contains(text, "|") || !strings.Contains(text, "`") {
+		return text
+	}
+	rows := tableRows(text)
+	if len(rows) == 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i := range rows {
+		lines[i] = escapeCodePipes(lines[i])
+	}
+	return strings.Join(lines, "\n")
+}
+
+// tableRows lists the lines of text that hold a table cell's content.
+func tableRows(text string) map[int]bool {
+	src := []byte(text)
+	lineOf := lineLocator(src)
+	rows := map[int]bool{}
+	_ = ast.Walk(codeParser.Parse(gmtext.NewReader(src)), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering || n.Kind() != east.KindTable {
+			return ast.WalkContinue, nil
+		}
+		_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
+			if t, ok := c.(*ast.Text); ok && entering {
+				rows[lineOf(t.Segment.Start)] = true
+			}
+			return ast.WalkContinue, nil
+		})
+		return ast.WalkSkipChildren, nil
+	})
+	return rows
+}
+
+// escapeCodePipes escapes the bare pipes inside a table row's code spans, read
+// the way CommonMark does: a backslash escapes a backtick outside a span only,
+// and a span closes on a backtick run of its own length.
+func escapeCodePipes(row string) string {
+	var out strings.Builder
+	last := 0
+	for i := 0; i < len(row); {
+		switch row[i] {
+		case '\\':
+			i += 2
+		case '`':
+			n := backtickRun(row[i:])
+			closer := -1
+			for j := i + n; j < len(row); {
+				if row[j] != '`' {
+					j++
+					continue
+				}
+				m := backtickRun(row[j:])
+				if m == n {
+					closer = j
+					break
+				}
+				j += m
+			}
+			if closer < 0 {
+				i += n
+				continue
+			}
+			for k := i + n; k < closer; k++ {
+				if row[k] == '|' && row[k-1] != '\\' {
+					out.WriteString(row[last:k])
+					out.WriteByte('\\')
+					last = k
+				}
+			}
+			i = closer + n
+		default:
+			i++
+		}
+	}
+	out.WriteString(row[last:])
 	return out.String()
 }
+
+func backtickRun(s string) int {
+	return len(s) - len(strings.TrimLeft(s, "`"))
+}
+
+// listBlockEnd returns one past the last line of the list starting at line i.
+// Each block is parsed alone, so what is indented under an item has to stay in
+// the block, past blank lines, or it would read as an indented code block.
+func listBlockEnd(lines []string, i int, latex bool) int {
+	var fenceChar byte
+	fenceLen := 0
+	j := i
+	for j < len(lines) {
+		line := lines[j]
+		blank := blankRe.MatchString(line)
+		switch {
+		case fenceChar != 0:
+			// A fence holds blank lines, and ends with its list item if unclosed.
+			if !blank && !listIndented(line) {
+				return j
+			}
+			if fenceCloses(strings.TrimLeft(line, " \t"), fenceChar, fenceLen) {
+				fenceChar = 0
+			}
+			j++
+		case blank:
+			k := j
+			for k < len(lines) && blankRe.MatchString(lines[k]) {
+				k++
+			}
+			if k == len(lines) || !listIndented(lines[k]) || standsAlone(lines, k, latex) {
+				return j
+			}
+			j = k
+		case j > i && !listLineRe.MatchString(line) && !listIndented(line):
+			return j
+		default:
+			fenceChar, fenceLen, _ = fenceOpens(strings.TrimLeft(listLineRe.ReplaceAllString(line, ""), " \t"))
+			j++
+		}
+	}
+	return j
+}
+
+func listIndented(line string) bool {
+	return strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t")
+}
+
+// standsAlone says line k is drawn by embedBlockLines when it is a block of its
+// own: an embed, a video link or math. Those end a list block, and markListChildren
+// keeps what follows from reading as code.
+func standsAlone(lines []string, k int, latex bool) bool {
+	line := lines[k]
+	if mathInlineOpen.MatchString(line) || mathFenceRe.MatchString(line) || latex && texBlockEnd(lines, k) > 0 {
+		return true
+	}
+	if k+1 < len(lines) && !blankRe.MatchString(lines[k+1]) {
+		return false
+	}
+	if m := bareURLLineRe.FindStringSubmatch(line); m != nil {
+		_, ok := videoProvider(m[1])
+		return ok
+	}
+	return embedLineRe.MatchString(line) || embedMDLineRe.MatchString(line)
+}
+
+// markListChildren flags the indented blocks that follow a list's standalone
+// content, which belong to the list even though they are blocks of their own.
+func markListChildren(blocks []mdBlock, lines []string) {
+	inList := false
+	for i := range blocks {
+		b := &blocks[i]
+		switch {
+		case b.kind == "blank":
+		case inList && b.kind != "fence" && listIndented(lines[b.start]):
+			b.listChild = true
+		default:
+			inList = b.kind == "list"
+		}
+	}
+}
+
+// previewFenceRe is a fence marker as CommonMark has it: spaces only, up to three.
+// The editor's fenceRe also takes a tab, which reads as indented code here.
+var previewFenceRe = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
 
 // fenceOpens reads a line that opens a code fence: a backtick fence's info
 // string holds no backtick, or the line is an inline code span instead.
 func fenceOpens(line string) (char byte, n int, ok bool) {
-	m := fenceRe.FindStringSubmatch(line)
+	m := previewFenceRe.FindStringSubmatch(line)
 	if m == nil || (m[1][0] == '`' && strings.Contains(line[len(m[0]):], "`")) {
 		return 0, 0, false
 	}
@@ -202,6 +406,6 @@ func isFenceOpen(line string) bool {
 // fenceCloses says a line closes a fence of char and length n: the same
 // character, at least as long, with nothing after it.
 func fenceCloses(line string, char byte, n int) bool {
-	m := fenceRe.FindStringSubmatch(line)
+	m := previewFenceRe.FindStringSubmatch(line)
 	return m != nil && m[1][0] == char && len(m[1]) >= n && strings.TrimSpace(line[len(m[0]):]) == ""
 }

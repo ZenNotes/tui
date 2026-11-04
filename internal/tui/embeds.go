@@ -160,8 +160,9 @@ func (a *App) assetIndex() map[string]string {
 // false for ordinary Markdown, which Glamour then renders below any rows
 // returned anyway (a ```tikz fence's TeX error).
 func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath string) ([]previewLine, bool) {
-	// An indented block is code, whatever it looks like.
-	if b.kind != "fence" && isCodeOnly(strings.Join(lines[b.start:b.end], "\n")) {
+	// An indented block is code, whatever it looks like, unless it sits under a
+	// list item.
+	if b.kind != "fence" && !b.listChild && isCodeOnly(strings.Join(lines[b.start:b.end], "\n")) {
 		return nil, false
 	}
 	switch b.kind {
