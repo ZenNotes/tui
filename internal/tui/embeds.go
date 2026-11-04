@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yashikota/mermaigo/pkg/mermaid"
 
 	"github.com/ZenNotes/tui/internal/vault"
 )
@@ -357,7 +356,7 @@ func (a *App) transclusionLines(t embedTarget, srcLine, width int, fromPath stri
 
 type diagramCache struct {
 	mu    sync.Mutex
-	text  map[string][]string
+	text  map[string]*mermaidText
 	png   map[string]*termImage
 	inFly map[string]bool
 	// pool caps the external render processes running at once; mermaid,
@@ -374,7 +373,7 @@ func (a *App) diagrams() *diagramCache {
 	diagramsMu.Lock()
 	defer diagramsMu.Unlock()
 	if a.diagramCache == nil {
-		a.diagramCache = &diagramCache{text: map[string][]string{}, png: map[string]*termImage{}, inFly: map[string]bool{}, pool: make(chan struct{}, max(1, a.prefs.RenderConcurrency))}
+		a.diagramCache = &diagramCache{text: map[string]*mermaidText{}, png: map[string]*termImage{}, inFly: map[string]bool{}, pool: make(chan struct{}, max(1, a.prefs.RenderConcurrency))}
 	}
 	return a.diagramCache
 }
@@ -388,7 +387,6 @@ func contentKey(prefix, text string) string {
 // terminal shows pictures, renders it as an image in the background; the
 // pure-Go text rendering is shown meanwhile and everywhere else.
 func (a *App) mermaidLines(src string, srcLine, width int) []previewLine {
-	th := a.theme
 	key := contentKey("mermaid", src)
 	if a.imageMode() == imagesKitty {
 		if img := a.externalImage(key, width-2, "mermaid", src); img != nil && img.err == nil {
@@ -397,27 +395,15 @@ func (a *App) mermaidLines(src string, srcLine, width int) []previewLine {
 	}
 	d := a.diagrams()
 	d.mu.Lock()
-	rows, ok := d.text[key]
+	text, ok := d.text[key]
 	d.mu.Unlock()
 	if !ok {
-		rendered, err := mermaid.RenderText(src, &mermaid.TextRenderOptions{})
-		if err != nil {
-			rows = []string{th.StatusError.Render("mermaid: " + firstLine(err.Error()))}
-			for _, l := range strings.Split(src, "\n") {
-				rows = append(rows, th.Code.Render(l))
-			}
-		} else {
-			rows = strings.Split(strings.TrimRight(rendered, "\n"), "\n")
-		}
+		text = parseMermaidText(src)
 		d.mu.Lock()
-		d.text[key] = rows
+		d.text[key] = text
 		d.mu.Unlock()
 	}
-	out := make([]previewLine, 0, len(rows)+1)
-	for _, row := range rows {
-		out = append(out, previewLine{text: " " + th.Base.Render(truncateCells(row, width-1)), srcLine: srcLine})
-	}
-	return out
+	return a.mermaidTextLines(text, src, srcLine, width)
 }
 
 func firstLine(s string) string {

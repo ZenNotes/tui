@@ -288,7 +288,9 @@ type linkTarget struct {
 // wikilinkTargetOf builds the link for what sits inside `[[...]]`.
 func wikilinkTargetOf(content string) linkTarget {
 	target, anchor, alias := vault.SplitWikilinkContent(content)
-	return linkTarget{kind: "wikilink", target: strings.TrimSpace(target + anchor), alias: strings.TrimPrefix(alias, "|")}
+	// Obsidian writes [[Note\|alias]] inside a table so the pipe stays in the
+	// cell; the backslash is not part of the note's name.
+	return linkTarget{kind: "wikilink", target: strings.TrimSuffix(strings.TrimSpace(target+anchor), `\`), alias: strings.TrimPrefix(alias, "|")}
 }
 
 // mdLinkTargetOf builds the link for a Markdown link's raw destination.

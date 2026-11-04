@@ -233,19 +233,36 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 	return blocks
 }
 
+// The note's own token brackets and hard spaces are hidden while a block goes
+// through Glamour, so only zn's tokens are styled or removed.
+const (
+	literalTokenOpen  = "\U0010FFF0"
+	literalTokenClose = "\U0010FFF1"
+	literalHardSpace  = "\U0010FFF2"
+)
+
+var (
+	tokenHider    = strings.NewReplacer("⟦", literalTokenOpen, "⟧", literalTokenClose, "\u00a0", literalHardSpace)
+	tokenFinisher = strings.NewReplacer("⟦", "", "⟧", "", literalTokenOpen, "⟦", literalTokenClose, "⟧", literalHardSpace, "\u00a0")
+	tableRuleRe   = regexp.MustCompile(`[│|┼]`)
+)
+
 // prepareMarkdown rewrites the pieces Glamour does not know: wikilinks and
 // embeds become tokens that are styled after rendering, callout markers
 // become bold labels.
 func prepareMarkdown(text string) string {
+	text = tokenHider.Replace(text)
 	text = embedWikiRe.ReplaceAllString(text, "⟦image: $1⟧")
 	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
 	text = wikilinkAtRe.ReplaceAllStringFunc(text, func(m string) string {
 		inner := strings.TrimSuffix(strings.TrimPrefix(m, "[["), "]]")
 		target, _, alias := splitWiki(inner)
-		if alias != "" {
-			return "⟦" + alias + "⟧"
+		if alias == "" {
+			alias = target
 		}
-		return "⟦" + target + "⟧"
+		// Hard spaces keep the token on one row where it fits; postStyleRow
+		// puts the spaces back.
+		return "⟦" + strings.ReplaceAll(alias, " ", "\u00a0") + "⟧"
 	})
 	// Glamour only knows [ ] and [x]; the app's other states become glyphs.
 	text = taskStateRe.ReplaceAllStringFunc(text, func(m string) string {
@@ -384,7 +401,51 @@ func (a *App) postStyleRow(row string) string {
 	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") {
 		row = styleInline(row, regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
 	}
-	return row
+	return strings.ReplaceAll(row, "\u00a0", " ")
+}
+
+// isGlamourTable says a block renders as a table: one with outer pipes, or a
+// paragraph whose second line is a separator row, which is one without them.
+func isGlamourTable(b mdBlock, lines []string) bool {
+	return b.kind == "table" || b.kind == "para" && b.end-b.start >= 2 && strings.Contains(lines[b.start+1], "|") && tableSepRe.MatchString(lines[b.start+1])
+}
+
+// postStyleTableRow is postStyleRow for a table row, where a column rule must
+// not move. Glamour measured each cell with the token's brackets in it, so a
+// cell gets those cells back at its end. A token too long for its cell wraps
+// over rows and its brackets go the same way.
+func (a *App) postStyleTableRow(row string) string {
+	var b strings.Builder
+	pad := func(cell string) {
+		b.WriteString(cell)
+		b.WriteString(strings.Repeat(" ", strings.Count(cell, "⟦")+strings.Count(cell, "⟧")))
+	}
+	tokens := wikiTokenRe.FindAllStringIndex(row, -1)
+	inToken := func(i int) bool {
+		for _, t := range tokens {
+			if t[0] <= i && i < t[1] {
+				return true // an alias may hold a pipe of its own
+			}
+		}
+		return false
+	}
+	last := 0
+	for _, rule := range tableRuleRe.FindAllStringIndex(row, -1) {
+		if inToken(rule[0]) {
+			continue
+		}
+		pad(row[last:rule[0]])
+		b.WriteString(row[rule[0]:rule[1]])
+		last = rule[1]
+	}
+	pad(row[last:])
+	return finishTokens(a.postStyleRow(b.String()))
+}
+
+// finishTokens removes the brackets of a token that wrapped over rows and
+// gives back what the note itself held.
+func finishTokens(row string) string {
+	return tokenFinisher.Replace(row)
 }
 
 // renderGlamourLines renders a note block by block.
@@ -417,8 +478,12 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 		case "blank":
 			out = append(out, previewLine{text: "", srcLine: b.start})
 		default:
-			src := strings.Join(lines[b.start:b.end], "\n")
-			rendered, err := r.Render(prepareMarkdown(src))
+			src := prepareMarkdown(strings.Join(lines[b.start:b.end], "\n"))
+			if isGlamourTable(b, lines) {
+				// A narrow column has to wrap a long alias between its words.
+				src = strings.ReplaceAll(src, "\u00a0", " ")
+			}
+			rendered, err := r.Render(src)
 			if err != nil {
 				return nil, err
 			}
@@ -446,7 +511,12 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 			links = append(links, linksOnLine(lines[i])...)
 		}
 		for i, row := range rows {
-			pl := previewLine{text: a.postStyleRow(row), srcLine: b.start}
+			pl := previewLine{srcLine: b.start}
+			if isGlamourTable(b, lines) {
+				pl.text = a.postStyleTableRow(row)
+			} else {
+				pl.text = finishTokens(a.postStyleRow(row))
+			}
 			if i == 0 {
 				pl.links = links
 			}
@@ -470,7 +540,7 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 		if k >= 0 {
 			src = items[k]
 		}
-		pl := previewLine{text: a.postStyleRow(row), srcLine: src}
+		pl := previewLine{text: finishTokens(a.postStyleRow(row)), srcLine: src}
 		if k >= 0 && (len(out) == 0 || out[len(out)-1].srcLine != src) {
 			pl.links = linksOnLine(lines[src])
 			pl.task = taskLineRe.MatchString(lines[src])
