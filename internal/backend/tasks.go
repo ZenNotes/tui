@@ -28,7 +28,7 @@ type UpdateTaskInput struct {
 	Text *string
 	// ExpectedText is the task's content as the caller last saw it. An id counts
 	// the task's position, so after an edit above it the id names another task;
-	// when this no longer matches, nothing changes and the answer is nil.
+	// when this no longer matches, nothing changes and the call fails.
 	ExpectedText *string
 }
 
@@ -86,7 +86,7 @@ func UpdateTask(ctx context.Context, b Backend, in UpdateTaskInput) (*vault.Task
 		return nil, err
 	}
 	if in.ExpectedText != nil && strings.TrimSpace(*in.ExpectedText) != strings.TrimSpace(task.Content) {
-		return nil, nil
+		return nil, fmt.Errorf("Task %s now reads %q, not %q: the note changed. Run list_tasks again for its id.", in.ID, task.Content, *in.ExpectedText)
 	}
 	note, err := b.ReadNote(ctx, task.SourcePath)
 	if err != nil {
@@ -215,7 +215,7 @@ func updateFileTask(body string, task vault.Task, in UpdateTaskInput) (string, e
 		}
 	}
 	if asked > 1 {
-		return "", errors.New("A task note has one status, so pass only one of state, status and waiting.")
+		return "", errors.New("A task note keeps state, status and waiting in its one frontmatter status: pass only one of them.")
 	}
 	now := time.Now()
 	if in.State != nil {

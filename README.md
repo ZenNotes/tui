@@ -1057,7 +1057,7 @@ which it does not have yet:
 | `rename_asset`, `move_asset` | Rename or move an attachment and update the notes that link to it. `linksNotUpdated` lists any note it could not change. A new name cannot hold `# ? \| [ ] ^ % :` or control characters, or end with a dot, which would stop links reaching the file. |
 | `duplicate_asset` | Copies an attachment next to itself. |
 | `delete_asset`, `restore_asset` | Soft delete to the app's Trash, and undo by token. `list_assets` with `deleted: true` shows what can come back. Permanent deletion stays in the app. |
-| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. Finishing a task with `@repeat:` writes its next occurrence, as `toggle_task` does. Pass `expectedText` and a different task at that id answers null and changes nothing. |
+| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. Finishing a task with `@repeat:` writes its next occurrence, as `toggle_task` does. Pass `expectedText` to be refused when the note changed and the id now names another task. |
 | `daily_note` | Finds the daily, weekly or monthly note for a date under the vault's own settings, and says how to start it if it does not exist. |
 | `note_sections` | Lists a note's headings, or reads the part under one. |
 | `edit_section` | Appends to, prepends to or replaces the part of a note under one heading. |

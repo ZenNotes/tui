@@ -523,9 +523,7 @@ func TestStdioReviewFixes(t *testing.T) {
 				t.Fatalf("toggle_task wrote %q", got)
 			}
 
-			if text := e2eText(e2eOK(t, cs, "update_task", map[string]any{"id": "Projects/Moved.md#1", "state": "done", "expectedText": "second"})); text != "null" {
-				t.Fatalf("a different task there answers null, got %s", text)
-			}
+			e2eFails(t, cs, "update_task", map[string]any{"id": "Projects/Moved.md#1", "state": "done", "expectedText": "second"}, `now reads "third"`)
 			if got := e2eDisk(t, b.root, "Projects/Moved.md"); got != "- [ ] second\n- [ ] third\n" {
 				t.Fatalf("a refused update wrote %q", got)
 			}
@@ -536,7 +534,7 @@ func TestStdioReviewFixes(t *testing.T) {
 			if got := e2eDisk(t, b.root, "Projects/Task.md"); strings.Contains(got, "waiting: true") {
 				t.Fatalf("%q", got)
 			}
-			e2eFails(t, cs, "update_task", map[string]any{"id": "Projects/Task.md#task", "state": "done", "status": "backlog"}, "A task note has one status")
+			e2eFails(t, cs, "update_task", map[string]any{"id": "Projects/Task.md#task", "state": "done", "status": "backlog"}, "one frontmatter status")
 
 			if text := e2eText(e2eOK(t, cs, "list_assets", map[string]any{})); strings.Contains(text, "base.json") {
 				t.Fatalf("%s", text)

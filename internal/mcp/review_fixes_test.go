@@ -352,7 +352,8 @@ func TestUpdateTaskExpectedTextCatchesAnIdThatMoved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "s.md"), []byte("- [ ] second\n- [ ] third\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := mustCall(t, cs, "update_task", map[string]any{"id": second.ID, "state": "done", "expectedText": second.Content}); got != "null" {
+	got := mustFail(t, cs, "update_task", map[string]any{"id": second.ID, "state": "done", "expectedText": second.Content})
+	if !strings.Contains(got, `now reads "third", not "second"`) || !strings.Contains(got, "list_tasks") {
 		t.Fatalf("%s", got)
 	}
 	if body := readFile(t, root, "s.md"); body != "- [ ] second\n- [ ] third\n" {
@@ -445,7 +446,7 @@ func TestFileTaskFieldsTheParserReads(t *testing.T) {
 			{"waiting": true, "state": "open"},
 		} {
 			root, _, refuse := setup(t, "open")
-			if got := refuse(both); !strings.Contains(got, "A task note has one status") {
+			if got := refuse(both); !strings.Contains(got, "one frontmatter status") {
 				t.Errorf("%v: %s", both, got)
 			}
 			if body := readFile(t, root, "t.md"); body != note("open") {

@@ -400,7 +400,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "rename_asset",
-			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name, and `linksNotUpdated` lists any that could not be.",
+			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name; `linksNotUpdated` lists any it could not change, so fix those by hand. Names holding # ? | [ ] ^ or % are refused, since links could not reach the file.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string","description":"New file name with its extension, no folder."}},"required":["path","name"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")
@@ -426,7 +426,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "move_asset",
-			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated, and `linksNotUpdated` lists any that could not be. A taken name gets a number, so use the returned `path`.",
+			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated; `linksNotUpdated` lists any it could not change. A taken name gets a number, so use the returned `path`.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"targetDir":{"type":"string","description":"Vault-relative folder, such as assets/plots."}},"required":["path","targetDir"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")
