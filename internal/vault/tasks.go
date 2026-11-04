@@ -978,6 +978,29 @@ func SetTaskFileField(body, key, value string) string {
 	return UpdateFrontmatterFields(body, []FrontmatterUpdate{{Key: key, Value: v}})
 }
 
+// SetTaskFileStatusValue writes any status, a Kanban column included, and keeps
+// `completedDate` true to it: a done status dates the task unless it was done
+// already, and anything else clears the date. An empty status removes the key.
+func SetTaskFileStatusValue(body, status string, wasDone bool, now time.Time) string {
+	value := StrPtr(status)
+	if status == "" {
+		value = nil
+	}
+	if doneStatuses[strings.ToLower(status)] {
+		if wasDone {
+			return UpdateFrontmatterFields(body, []FrontmatterUpdate{{Key: "status", Value: value}})
+		}
+		return UpdateFrontmatterFields(body, []FrontmatterUpdate{
+			{Key: "status", Value: value},
+			{Key: "completedDate", Value: StrPtr(TodayISO(now))},
+		})
+	}
+	return UpdateFrontmatterFields(body, []FrontmatterUpdate{
+		{Key: "status", Value: value},
+		{Key: "completedDate", Value: nil},
+	})
+}
+
 // TaskFilePriorityValue maps a ZenNotes priority onto TaskNotes' vocabulary.
 func TaskFilePriorityValue(priority string) string {
 	switch priority {

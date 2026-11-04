@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ZenNotes/tui/internal/database"
@@ -269,6 +270,7 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 	}
 	var next string
 	found := false
+	finalID := taskID
 	if indexStr == "task" {
 		current, err := r.client.ScanTasksForPath(ctx, rel, true)
 		if err != nil {
@@ -286,7 +288,9 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 		if err != nil {
 			return nil, err
 		}
-		next, found = vault.ToggleTaskInBody(note.Body, index, dialect)
+		var finalIndex int
+		next, finalIndex, found = vault.ToggleTaskRepeating(note.Body, index, dialect, time.Now())
+		finalID = rel + "#" + strconv.Itoa(finalIndex)
 	}
 	if !found {
 		return nil, nil
@@ -299,7 +303,7 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 		return nil, err
 	}
 	for _, t := range after {
-		if t.ID == taskID {
+		if t.ID == finalID {
 			return &t, nil
 		}
 	}

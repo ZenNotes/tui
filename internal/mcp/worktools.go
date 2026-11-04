@@ -97,7 +97,7 @@ func workTools() []toolDef {
 	return []toolDef{
 		{
 			name:        "update_task",
-			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes. Returns the updated task, or null if the id no longer matches one.",
+			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes, except that state done on a task with `@repeat:` writes its next occurrence above it, as toggle_task does, and returns the finished one. An id counts the task's position in its note, so pass expectedText to be told when an edit moved it. On a task note, state, status and waiting are one field: pass only one. Returns the updated task, or null if the id no longer matches one.",
 			schema: `{"type":"object","properties":{
 "id":{"type":"string","description":"Task id from list_tasks: sourcePath#taskIndex."},
 "due":{"type":"string","description":"YYYY-MM-DD, or \"\" to clear."},
@@ -105,14 +105,15 @@ func workTools() []toolDef {
 "waiting":{"type":"boolean"},
 "state":{"type":"string","enum":["open","done","in-progress","cancelled"]},
 "status":{"type":"string","description":"The column a Kanban board groups it under, one word, or \"\" to clear."},
-"text":{"type":"string","description":"Replaces everything after the checkbox, one line, due and priority tokens included. Not for a task note: use rename_note."}},"required":["id"]}`,
+"text":{"type":"string","description":"Replaces everything after the checkbox, one line, due and priority tokens included. Not for a task note: use rename_note."},
+"expectedText":{"type":"string","description":"The task's content from list_tasks. If it no longer reads this, nothing changes and the call fails."}},"required":["id"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				in := backend.UpdateTaskInput{}
 				var err error
 				if in.ID, err = a.requireString("id"); err != nil {
 					return nil, err
 				}
-				for key, target := range map[string]**string{"due": &in.Due, "priority": &in.Priority, "state": &in.State, "status": &in.Status, "text": &in.Text} {
+				for key, target := range map[string]**string{"due": &in.Due, "priority": &in.Priority, "state": &in.State, "status": &in.Status, "text": &in.Text, "expectedText": &in.ExpectedText} {
 					if *target, err = optionalStringPtr(a, key); err != nil {
 						return nil, err
 					}
@@ -207,15 +208,16 @@ func workTools() []toolDef {
 				if found != nil {
 					return append(result, orderedResult{{"exists", true}, {"path", found.Path}, {"note", *found}}...), nil
 				}
-				return append(result, orderedResult{
-					{"exists", false},
-					{"createWith", orderedResult{
-						{"folder", string(vault.FolderInbox)},
-						{"subpath", loc.Subpath},
-						{"title", loc.Title},
-						{"body", periodicBody(ctx, b, kind, settings, loc.Title, date)},
-					}},
-				}...), nil
+				createWith := orderedResult{{"folder", string(vault.FolderInbox)}}
+				// A folder this client cannot see stays unnamed, here as anywhere.
+				if s, scoped := b.(*scopedBackend); !scoped || s.sharesPath(ctx, rel) {
+					createWith = append(createWith, orderedResult{{"subpath", loc.Subpath}}...)
+				}
+				createWith = append(createWith, orderedResult{
+					{"title", loc.Title},
+					{"body", periodicBody(ctx, b, kind, settings, loc.Title, date)},
+				}...)
+				return append(result, orderedResult{{"exists", false}, {"createWith", createWith}}...), nil
 			},
 		},
 		{

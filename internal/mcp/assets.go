@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -73,6 +74,20 @@ func matchAsset(all []vault.AssetMeta, raw string) (vault.AssetMeta, bool) {
 	return match, count == 1
 }
 
+// shownAssets is list_assets' answer: the listing without a database's schema
+// file and backups, which the app does not show as attachments either. The tools
+// below keep the whole listing, since a schema file is how they know a CSV is a
+// database.
+func shownAssets(all []vault.AssetMeta) []vault.AssetMeta {
+	out := make([]vault.AssetMeta, 0, len(all))
+	for _, a := range all {
+		if !database.IsLooseInternalPath(a.Path) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func findAsset(ctx context.Context, b Backend, raw string) (vault.AssetMeta, []vault.AssetMeta, error) {
 	all, err := b.ListAssets(ctx)
 	if err != nil {
@@ -119,6 +134,22 @@ func checkAssetName(name string) error {
 		return errors.New("Notes are not attachments: use create_note or rename_note.")
 	case strings.HasSuffix(lower, ".excalidraw"), vault.IsAtomicWriteTempPath(trimmed), database.IsSidecarPath(trimmed):
 		return errors.New("That kind of file cannot be managed as an attachment.")
+	}
+	return nil
+}
+
+// checkAssetRename adds what a rename must refuse and an upload need not, since
+// an upload's name is cleaned the way the app's import cleans it. These are read
+// as link syntax (`#` a heading, `?` a query, `|` an alias, `]` the end of a
+// wikilink, `^` a block, `%` an escape), so every link to the file would stop
+// resolving while the rename reported success.
+func checkAssetRename(name string) error {
+	if err := checkAssetName(name); err != nil {
+		return err
+	}
+	trimmed := strings.TrimSpace(name)
+	if strings.ContainsAny(trimmed, "#?|[]^%") || strings.IndexFunc(trimmed, unicode.IsControl) >= 0 {
+		return errors.New("That name would break links to the file: leave out # ? | [ ] ^ % and control characters.")
 	}
 	return nil
 }
@@ -317,7 +348,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "rename_asset",
-			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name.",
+			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name; `linksNotUpdated` lists any it could not change, so fix those by hand. Names holding # ? | [ ] ^ or % are refused, since links could not reach the file.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string","description":"New file name with its extension, no folder."}},"required":["path","name"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")
@@ -328,7 +359,7 @@ func assetTools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
-				if err := checkAssetName(name); err != nil {
+				if err := checkAssetRename(name); err != nil {
 					return nil, err
 				}
 				meta, all, err := findAsset(ctx, b, rel)
@@ -343,7 +374,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "move_asset",
-			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated. A taken name gets a number, so use the returned `path`.",
+			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated; `linksNotUpdated` lists any it could not change. A taken name gets a number, so use the returned `path`.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"targetDir":{"type":"string","description":"Vault-relative folder, such as assets/plots."}},"required":["path","targetDir"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")

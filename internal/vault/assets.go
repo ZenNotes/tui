@@ -97,30 +97,45 @@ func (v *Vault) RenameAsset(rel, nextName string) (AssetMeta, error) {
 	if err != nil {
 		return AssetMeta{}, err
 	}
-	destAbs := filepath.Join(filepath.Dir(srcAbs), cleanName)
+	dir := filepath.Dir(srcAbs)
+	destAbs := filepath.Join(dir, cleanName)
 	if destAbs != srcAbs {
-		if dstInfo, statErr := os.Stat(destAbs); statErr == nil {
-			// Something is already at the destination. Allow it only when it is
-			// literally the same file (case-only rename on a case-insensitive
-			// filesystem), routing through a temp name; otherwise it collides.
-			srcInfo, srcErr := os.Stat(srcAbs)
+		// Lstat, because a link at the destination is something there too, even
+		// when what it names is missing.
+		dstInfo, statErr := os.Lstat(destAbs)
+		switch {
+		case statErr == nil:
+			// Allowed only when it is literally this file under another spelling
+			// (a case-only rename on a case-insensitive volume). A hard link is the
+			// same file too, but it has an entry of its own to lose.
+			srcInfo, srcErr := os.Lstat(srcAbs)
 			if srcErr != nil {
 				return AssetMeta{}, srcErr
 			}
-			if !os.SameFile(dstInfo, srcInfo) {
+			entries, err := dirEntryNames(dir)
+			if err != nil {
+				return AssetMeta{}, err
+			}
+			if !os.SameFile(dstInfo, srcInfo) || (entries[filepath.Base(srcAbs)] && entries[cleanName]) {
 				return AssetMeta{}, fmt.Errorf("an asset named %q already exists in this folder", cleanName)
 			}
-			tmp := srcAbs + ".zenrename.tmp"
+			tmp, err := uniquePath(dir, filepath.Base(srcAbs)+".zenrename", ".tmp")
+			if err != nil {
+				return AssetMeta{}, err
+			}
 			if err := os.Rename(srcAbs, tmp); err != nil {
 				return AssetMeta{}, err
 			}
 			if err := os.Rename(tmp, destAbs); err != nil {
+				_ = os.Rename(tmp, srcAbs)
 				return AssetMeta{}, err
 			}
-		} else if !errors.Is(statErr, os.ErrNotExist) {
+		case !errors.Is(statErr, os.ErrNotExist):
 			return AssetMeta{}, statErr
-		} else if err := os.Rename(srcAbs, destAbs); err != nil {
-			return AssetMeta{}, err
+		default:
+			if err := os.Rename(srcAbs, destAbs); err != nil {
+				return AssetMeta{}, err
+			}
 		}
 	}
 	return v.assetMetaForAbs(destAbs)
@@ -132,15 +147,17 @@ func (v *Vault) RenameAsset(rel, nextName string) (AssetMeta, error) {
 // caller, because `zn tui` rewrites them through its open buffers.
 func (v *Vault) RenameAssetRewritingLinksIn(rel, nextName string, rewrite func(path string) bool) (AssetMeta, error) {
 	// Snapshot first so references still resolve to the asset under its old name.
-	assetsBefore, _ := v.ListAssets()
-	notesBefore, _ := v.ListNotes()
+	assetsBefore, notesBefore, err := v.assetRewriteSnapshot()
+	if err != nil {
+		return AssetMeta{}, err
+	}
 	oldRel := vaultRelOf(v, rel)
 	meta, err := v.RenameAsset(rel, nextName)
 	if err != nil {
 		return AssetMeta{}, err
 	}
 	if meta.Path != oldRel {
-		v.rewriteAssetReferences(notesBefore, assetsBefore, oldRel, meta.Path, rewrite)
+		meta.LinksNotUpdated = v.rewriteAssetReferences(notesBefore, assetsBefore, oldRel, meta.Path, rewrite)
 	}
 	return meta, nil
 }
@@ -149,6 +166,15 @@ func (v *Vault) RenameAssetRewritingLinksIn(rel, nextName string, rewrite func(p
 // unified assets/ folder), mirroring the desktop moveAsset. The filename is made
 // unique in the destination. (#379)
 func (v *Vault) MoveAsset(rel, targetDir string) (AssetMeta, error) {
+	return v.moveAsset(rel, targetDir, nil)
+}
+
+// ErrAssetDestinationRefused is a move whose final path the caller turned down.
+var ErrAssetDestinationRefused = errors.New("that destination is refused")
+
+// moveAsset refuses before anything changes when accept turns down the final
+// path, which only this point knows, since a taken name gets a number.
+func (v *Vault) moveAsset(rel, targetDir string, accept func(path string) bool) (AssetMeta, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	srcAbs, err := v.assertAssetFile(rel)
@@ -159,16 +185,22 @@ func (v *Vault) MoveAsset(rel, targetDir string) (AssetMeta, error) {
 	if err != nil {
 		return AssetMeta{}, err
 	}
-	if err := os.MkdirAll(destDir, v.dirMode); err != nil {
-		return AssetMeta{}, err
-	}
-	if filepath.Clean(destDir) == filepath.Clean(filepath.Dir(srcAbs)) {
+	// Compared by identity: ASSETS on a case-insensitive volume, or a link to the
+	// folder, is where the file already is, and would otherwise look like a taken
+	// name and get a number.
+	if sameDirectory(destDir, filepath.Dir(srcAbs)) {
 		return v.assetMetaForAbs(srcAbs)
 	}
 	name := filepath.Base(srcAbs)
 	ext := filepath.Ext(name)
 	destAbs, err := uniquePath(destDir, strings.TrimSuffix(name, ext), ext)
 	if err != nil {
+		return AssetMeta{}, err
+	}
+	if accept != nil && !accept(v.relPosix(destAbs)) {
+		return AssetMeta{}, ErrAssetDestinationRefused
+	}
+	if err := os.MkdirAll(destDir, v.dirMode); err != nil {
 		return AssetMeta{}, err
 	}
 	if err := os.Rename(srcAbs, destAbs); err != nil {
@@ -178,19 +210,61 @@ func (v *Vault) MoveAsset(rel, targetDir string) (AssetMeta, error) {
 }
 
 // MoveAssetRewritingLinksIn is MoveAsset plus the link rewrite, in the notes
-// rewrite accepts (nil: every note).
+// rewrite accepts (nil: every note). A filter also has to accept where the file
+// lands, because it is what the caller is allowed to see.
 func (v *Vault) MoveAssetRewritingLinksIn(rel, targetDir string, rewrite func(path string) bool) (AssetMeta, error) {
-	assetsBefore, _ := v.ListAssets()
-	notesBefore, _ := v.ListNotes()
+	assetsBefore, notesBefore, err := v.assetRewriteSnapshot()
+	if err != nil {
+		return AssetMeta{}, err
+	}
 	oldRel := vaultRelOf(v, rel)
-	meta, err := v.MoveAsset(rel, targetDir)
+	meta, err := v.moveAsset(rel, targetDir, rewrite)
 	if err != nil {
 		return AssetMeta{}, err
 	}
 	if meta.Path != oldRel {
-		v.rewriteAssetReferences(notesBefore, assetsBefore, oldRel, meta.Path, rewrite)
+		meta.LinksNotUpdated = v.rewriteAssetReferences(notesBefore, assetsBefore, oldRel, meta.Path, rewrite)
 	}
 	return meta, nil
+}
+
+func (v *Vault) assetRewriteSnapshot() ([]AssetMeta, []NoteMeta, error) {
+	assets, err := v.ListAssets()
+	if err != nil {
+		return nil, nil, err
+	}
+	notes, err := v.ListNotes()
+	if err != nil {
+		return nil, nil, err
+	}
+	return assets, notes, nil
+}
+
+func dirEntryNames(dir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		names[e.Name()] = true
+	}
+	return names, nil
+}
+
+func sameDirectory(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	infoA, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	infoB, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(infoA, infoB)
 }
 
 // vaultRelOf spells rel the way the listings do, for comparing against them.

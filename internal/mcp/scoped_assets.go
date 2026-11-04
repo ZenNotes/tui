@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -84,7 +85,26 @@ func (sb *scopedBackend) assetFor(ctx context.Context, raw string, a Access) (va
 	if !ok {
 		return vault.AssetMeta{}, nil, assetNotFound(raw)
 	}
+	if a == AccessWrite {
+		if err := sb.refuseDatabaseFile(ctx, meta); err != nil {
+			return vault.AssetMeta{}, nil, err
+		}
+	}
 	return meta, v, nil
+}
+
+// refuseDatabaseFile asks about the whole listing. A CSV whose schema file is
+// hidden from this client is still half of a database, and changing it alone
+// would split the pair.
+func (sb *scopedBackend) refuseDatabaseFile(ctx context.Context, meta vault.AssetMeta) error {
+	if !database.IsLooseCSVPath(meta.Path) {
+		return refuseDatabaseFile(meta, nil)
+	}
+	all, err := sb.inner.ListAssets(ctx)
+	if err != nil {
+		return err
+	}
+	return refuseDatabaseFile(meta, all)
 }
 
 // assetRefusal is the one answer for every folder a client may not put a file
@@ -253,12 +273,25 @@ func (sb *scopedBackend) MoveAsset(ctx context.Context, rel, targetDir string) (
 	if !ok {
 		return vault.AssetMeta{}, errAssetLinksEverywhere
 	}
-	return r.MoveAssetRewritingLinksIn(ctx, meta.Path, dir, v.visible)
+	// The filter also decides where the file may land: the folder being visible
+	// says nothing about the final name, which only the move itself knows.
+	moved, err := r.MoveAssetRewritingLinksIn(ctx, meta.Path, dir, v.visible)
+	if errors.Is(err, vault.ErrAssetDestinationRefused) {
+		return vault.AssetMeta{}, v.assetRefusal()
+	}
+	return moved, err
 }
 
 // errAssetLinksEverywhere is the refusal for a server: it rewrites links in
 // every note, including ones the client cannot see, as with rename_note.
 var errAssetLinksEverywhere = errors.New("Renaming or moving attachments on a ZenNotes server is not available to an assistant that sees only part of the vault: the server rewrites links in every note, including ones this assistant cannot see.")
+
+// sharesPath says whether this client sees a path at all, for a tool about to
+// name one it did not get from a listing. If that cannot be told, it does not.
+func (sb *scopedBackend) sharesPath(ctx context.Context, rel string) bool {
+	v, err := sb.load(ctx)
+	return err == nil && v.visible(rel)
+}
 
 func (sb *scopedBackend) DuplicateAsset(ctx context.Context, rel string) (vault.AssetMeta, error) {
 	meta, v, err := sb.assetFor(ctx, rel, AccessWrite)

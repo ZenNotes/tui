@@ -697,15 +697,27 @@ The Go server gained eleven tools, 45 in all. The desktop's server has not mirro
 | `list_assets {deleted: true}` | read | Entries whose original path is visible. |
 | `upload_asset` | write | Writes only to the vault's assets folder, so `assets` must be visible (and on a local vault a real directory). Otherwise it refuses with one message. |
 | `rename_asset` | write | Source and new path visible. Links are rewritten in visible notes only on a local vault. A server rewrites every note, so a path-restricted client is refused there, as with `rename_note` (decision 6). |
-| `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
+| `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. The final path must be visible too, numbered name included, since a deny entry can name a file inside a shared folder. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
 | `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. `duplicate_asset` makes a readable copy, so a path-restricted client on a server is refused it, as with `read_asset`. |
 | `restore_asset` | write | Only an entry `list_assets {deleted: true}` would show, else `Deleted asset not found: <token>`. |
-| `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name. |
+| `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name, and no `subpath` when the note's folder is hidden from it. |
 | `update_task`, `edit_section` | write | Composed from `ReadNote` and `WriteNote`, so the note must be visible; recorded for agent edit review. |
 
 Every asset tool finds its file in the asset listing even with full access, so nothing but an
 asset can be named (`.zennotes/vault.json` and a note are both "not found"), and none of them
-changes a loose CSV database or its schema file.
+changes a loose CSV database or its schema file. That check reads the whole listing, because a
+scope can share the CSV and hide its schema file. `list_assets` leaves out a schema file and the
+`.csv.bak` backups, as the app does.
+
+A rename refuses a name holding `# ? | [ ] ^ %` or a control character: each is link syntax, so
+every link to the file would stop resolving while the rename reported success. An upload's name
+is cleaned instead, as the app's import does. A note a rewrite could not read or write comes back
+in `linksNotUpdated`, on a local vault. A server rewrites links itself and does not say.
+
+`update_task` and `toggle_task` finish a recurring task the way the app does, through
+`internal/vault/task_recurrence.go`, a port of `task-recurrence.ts` that runs the same case table.
+The TUI's own task toggles and the editor do not use it yet. Task ids count position, so they
+move when the note above them changes; `update_task` takes `expectedText` to catch that.
 
 Purge and empty-deleted are not exposed, under any scope. A soft delete already does the job an
 assistant has; purging cannot be undone and frees only disk space, which is the user's call and
@@ -722,5 +734,15 @@ brackets on a local vault, or it would stop being a link. `asset_link_rename.go`
 znserver's and the desktop's copies here until they get the same fix, so on a server these links
 still break.
 
+A rewrite under a path scope writes a link's full path where a bare name would do, since whether
+a bare name is still unique depends on files the client cannot see. A bare link whose name a
+hidden file shares already resolves to nothing, in the renderer as here, so it is left as it is.
+
 Leaks, in the terms of section 6: a rename onto a hidden file's exact name answers "already
-exists", the same one bit as the name collisions above. Otherwise none.
+exists", and a file that lands on a hidden file's name gets a number (`secret 2.png` from
+`upload_asset`, `move_asset`, `duplicate_asset` or `restore_asset`). Both are the same one bit as
+the name collisions above, for a guessed name in a folder the client can write to. There is no
+cheap complete fix: picking a number around hidden files still shows which numbers were skipped.
+A bare link left alone, as above, gives one bit about a hidden file's basename. A numbered name
+from `duplicate_asset` or `restore_asset` can also land on a deny entry, which leaves a file the
+client cannot see. Otherwise none.

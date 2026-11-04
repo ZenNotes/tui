@@ -248,7 +248,10 @@ list, tag searches and `zn mcp` leave them out; `--include-excluded` lists
 their tasks. In the terminal app, Search notes finds them once the query
 starts with the folder's path (`Templates/`).
 
-Use the stable ID returned by `task list` with `task toggle <id>`. Comment
+Use the ID returned by `task list` with `task toggle <id>`. An ID counts the
+task's position in its note, so list again after that note changes. Finishing a
+task with `@repeat:` writes its next occurrence above it, as the app does, and
+the finished line drops the rule. Comment
 replies and resolve/reopen operations take a thread ID. `base add` and
 `base set` accept repeated `--set Field=Value` flags for existing fields;
 `base add --body` or `--page` also creates a record page. When the view a
@@ -1051,10 +1054,10 @@ which it does not have yet:
 | --- | --- |
 | `upload_asset` | Adds a file from base64, up to 16 MiB, to the `assets` folder, never overwriting, and returns the embed to paste into a note. |
 | `read_asset` | Returns an attachment, up to 5 MiB: an image a model can see, text as text, anything else as an embedded file. |
-| `rename_asset`, `move_asset` | Rename or move an attachment and update the notes that link to it. |
+| `rename_asset`, `move_asset` | Rename or move an attachment and update the notes that link to it. `linksNotUpdated` lists any note it could not change. A new name cannot hold `# ? \| [ ] ^ %` or control characters, which would stop links reaching the file. |
 | `duplicate_asset` | Copies an attachment next to itself. |
 | `delete_asset`, `restore_asset` | Soft delete to the app's Trash, and undo by token. `list_assets` with `deleted: true` shows what can come back. Permanent deletion stays in the app. |
-| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. |
+| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. Finishing a task with `@repeat:` writes its next occurrence, as `toggle_task` does. Pass `expectedText` to be refused when the note changed and the id now names another task. |
 | `daily_note` | Finds the daily, weekly or monthly note for a date under the vault's own settings, and says how to start it if it does not exist. |
 | `note_sections` | Lists a note's headings, or reads the part under one. |
 | `edit_section` | Appends to, prepends to or replaces the part of a note under one heading. |
@@ -1090,8 +1093,9 @@ so zn keeps following the app.
 
 By default an MCP client sees the whole vault. Flags on `zn mcp` narrow what it
 can see and change, and the server enforces them on every tool (listings,
-search, tags, tasks, backlinks, assets, comments, error messages), so hidden
-notes cannot be found indirectly:
+search, tags, tasks, backlinks, assets, comments, error messages). A hidden note
+or file does not show up in any of those. With write access, a client can still
+learn that a name it guesses is taken (see below):
 
 ```bash
 zn mcp --allow-path Projects --allow-path Areas/Health --deny-path Projects/Clients --read-only
@@ -1143,6 +1147,13 @@ What the client gets:
   above: only visible notes are rewritten, and on a server a scoped client
   cannot do it. A scoped client on a server cannot read or duplicate a file
   either; it can list, upload, delete and restore.
+- Names are the one thing a write can reveal. A file that lands on a taken name
+  gets a number, and a hidden file counts as taken: uploading `secret.png` beside
+  a hidden `secret.png` returns `secret 2.png`, and moving, duplicating and
+  restoring work the same way. Renaming onto a hidden file's name answers
+  "already exists". So a client that can write to a folder can test whether a
+  name it guesses exists there, though never read the file. Keep private files in
+  a folder of their own, and hide the folder, if their names are private too.
 - A folder is renamed or deleted as a whole only when nothing inside it is
   hidden.
 - A `--deny-path` that matches nothing in the vault (renamed outside ZenNotes,

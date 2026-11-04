@@ -454,7 +454,7 @@ func TestStdioEveryScopeFailsClosed(t *testing.T) {
 			rename := map[string]any{"path": "assets/pic.png", "name": "photo.png"}
 			if b.name == "local" {
 				e2eOK(t, cs, "rename_asset", rename)
-				if plan := e2eDisk(t, b.root, "Projects/Plan.md"); !strings.Contains(plan, "![[photo.png]]") {
+				if plan := e2eDisk(t, b.root, "Projects/Plan.md"); !strings.Contains(plan, "![[assets/photo.png]]") {
 					t.Fatalf("a visible note keeps its link:\n%s", plan)
 				}
 				if diary := e2eDisk(t, b.root, "Journal/Diary.md"); !strings.Contains(diary, "![[assets/pic.png]]") {
@@ -478,5 +478,105 @@ func TestStdioEveryScopeFailsClosed(t *testing.T) {
 			e2eFails(t, narrow, "restore_asset", map[string]any{"undoToken": token}, "Deleted asset not found")
 			e2eAbsent(t, b.root, "assets/n.png")
 		})
+	}
+}
+
+// What the review of the tools above found, through the built binary, on a local
+// vault and on a server.
+func TestStdioReviewFixes(t *testing.T) {
+	bin := buildZN(t)
+	for _, start := range e2eBackends(t) {
+		b := start(t)
+		t.Run(b.name, func(t *testing.T) {
+			for rel, body := range map[string]string{
+				"Projects/Done.md":          "- [ ] water @repeat:daily due:2026-01-01\n",
+				"Projects/Toggle.md":        "- [ ] water @repeat:daily due:2026-01-01\n",
+				"Projects/Moved.md":         "- [ ] second\n- [ ] third\n",
+				"Projects/Task.md":          "---\ntags: [task]\nstatus: open\n---\n# Task\n",
+				"Lists/Books.csv":           "a\n1\n",
+				"Lists/Books.csv.base.json": "{}",
+			} {
+				abs := filepath.Join(b.root, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cs := connectStdio(t, bin, b)
+
+			e2eFails(t, cs, "rename_asset", map[string]any{"path": "assets/pic.png", "name": "b#c.png"}, "would break links")
+
+			next := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+			want := "- [ ] water @repeat:daily due:" + next + "\n- [x] water due:2026-01-01\n"
+			if got := e2eField(t, e2eOK(t, cs, "update_task", map[string]any{"id": "Projects/Done.md#0", "state": "done"}), "id"); got != "Projects/Done.md#1" {
+				t.Fatalf("update_task returned %s", got)
+			}
+			if got := e2eDisk(t, b.root, "Projects/Done.md"); got != want {
+				t.Fatalf("update_task wrote %q", got)
+			}
+			if got := e2eField(t, e2eOK(t, cs, "toggle_task", map[string]any{"id": "Projects/Toggle.md#0"}), "id"); got != "Projects/Toggle.md#1" {
+				t.Fatalf("toggle_task returned %s", got)
+			}
+			if got := e2eDisk(t, b.root, "Projects/Toggle.md"); got != want {
+				t.Fatalf("toggle_task wrote %q", got)
+			}
+
+			e2eFails(t, cs, "update_task", map[string]any{"id": "Projects/Moved.md#1", "state": "done", "expectedText": "second"}, `now reads "third"`)
+			if got := e2eDisk(t, b.root, "Projects/Moved.md"); got != "- [ ] second\n- [ ] third\n" {
+				t.Fatalf("a refused update wrote %q", got)
+			}
+
+			if got := e2eField(t, e2eOK(t, cs, "update_task", map[string]any{"id": "Projects/Task.md#task", "waiting": true}), "status"); got != "waiting" {
+				t.Fatalf("waiting: %s", got)
+			}
+			if got := e2eDisk(t, b.root, "Projects/Task.md"); strings.Contains(got, "waiting: true") {
+				t.Fatalf("%q", got)
+			}
+			e2eFails(t, cs, "update_task", map[string]any{"id": "Projects/Task.md#task", "state": "done", "status": "backlog"}, "frontmatter status")
+
+			if text := e2eText(e2eOK(t, cs, "list_assets", map[string]any{})); strings.Contains(text, "base.json") {
+				t.Fatalf("%s", text)
+			}
+			e2eFails(t, cs, "delete_asset", map[string]any{"path": "Lists/Books.csv"}, "belongs to a ZenNotes database")
+			e2eAbsentNot(t, b.root, "Lists/Books.csv")
+		})
+	}
+}
+
+// A path scope, on both backends: a hidden daily folder stays unnamed, and the
+// half of a database the client cannot see still protects the half it can.
+func TestStdioReviewFixesUnderAScope(t *testing.T) {
+	bin := buildZN(t)
+	for _, start := range e2eBackends(t) {
+		b := start(t)
+		t.Run(b.name, func(t *testing.T) {
+			for rel, body := range map[string]string{
+				"Lists/Books.csv":           "a\n1\n",
+				"Lists/Books.csv.base.json": "{}",
+			} {
+				abs := filepath.Join(b.root, filepath.FromSlash(rel))
+				if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cs := connectStdio(t, bin, b, "--allow-path", "Projects", "--allow-path", "Lists/Books.csv")
+			if text := e2eText(e2eOK(t, cs, "daily_note", map[string]any{"date": "2026-03-05"})); strings.Contains(text, "Journal") {
+				t.Fatalf("a hidden folder is named: %s", text)
+			}
+			e2eFails(t, cs, "delete_asset", map[string]any{"path": "Lists/Books.csv"}, "belongs to a ZenNotes database")
+			e2eAbsentNot(t, b.root, "Lists/Books.csv")
+		})
+	}
+}
+
+func e2eAbsentNot(t *testing.T, root, rel string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+		t.Fatalf("%s should still be there: %v", rel, err)
 	}
 }

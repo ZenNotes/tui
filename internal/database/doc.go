@@ -171,6 +171,13 @@ func IsSidecarPath(rel string) bool {
 	return strings.HasSuffix(strings.ToLower(toPosix(rel)), ".csv"+SidecarSuffix)
 }
 
+// IsLooseInternalPath is true for what a loose CSV keeps beside it that is not
+// the user's: its schema file and the backups of either.
+func IsLooseInternalPath(rel string) bool {
+	p := strings.ToLower(toPosix(rel))
+	return IsSidecarPath(p) || strings.HasSuffix(p, ".csv.bak") || strings.HasSuffix(p, ".csv"+SidecarSuffix+".bak")
+}
+
 // IsLooseCSVPath is true for a `.csv` outside any `.base` folder.
 func IsLooseCSVPath(rel string) bool {
 	p := strings.ToLower(toPosix(rel))
