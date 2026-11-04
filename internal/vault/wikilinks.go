@@ -175,10 +175,6 @@ func wikiCodeMask(body string) []bool {
 	return mask
 }
 
-// CodeMask reports which bytes of body sit in fenced or inline code, by the
-// line-based rules the desktop's link scanning uses.
-func CodeMask(body string) []bool { return wikiCodeMask(body) }
-
 // codeFenceMarker reads a line's fence marker of three or more backticks or
 // tildes, and what follows it. n is 0 when the line has none.
 func codeFenceMarker(line string) (char byte, n int, rest string) {

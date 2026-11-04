@@ -252,6 +252,267 @@ func TestPreviewCodeHoldsNoTasks(t *testing.T) {
 	}
 }
 
+// Each block is parsed alone, so content indented under a list item must stay
+// with its list or lose its meaning to an indented code block.
+func TestPreviewListContentAcrossBlankLines(t *testing.T) {
+	for _, c := range []struct {
+		name, src, want string
+		links           string
+	}{
+		{"link in a paragraph", "1. Step one\n\n    See [[Real|alias]] for more", "See alias for more", "Real"},
+		{"link with two spaces", "- item\n\n  See [[Real|alias]] for more", "See alias for more", "Real"},
+		{"link on a later item's paragraph", "- a\n- b\n\n    See [[Real|alias]]\n- c [[C|d]]", "See alias", "Real,C"},
+		{"tab indent", "- item\n\n\tSee [[Real|alias]]", "See alias", "Real"},
+		{"text after a standalone math line", "1. item\n\n    $$x^2$$\n\n    See [[Real|alias]]", "See alias", "Real"},
+		{"code after a paragraph", "- item\n\n  See [[Real|alias]]\n\n      [[Code|c]]", "[[Code|c]]", "Real"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rows := previewRows(t, "auto", c.src)
+			all := []string{}
+			for _, r := range rows {
+				all = append(all, ansi.Strip(r.text))
+			}
+			if joined := strings.Join(all, "\n"); !strings.Contains(joined, c.want) {
+				t.Fatalf("missing %q in:\n%s", c.want, joined)
+			}
+			if got := strings.Join(previewLinks(rows), ","); got != c.links {
+				t.Fatalf("links %q, want %q", got, c.links)
+			}
+		})
+	}
+}
+
+// Glamour runs a list item's paragraphs together unless they are kept apart.
+func TestPreviewItemParagraphsStayApart(t *testing.T) {
+	for _, c := range []struct {
+		name, src string
+		want      []string
+	}{
+		{"ordered", "1. Step one\n\n    Then two", []string{"1. Step one", "", "Then two"}},
+		{"bullet", "- Step one\n\n  Then two", []string{"• Step one", "", "Then two"}},
+		{"three paragraphs", "- one\n\n  two\n\n  three", []string{"• one", "", "two", "", "three"}},
+		{"whitespace on the blank line", "- one\n  \n  two", []string{"• one", "", "two"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := []string{}
+			for _, r := range previewRows(t, "auto", c.src) {
+				got = append(got, strings.TrimSpace(ansi.Strip(r.text)))
+			}
+			if strings.Join(got, "|") != strings.Join(c.want, "|") {
+				t.Fatalf("rows %q, want %q", got, c.want)
+			}
+		})
+	}
+	// A blank line inside a fence is the code's own and stays blank.
+	src := "- a\n  ```\n  x\n\n  y\n  ```"
+	if got := keepItemParagraphsApart(src); got != src {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestPreviewEmbedUnderAListItemKeepsItsCard(t *testing.T) {
+	a, _ := linkTestApp(t, map[string]string{"Index.md": "x", "Other.md": "embedded body"})
+	a.prefs.PreviewStyle = "auto"
+	rows, err := a.renderGlamourLinesFrom("- item\n\n    ![[Other]]\n", 70, "Index.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := []string{}
+	for _, r := range rows {
+		all = append(all, ansi.Strip(r.text))
+	}
+	if joined := strings.Join(all, "\n"); !strings.Contains(joined, "embedded body") {
+		t.Fatalf("embed not transcluded:\n%s", joined)
+	}
+}
+
+func TestPreviewNestedTaskAfterABlankLineToggles(t *testing.T) {
+	rows := previewRows(t, "auto", "- top\n\n    - [ ] nested task")
+	for _, r := range rows {
+		if strings.Contains(ansi.Strip(r.text), "nested task") {
+			if !r.task || r.srcLine != 2 {
+				t.Fatalf("task=%v srcLine=%d", r.task, r.srcLine)
+			}
+			return
+		}
+	}
+	t.Fatal("nested task row missing")
+}
+
+// Rows are matched to list items by their markers, so a code line that looks
+// like an item must not push the rows after it onto the wrong source line.
+func TestPreviewTaskRowsStayOnTheirLinesPastCode(t *testing.T) {
+	for _, code := range []string{"[x] note", "- dash", "1. one", "☐ box", "-", "* star"} {
+		t.Run(code, func(t *testing.T) {
+			rows := previewRows(t, "auto", "- a\n  ```\n  "+code+"\n  ```\n- [ ] b\n- [ ] c\n- [ ] d")
+			want := map[string]int{"b": 4, "c": 5, "d": 6}
+			seen := 0
+			for _, r := range rows {
+				plain := strings.TrimSpace(ansi.Strip(r.text))
+				if strings.HasPrefix(plain, "☐ ") && code != "☐ box" || strings.HasPrefix(plain, "☐ ") && plain != "☐ box" {
+					line, ok := want[strings.TrimPrefix(plain, "☐ ")]
+					if !ok {
+						t.Fatalf("unexpected row %q", plain)
+					}
+					seen++
+					if r.srcLine != line || !r.task {
+						t.Fatalf("%q: srcLine=%d task=%v, want line %d", plain, r.srcLine, r.task, line)
+					}
+				}
+				if plain == code && r.srcLine != 0 {
+					t.Fatalf("code row %q mapped to line %d, want its item's line 0", plain, r.srcLine)
+				}
+			}
+			if seen != 3 {
+				t.Fatalf("saw %d task rows", seen)
+			}
+		})
+	}
+}
+
+// A blank line inside a fence is still inside the fence.
+func TestPreviewBlankLineInAFenceInAList(t *testing.T) {
+	src := "- item\n  ```\n  [[A|b]]\n\n  [[C|d]]\n  ```\n- after [[R|r]]"
+	blocks := splitBlocks(strings.Split(src, "\n"), false)
+	if len(blocks) != 1 || blocks[0].kind != "list" {
+		t.Fatalf("blocks %+v", blocks)
+	}
+	rows := previewRows(t, "auto", src)
+	all := []string{}
+	for _, r := range rows {
+		all = append(all, ansi.Strip(r.text))
+	}
+	joined := strings.Join(all, "\n")
+	for _, want := range []string{"[[A|b]]", "[[C|d]]", "after r"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+	if got := strings.Join(previewLinks(rows), ","); got != "R" {
+		t.Fatalf("links %q", got)
+	}
+	// An unclosed fence ends with its list item.
+	blocks = splitBlocks(strings.Split("- a\n  ```\n  x\n\nafter", "\n"), false)
+	if blocks[len(blocks)-1].kind != "para" {
+		t.Fatalf("blocks %+v", blocks)
+	}
+}
+
+// Glamour draws a table wherever goldmark finds one, not only for a block of
+// rows with outer pipes.
+func TestPreviewTableShapesKeepCodeWhole(t *testing.T) {
+	for _, c := range []struct{ name, src string }{
+		{"outer pipes", "| a | b |\n|---|---|\n| `[[N|al]]` | z |"},
+		{"in a quote", "> | a | b |\n> |---|---|\n> | `[[N|al]]` | z |"},
+		{"in a list item", "- | a | b |\n  |---|---|\n  | `[[N|al]]` | z |"},
+		{"no outer pipes", "a | b\n--|--\n`[[N|al]]` | z"},
+		{"below a preamble row", "| x |\n| a | b |\n|---|---|\n| `[[N|al]]` | r |"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rows := previewRows(t, "auto", c.src)
+			all := []string{}
+			for _, r := range rows {
+				all = append(all, ansi.Strip(r.text))
+			}
+			if joined := strings.Join(all, "\n"); !strings.Contains(joined, "[[N|al]]") {
+				t.Fatalf("code split:\n%s", joined)
+			}
+			if got := previewLinks(rows); len(got) != 0 {
+				t.Fatalf("links %v", got)
+			}
+		})
+	}
+}
+
+// Pipes are only escaped in what goldmark reads as a code span.
+func TestEscapeCodePipes(t *testing.T) {
+	for _, c := range []struct{ row, want string }{
+		{"| `a|b` | c |", "| `a\\|b` | c |"},
+		{"| `a\\|b` | c |", "| `a\\|b` | c |"},
+		{"| \\`a|b\\` | c |", "| \\`a|b\\` | c |"},
+		{"| ``a|`b`` | c |", "| ``a\\|`b`` | c |"},
+		{"| `a\\` | `b|c` |", "| `a\\` | `b\\|c` |"},
+		{"| `a|b | c |", "| `a|b | c |"},
+	} {
+		if got := escapeCodePipes(c.row); got != c.want {
+			t.Errorf("%q: got %q, want %q", c.row, got, c.want)
+		}
+	}
+}
+
+// A table's rows look the same inside a fence, where a pipe is only a pipe.
+func TestPreviewTableInAFenceKeepsItsPipes(t *testing.T) {
+	src := "```\n| a | b |\n|---|---|\n| `x|y` | z |\n```"
+	rows := previewRows(t, "auto", src)
+	all := []string{}
+	for _, r := range rows {
+		all = append(all, ansi.Strip(r.text))
+	}
+	if joined := strings.Join(all, "\n"); !strings.Contains(joined, "| `x|y` | z |") {
+		t.Fatalf("fence changed:\n%s", joined)
+	}
+}
+
+// Link targets and labels come from the source, code spans included, and a
+// link that ends in code is not a link.
+func TestPreviewLinkTextIsNotBlanked(t *testing.T) {
+	rows := previewRows(t, "auto", "[`a:b`](https://example.com/x) and [[`c:d` e]]")
+	got := []string{}
+	for _, l := range rows[0].links {
+		got = append(got, l.target+"="+l.alias)
+	}
+	if want := "`c:d` e=,https://example.com/x=`a:b`"; strings.Join(got, ",") != want {
+		t.Fatalf("links %q, want %q", strings.Join(got, ","), want)
+	}
+	rows = previewRows(t, "auto", "see [[foo `bar]]` baz")
+	if plain := ansi.Strip(rows[0].text); !strings.Contains(plain, "bar]]") {
+		t.Fatalf("row %q lost its brackets", plain)
+	}
+	if links := previewLinks(rows); len(links) != 0 {
+		t.Fatalf("links %v", links)
+	}
+}
+
+// PR 39's token handling strips brackets after postStyleRow, so guards have to
+// outlast every row step: a row's code comes back only at the end of mapRows.
+func TestPostStyleRowLeavesGuardsInPlace(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	if got := a.postStyleRow(guardToken + "x" + guardToken); got != guardToken+"x"+guardToken {
+		t.Fatalf("got %q", got)
+	}
+	for _, src := range []string{"`⟦x⟧`", "```\n⟦x⟧\n```", "- a\n  ```\n  ⟦x⟧\n  ```"} {
+		if plain := previewPlain(t, src); !strings.Contains(plain, "⟦x⟧") {
+			t.Fatalf("%q: %q", src, plain)
+		}
+	}
+}
+
+func previewPlain(t *testing.T, src string) string {
+	t.Helper()
+	all := []string{}
+	for _, r := range previewRows(t, "auto", src) {
+		all = append(all, ansi.Strip(r.text))
+	}
+	return strings.Join(all, "\n")
+}
+
+// A tab indents past a fence, so that line opens an indented code block, and a
+// diagram written that way is not drawn.
+func TestFenceIndentIsSpacesOnly(t *testing.T) {
+	if isFenceOpen("\t```") || isFenceOpen("    ```") {
+		t.Fatal("an indented line is not a fence")
+	}
+	if !isFenceOpen("   ```") || !fenceCloses("   ```", '`', 3) {
+		t.Fatal("three spaces is still a fence")
+	}
+	if fenceCloses("\t```", '`', 3) {
+		t.Fatal("a tab-indented line does not close a fence")
+	}
+	if plain := previewPlain(t, "\t```mermaid\n\tgraph TD\n\t```"); !strings.Contains(plain, "graph TD") {
+		t.Fatalf("drawn as a diagram: %q", plain)
+	}
+}
+
 func TestSplitBlocksFollowsFenceRules(t *testing.T) {
 	kinds := func(src string) string {
 		out := []string{}

@@ -88,7 +88,13 @@ type mdBlock struct {
 	kind  string // front, fence, math, tex, table, list, quote, heading, hr, para, blank
 	start int    // first source line
 	end   int    // one past the last source line
+	// listChild marks a block indented under a list item that it had to leave,
+	// such as an embed's card, so its indent does not read as code.
+	listChild bool
 }
+
+// itemMarkerPattern is how a rendered list item starts.
+const itemMarkerPattern = `(?:[•◦▪\-*+]|\d+\.|\[[ xX✓✔]\]|☐|☑)`
 
 var (
 	listLineRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+`)
@@ -99,7 +105,7 @@ var (
 	sgrRe         = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	taskStateRe   = regexp.MustCompile(`(?m)^(\s*)([-*+]|\d+[.)])\s+\[([/>\-])\]\s?(.*)$`)
 	calloutLineRe = regexp.MustCompile(`(?m)^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	itemMarkerRe  = regexp.MustCompile(`^\s*(?:[•◦▪\-*+]|\d+\.|\[[ xX✓✔]\]|☐|☑)\s`)
+	itemMarkerRe  = regexp.MustCompile(`^\s*` + itemMarkerPattern + `\s`)
 	texOpenRe     = regexp.MustCompile(`^ {0,3}\\\[\s*$`)
 	texLineRe     = regexp.MustCompile(`^ {0,3}\\\[.*\\\]\s*$`)
 	texEnvRe      = regexp.MustCompile(`^ {0,3}\\begin\{((?:equation|align|gather|multline|alignat|flalign|eqnarray)\*?|tikzpicture)\}`)
@@ -207,15 +213,7 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			blocks = append(blocks, mdBlock{kind: "quote", start: i, end: j})
 			i = j
 		case listLineRe.MatchString(line):
-			j := i + 1
-			for j < len(lines) {
-				next := lines[j]
-				if listLineRe.MatchString(next) || (strings.HasPrefix(next, "  ") || strings.HasPrefix(next, "\t")) && !blankRe.MatchString(next) {
-					j++
-					continue
-				}
-				break
-			}
+			j := listBlockEnd(lines, i, latex)
 			blocks = append(blocks, mdBlock{kind: "list", start: i, end: j})
 			i = j
 		default:
@@ -231,6 +229,7 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			i = j
 		}
 	}
+	markListChildren(blocks, lines)
 	return blocks
 }
 
@@ -387,7 +386,7 @@ func (a *App) postStyleRow(row string) string {
 	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") {
 		row = styleInline(row, regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
 	}
-	return unguardRow.Replace(row)
+	return row
 }
 
 // renderGlamourLines renders a note block by block.
@@ -439,25 +438,37 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 
 // mapRows assigns source lines to the rendered rows of a block. Lists get
 // per-item mapping by spotting item markers in the output; everything else
-// maps to the block's first line. Links and tasks are read with the block's
-// code made inert, since neither exists inside code.
+// maps to the block's first line. Code holds no items or links, and its guards
+// come off only once every step has passed over a row.
 func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 	out := make([]previewLine, 0, len(rows))
 	source := blockSource(b, lines)
 	mask, codeOnly := markdownCode(source)
-	live := strings.Split(inertCode(source, mask), "\n")
-	liveLine := func(i int) string { return live[i-b.start] }
-	style := a.postStyleRow
-	if codeOnly {
-		style = unguardRow.Replace
+	srcLines := strings.Split(source, "\n")
+	offsets := make([]int, len(srcLines))
+	for i, off := 0, 0; i < len(srcLines); i++ {
+		offsets[i] = off
+		off += len(srcLines[i]) + 1
+	}
+	linksOn := func(i int) []linkTarget {
+		off := offsets[i-b.start]
+		return linksOnLineWhere(srcLines[i-b.start], func(s, e int) bool {
+			return mask[off+s] == notCode && mask[off+e-1] == notCode
+		})
+	}
+	finish := func(row string) string {
+		if !codeOnly {
+			row = a.postStyleRow(row)
+		}
+		return unguardRow.Replace(row)
 	}
 	if b.kind != "list" {
 		links := []linkTarget{}
 		for i := b.start; i < b.end; i++ {
-			links = append(links, linksOnLine(liveLine(i))...)
+			links = append(links, linksOn(i)...)
 		}
 		for i, row := range rows {
-			pl := previewLine{text: style(row), srcLine: b.start}
+			pl := previewLine{text: finish(row), srcLine: b.start}
 			if i == 0 {
 				pl.links = links
 			}
@@ -465,11 +476,11 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 		}
 		return out
 	}
-	// Items count the raw lines: a list marker in code renders as a row that
-	// looks like an item, so the two walks below stay in step.
 	items := []int{}
 	for i := b.start; i < b.end; i++ {
-		if listLineRe.MatchString(lines[i]) {
+		line := srcLines[i-b.start]
+		first := offsets[i-b.start] + len(line) - len(strings.TrimLeft(line, " \t"))
+		if listLineRe.MatchString(line) && (first >= len(mask) || mask[first] != blockCode) {
 			items = append(items, i)
 		}
 	}
@@ -483,12 +494,18 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 		if k >= 0 {
 			src = items[k]
 		}
-		pl := previewLine{text: style(row), srcLine: src}
+		pl := previewLine{text: finish(row), srcLine: src}
 		if k >= 0 && (len(out) == 0 || out[len(out)-1].srcLine != src) {
-			pl.links = linksOnLine(liveLine(src))
-			pl.task = taskLineRe.MatchString(liveLine(src))
+			end := b.end
+			if k+1 < len(items) {
+				end = items[k+1]
+			}
+			for i := src; i < end; i++ {
+				pl.links = append(pl.links, linksOn(i)...)
+			}
+			pl.task = taskLineRe.MatchString(lines[src])
 		} else if k >= 0 {
-			pl.task = taskLineRe.MatchString(liveLine(src))
+			pl.task = taskLineRe.MatchString(lines[src])
 		}
 		out = append(out, pl)
 	}
