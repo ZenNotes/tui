@@ -261,6 +261,9 @@ func prepareMarkdown(text string) string {
 	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
 	text = wikilinkAtRe.ReplaceAllStringFunc(text, func(m string) string {
 		inner := strings.TrimSuffix(strings.TrimPrefix(m, "[["), "]]")
+		if wikilinkTargetOf(strings.TrimPrefix(inner, "!")).target == "" {
+			return m
+		}
 		target, _, alias := splitWiki(inner)
 		if alias == "" {
 			alias = target
