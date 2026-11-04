@@ -79,6 +79,8 @@ func TestSameVaultComparesTheVaultNotTheCredentials(t *testing.T) {
 		{"bare host:port", server("notes.example.com:7878", "", ""), server("http://notes.example.com:7878", "", ""), true},
 		{"other port", server("http://notes.example.com:7878", "", ""), server("http://notes.example.com:7879", "", ""), false},
 		{"local and remote", local(work), server("https://notes.example.com", "", ""), false},
+		{"server serving another vault", Target{Kind: KindRemote, BaseURL: "https://notes.example.com", VaultPath: "/srv/a"}, Target{Kind: KindRemote, BaseURL: "https://notes.example.com", VaultPath: "/srv/b"}, false},
+		{"display name differs", Target{Kind: KindRemote, BaseURL: "https://notes.example.com", VaultPath: "/srv/a", VaultName: "A"}, Target{Kind: KindRemote, BaseURL: "https://notes.example.com", VaultPath: "/srv/a", VaultName: "Renamed"}, true},
 	} {
 		if got := SameVault(tc.a, tc.b); got != tc.want {
 			t.Errorf("%s: SameVault = %v, want %v", tc.name, got, tc.want)

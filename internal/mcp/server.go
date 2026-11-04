@@ -172,7 +172,7 @@ func tools() []toolDef {
 				pathNotes := "IMPORTANT: Always use the `path` returned by other tools verbatim. Never prepend `inbox/` to a path you got back from list_notes / create_note / read_note. "
 				switchNote := ""
 				if previous, ok := ctx.Value(previousVaultKey{}).(backend.Target); ok {
-					switchNote = "The vault changed: until this call the session worked in " + describeTarget(previous) + ". Every tool runs here now, and paths or content you got from the previous vault do not apply to this one. "
+					switchNote = "The vault changed: until this call the session worked in " + describeTarget(previous, isScoped) + ". Every tool runs here now, and paths or content you got from the previous vault do not apply to this one. "
 				}
 				if isRoot {
 					pathNotes += "This vault uses ROOT mode: notes for the conceptual `inbox` folder live directly at the vault root (e.g. `MyNote.md`), not under `inbox/`. The folders quick/, archive/, trash/ are real subdirectories at the root."
@@ -1124,7 +1124,12 @@ func Run(ctx context.Context, opts Options) error {
 	if version == "" {
 		version = "0.1.0"
 	}
-	vaults := &session{resolve: opts.ResolveTarget, open: opts.OpenBackend}
+	vaults := &session{
+		resolve: opts.ResolveTarget,
+		open:    opts.OpenBackend,
+		served:  backend.Served,
+		scoped:  opts.Scope != nil && opts.Scope.Active(),
+	}
 
 	instructions := ResolveInstructions()
 	if opts.Scope != nil && opts.Scope.Active() {
@@ -1153,9 +1158,9 @@ func Run(ctx context.Context, opts Options) error {
 					return errorResult("Error: invalid arguments: " + err.Error()), nil
 				}
 			}
-			b, previous, err := vaults.backendFor(def.name == "vault_info")
+			b, previous, err := vaults.backendFor(ctx, def.name == "vault_info")
 			if err != nil {
-				return errorResult("Error: " + DescribeToolError(err, nil)), nil
+				return errorResult("Error: " + DescribeToolError(err, b)), nil
 			}
 			if previous != nil {
 				ctx = context.WithValue(ctx, previousVaultKey{}, *previous)
