@@ -1158,12 +1158,12 @@ func Run(ctx context.Context, opts Options) error {
 					return errorResult("Error: invalid arguments: " + err.Error()), nil
 				}
 			}
-			b, previous, err := vaults.backendFor(ctx, def.name == "vault_info")
+			b, move, err := vaults.backendFor(ctx, def.name == "vault_info")
 			if err != nil {
 				return errorResult("Error: " + DescribeToolError(err, b)), nil
 			}
-			if previous != nil {
-				ctx = context.WithValue(ctx, previousVaultKey{}, *previous)
+			if move != nil {
+				ctx = context.WithValue(ctx, previousVaultKey{}, move.from)
 			}
 			b = scopeBackend(b, opts.Scope)
 			// An edit to a note is recorded so the user can review it in the app.
@@ -1182,6 +1182,10 @@ func Run(ctx context.Context, opts Options) error {
 			payload, err := Payload(result)
 			if err != nil {
 				return errorResult("Error: " + err.Error()), nil
+			}
+			// Only now can the assistant be told, so only now does the session move.
+			if move != nil {
+				vaults.finishMove(move)
 			}
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: payload}}}, nil
 		})

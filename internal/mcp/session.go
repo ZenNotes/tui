@@ -21,11 +21,19 @@ import (
 // vault_info stops with a switchError until vault_info confirms the new
 // vault. That holds for a whole batch of parallel calls, not only the first.
 //
+// The session moves only once vault_info has its answer ready, so a vault_info
+// that fails leaves the stop in place, and any call that began before the move
+// stops too, vault_info beside it in a batch included. The one call that can
+// pass is one that begins after the move but was sent before the client had
+// the answer.
+//
 // A self-hosted server can change its own vault with the URL staying the same,
 // so each call on a server first asks which vault it is serving: one request.
-// The answer can go stale before the call's own requests reach the server;
-// closing that gap would take the server refusing a request meant for another
-// vault.
+// The answer can go stale before the call's own requests reach the server. A
+// switch landing there sends those requests to the other vault, and a tool that
+// reads a note and writes it back (replace_in_note, for one) then overwrites
+// the other vault's note with this one's body and reports success. Closing that
+// would take the server refusing a request meant for another vault.
 type session struct {
 	resolve func() (backend.Target, error)
 	open    func(backend.Target) (Backend, error)
@@ -54,18 +62,37 @@ func (e *switchError) Error() string {
 	return fmt.Sprintf("The ZenNotes vault changed since this session's last call: it was %s and is now %s. Nothing ran. Call vault_info to confirm the new vault and tell the user, then re-read anything you meant to change before you retry.", from, to)
 }
 
+// vaultMove is a switch vault_info is confirming: the vault it is leaving and
+// the one it runs on. The session stays where it is until finishMove.
+type vaultMove struct {
+	from, to backend.Target
+	opened   Backend
+}
+
+// finishMove moves the session once vault_info has its answer ready.
+func (s *session) finishMove(m *vaultMove) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.target, s.backend = m.to, m.opened
+}
+
 // backendFor resolves the vault for one call. confirm marks vault_info, the
-// only call that moves the session to a new vault; previous is the vault it
-// moved away from, nil when the vault did not change. When a server cannot say
-// which vault it is serving, the call stops with that error, and the backend
-// comes back too so the error can name the server.
-func (s *session) backendFor(ctx context.Context, confirm bool) (b Backend, previous *backend.Target, err error) {
+// only call that can move the session to a new vault; move is non-nil when it
+// would, for the caller to finish once the call has succeeded. When a server
+// cannot say which vault it is serving, the call stops with that error, and the
+// backend comes back too so the error can name the server.
+func (s *session) backendFor(ctx context.Context, confirm bool) (b Backend, move *vaultMove, err error) {
 	target, err := s.resolve()
 	if err != nil {
 		return nil, nil, err
 	}
-	// Not under the lock: one slow answer should not hold up a whole batch.
-	if s.served != nil && s.shouldAsk(target, confirm) {
+	s.mu.Lock()
+	entered, pinned := s.target, s.backend != nil
+	s.mu.Unlock()
+	// A call that will stop anyway because the session is on another server or
+	// a local vault stops without contacting the new one. Not under the lock:
+	// one slow answer should not hold up a whole batch.
+	if s.served != nil && (confirm || !pinned || backend.SameServer(entered, target)) {
 		asked, err := s.served(ctx, target)
 		if err != nil {
 			opened, openErr := s.open(target)
@@ -78,12 +105,21 @@ func (s *session) backendFor(ctx context.Context, confirm bool) (b Backend, prev
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.backend != nil && !backend.SameVault(s.target, target) {
+	// A vault_info may have finished while this call waited for its answer. The
+	// call began on the old vault, so it stops even though the session has moved.
+	from := s.target
+	if pinned && !backend.SameVault(entered, target) {
+		from = entered
+	}
+	if s.backend != nil && !backend.SameVault(from, target) {
 		if !confirm {
-			return nil, nil, &switchError{from: s.target, to: target, scoped: s.scoped}
+			return nil, nil, &switchError{from: from, to: target, scoped: s.scoped}
 		}
-		left := s.target
-		previous = &left
+		opened, err := s.open(target)
+		if err != nil {
+			return nil, nil, err
+		}
+		return opened, &vaultMove{from: from, to: target, opened: opened}, nil
 	}
 	// A new token or profile name for the same vault reopens quietly.
 	if s.backend == nil || s.target != target {
@@ -93,15 +129,7 @@ func (s *session) backendFor(ctx context.Context, confirm bool) (b Backend, prev
 		}
 		s.target, s.backend = target, opened
 	}
-	return s.backend, previous, nil
-}
-
-// shouldAsk is false for a call that will stop anyway because the session is
-// on another server or a local vault: it stops without contacting the new one.
-func (s *session) shouldAsk(target backend.Target, confirm bool) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return confirm || s.backend == nil || backend.SameServer(s.target, target)
+	return s.backend, nil, nil
 }
 
 // describeTarget names a vault in a sentence. The app often names a saved

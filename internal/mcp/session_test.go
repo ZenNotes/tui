@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/vault"
 )
@@ -59,16 +61,22 @@ func (h *sessionHarness) set(t backend.Target) {
 	h.current = t
 }
 
+// mustRunOn is one call that succeeds, so a vault_info finishes its move here.
+// It returns the vault that move left, nil when there was none.
 func (h *sessionHarness) mustRunOn(t *testing.T, confirm bool, want backend.Target) *backend.Target {
 	t.Helper()
-	b, previous, err := h.backendFor(context.Background(), confirm)
+	b, move, err := h.backendFor(context.Background(), confirm)
 	if err != nil {
 		t.Fatalf("call failed: %v", err)
 	}
 	if got := b.(*openedBackend).target; got != want {
 		t.Fatalf("ran on %+v, want %+v", got, want)
 	}
-	return previous
+	if move == nil {
+		return nil
+	}
+	h.finishMove(move)
+	return &move.from
 }
 
 func TestSessionFollowsTheVaultBetweenCalls(t *testing.T) {
@@ -195,14 +203,35 @@ type fakeVaultServer struct {
 	name     string
 	notes    []string
 	requests []string
+	// settingsDown fails /api/vault/settings, which vault_info needs after the
+	// vault check has already passed.
+	settingsDown bool
+	// settingsReached and settingsHold, when set, pause /api/vault/settings:
+	// vault_info is then mid-flight, past the check and not yet answered.
+	settingsReached chan struct{}
+	settingsHold    chan struct{}
 }
 
 func newFakeVaultServer(t *testing.T, root, name string, notes ...string) *fakeVaultServer {
 	t.Helper()
 	f := &fakeVaultServer{root: root, name: name, notes: notes}
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/vault/settings" {
+			f.mu.Lock()
+			reached, hold := f.settingsReached, f.settingsHold
+			f.settingsReached, f.settingsHold = nil, nil
+			f.mu.Unlock()
+			if hold != nil {
+				close(reached)
+				<-hold
+			}
+		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if r.URL.Path == "/api/vault/settings" && f.settingsDown {
+			http.Error(w, "settings are down", http.StatusInternalServerError)
+			return
+		}
 		f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 		var out any
 		switch r.URL.Path {
@@ -312,6 +341,95 @@ func TestRunStopsWhenTheServerSwitchesItsVault(t *testing.T) {
 				t.Fatalf("the switch note repeats: %s", text)
 			}
 		})
+	}
+}
+
+// A vault_info that fails told the assistant nothing, so the stop stays and
+// the next vault_info still reports the switch.
+func TestRunFailedVaultInfoKeepsTheStop(t *testing.T) {
+	server := newFakeVaultServer(t, "/srv/vaults/home", "Home", "Projects/a.md")
+	cs := runServer(t, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindRemote, BaseURL: server.URL}, nil
+	})
+	if text, isErr := callTool(t, cs, "list_notes", nil); isErr {
+		t.Fatalf("before the switch: %s", text)
+	}
+	server.selectVault("/srv/vaults/work", "Work", "Projects/other.md")
+
+	server.mu.Lock()
+	server.settingsDown = true
+	server.mu.Unlock()
+	if text, isErr := callTool(t, cs, "vault_info", nil); !isErr {
+		t.Fatalf("vault_info with its settings down must fail: %s", text)
+	}
+	server.mu.Lock()
+	server.settingsDown = false
+	server.requests = nil
+	server.mu.Unlock()
+
+	text, isErr := callTool(t, cs, "write_note", map[string]any{"path": "Projects/a.md", "body": "planned for Home"})
+	if !isErr || !strings.Contains(text, "The ZenNotes vault changed") {
+		t.Fatalf("the write after a failed vault_info: error=%v %s", isErr, text)
+	}
+	for _, request := range server.seen() {
+		if request != "GET /api/vault" {
+			t.Fatalf("the stopped write reached the server: %v", server.seen())
+		}
+	}
+	if text, isErr := callTool(t, cs, "vault_info", nil); isErr || !strings.Contains(text, `The vault changed: until this call the session worked in the vault \"Home\"`) {
+		t.Fatalf("the next vault_info must still report the switch: error=%v %s", isErr, text)
+	}
+	if text, isErr := callTool(t, cs, "list_notes", nil); isErr || !strings.Contains(text, "Projects/other.md") {
+		t.Fatalf("after a vault_info that worked: error=%v %s", isErr, text)
+	}
+}
+
+// A vault_info still on its way has not told the assistant anything either, so
+// a write sent alongside it stops.
+func TestRunWriteBesideARunningVaultInfoStops(t *testing.T) {
+	server := newFakeVaultServer(t, "/srv/vaults/home", "Home", "Projects/a.md")
+	cs := runServer(t, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindRemote, BaseURL: server.URL}, nil
+	})
+	if text, isErr := callTool(t, cs, "list_notes", nil); isErr {
+		t.Fatalf("before the switch: %s", text)
+	}
+	server.selectVault("/srv/vaults/work", "Work", "Projects/other.md")
+
+	reached, hold := make(chan struct{}), make(chan struct{})
+	server.mu.Lock()
+	server.settingsReached, server.settingsHold = reached, hold
+	server.requests = nil
+	server.mu.Unlock()
+	type answer struct {
+		text  string
+		isErr bool
+	}
+	info := make(chan answer, 1)
+	go func() {
+		res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "vault_info"})
+		if err != nil {
+			info <- answer{err.Error(), true}
+			return
+		}
+		info <- answer{res.Content[0].(*sdk.TextContent).Text, res.IsError}
+	}()
+	<-reached
+
+	text, isErr := callTool(t, cs, "write_note", map[string]any{"path": "Projects/a.md", "body": "planned for Home"})
+	writes := 0
+	for _, request := range server.seen() {
+		if strings.HasPrefix(request, "POST ") {
+			writes++
+		}
+	}
+	close(hold)
+	got := <-info
+	if !isErr || !strings.Contains(text, "The ZenNotes vault changed") || writes != 0 {
+		t.Fatalf("the write beside vault_info: error=%v writes=%d %s", isErr, writes, text)
+	}
+	if got.isErr || !strings.Contains(got.text, "The vault changed") {
+		t.Fatalf("vault_info: error=%v %s", got.isErr, got.text)
 	}
 }
 
@@ -442,6 +560,93 @@ func TestSessionStopsABatchWhenTheServerSwitches(t *testing.T) {
 		t.Fatalf("vault_info must report the previous vault, got %+v", previous)
 	}
 	h.mustRunOn(t, false, b)
+}
+
+// Until vault_info finishes, the session has not moved: a failed one changes
+// nothing, and other calls keep stopping while one runs.
+func TestSessionMovesOnlyWhenVaultInfoFinishes(t *testing.T) {
+	server := backend.Target{Kind: backend.KindRemote, BaseURL: "https://notes.example.com"}
+	h := newServerHarness(server, "/srv/a", "A")
+	a, b := onVault(server, "/srv/a", "A"), onVault(server, "/srv/b", "B")
+	h.mustRunOn(t, false, a)
+	h.serve("/srv/b", "B")
+
+	_, abandoned, err := h.backendFor(context.Background(), true)
+	if err != nil || abandoned == nil || abandoned.from != a || abandoned.to != b {
+		t.Fatalf("vault_info: move %+v, err %v", abandoned, err)
+	}
+	var switched *switchError
+	if _, _, err := h.backendFor(context.Background(), false); !errors.As(err, &switched) {
+		t.Fatalf("a call beside a running vault_info: %v, want a switchError", err)
+	}
+
+	// That vault_info failed, so nothing finished it; the next one reports the
+	// same switch and is the one that moves the session.
+	if previous := h.mustRunOn(t, true, b); previous == nil || *previous != a {
+		t.Fatalf("the next vault_info: previous %+v", previous)
+	}
+	if previous := h.mustRunOn(t, false, b); previous != nil {
+		t.Fatalf("after the move: %+v", previous)
+	}
+}
+
+// A call that was still waiting for the server's answer when vault_info moved
+// the session began on the old vault, so it stops either way, and it does not
+// pull the session back.
+func TestSessionCallThatBeganBeforeTheMoveStops(t *testing.T) {
+	for name, answersOldVault := range map[string]bool{"answered with the new vault": false, "answered with the old vault": true} {
+		t.Run(name, func(t *testing.T) {
+			server := backend.Target{Kind: backend.KindRemote, BaseURL: "https://notes.example.com"}
+			h := newServerHarness(server, "/srv/a", "A")
+			a, b := onVault(server, "/srv/a", "A"), onVault(server, "/srv/b", "B")
+			h.mustRunOn(t, false, a)
+
+			answer := h.session.served
+			waiting, release := make(chan struct{}), make(chan struct{})
+			var once sync.Once
+			h.session.served = func(ctx context.Context, t backend.Target) (backend.Target, error) {
+				first := false
+				once.Do(func() { first = true })
+				if !first {
+					return answer(ctx, t)
+				}
+				var asked backend.Target
+				var err error
+				if answersOldVault {
+					asked, err = answer(ctx, t)
+				}
+				close(waiting)
+				<-release
+				if !answersOldVault {
+					asked, err = answer(ctx, t)
+				}
+				return asked, err
+			}
+			stopped := make(chan error, 1)
+			go func() {
+				_, _, err := h.backendFor(context.Background(), false)
+				stopped <- err
+			}()
+			<-waiting
+
+			h.serve("/srv/b", "B")
+			if previous := h.mustRunOn(t, true, b); previous == nil || *previous != a {
+				t.Fatalf("vault_info: previous %+v", previous)
+			}
+			close(release)
+			err := <-stopped
+			var switched *switchError
+			if !errors.As(err, &switched) {
+				t.Fatalf("the call that began before the move: %v, want a switchError", err)
+			}
+			if h.target != b {
+				t.Fatalf("the stopped call moved the session to %+v", h.target)
+			}
+			if previous := h.mustRunOn(t, false, b); previous != nil {
+				t.Fatalf("a call after the move: %+v", previous)
+			}
+		})
+	}
 }
 
 func TestSessionServerSwitchAndBackNeedsNoConfirmation(t *testing.T) {
