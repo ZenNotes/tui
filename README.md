@@ -655,8 +655,10 @@ sheet of your own, or `zen` for the built-in renderer).
 - **Files** (PDF, audio, video, drawings) and YouTube or Vimeo links are
   cards; Enter opens them.
 - **`![[Note]]`** renders the note inline.
-- **Mermaid** blocks draw as text through a pure-Go renderer, or as
-  pictures when `mmdc` is installed.
+- **Mermaid** blocks draw as text, or as pictures when `mmdc` is installed.
+  The text always fits the pane: a left-to-right flowchart runs down the page
+  when it is too wide for a row, and labels wrap. A diagram zn cannot draw in
+  full as text shows its source, with a note saying so.
 - **`[terminal] math`** picks the engine for display math: `typst`, the
   default, renders `$$` blocks when `typst` is installed; `latex` uses TeX on
   your computer (next section).

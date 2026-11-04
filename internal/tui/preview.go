@@ -135,10 +135,12 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			i++
 			continue
 		}
-		if tableRowRe.MatchString(line) {
+		// A table may leave out its outer pipes; its separator row says so.
+		bare := !tableRowRe.MatchString(line) && strings.Contains(line, "|") && i+1 < len(lines) && strings.Contains(lines[i+1], "|") && tableSepRe.MatchString(lines[i+1])
+		if tableRowRe.MatchString(line) || bare {
 			j := i
 			block := []string{}
-			for j < len(lines) && tableRowRe.MatchString(lines[j]) {
+			for j < len(lines) && (tableRowRe.MatchString(lines[j]) || bare && strings.Contains(lines[j], "|")) {
 				block = append(block, lines[j])
 				j++
 			}
@@ -387,9 +389,14 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 			sepIdx = i
 			continue
 		}
-		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+		cells := previewTableCells(line)
 		for c := range cells {
-			cells[c] = strings.TrimSpace(cells[c])
+			sr, _ := a.inlineRunes(cells[c])
+			runes := make([]rune, len(sr))
+			for i, s := range sr {
+				runes[i] = s.r
+			}
+			cells[c] = string(runes)
 		}
 		rows = append(rows, cells)
 	}
@@ -400,10 +407,10 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 	widths := make([]int, cols)
 	for _, r := range rows {
 		for c, cell := range r {
-			widths[c] = max(widths[c], cellWidth(stripInline(cell)))
+			widths[c] = max(widths[c], cellWidth(cell))
 		}
 	}
-	total := 0
+	total := 1
 	for _, w := range widths {
 		total += w + 3
 	}
@@ -425,32 +432,39 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 	}
 	out := []previewLine{}
 	for ri, r := range rows {
-		var b strings.Builder
+		style := th.Base
+		if ri == 0 && sepIdx >= 0 {
+			style = th.Bold
+		}
+		// A long cell wraps inside its column, so nothing is cut off.
+		wrapped := make([][]string, cols)
+		height := 1
 		for c := 0; c < cols; c++ {
 			cell := ""
 			if c < len(r) {
 				cell = r[c]
 			}
-			sr, _ := a.inlineRunes(cell)
-			runes := make([]rune, len(sr))
-			for i, s := range sr {
-				runes[i] = s.r
-			}
-			text := truncateCells(string(runes), widths[c])
-			style := th.Base
-			if ri == 0 && sepIdx >= 0 {
-				style = th.Bold
-			}
-			b.WriteString(th.Muted.Render("│ "))
-			b.WriteString(style.Render(padRight(text, widths[c])))
-			b.WriteString(" ")
+			wrapped[c] = flowWrap(cell, widths[c])
+			height = max(height, len(wrapped[c]))
 		}
-		b.WriteString(th.Muted.Render("│"))
 		line := srcLine + ri
 		if sepIdx >= 0 && ri >= sepIdx {
 			line++
 		}
-		out = append(out, previewLine{text: b.String(), srcLine: line})
+		for y := 0; y < height; y++ {
+			var b strings.Builder
+			for c := 0; c < cols; c++ {
+				text := ""
+				if y < len(wrapped[c]) {
+					text = wrapped[c][y]
+				}
+				b.WriteString(th.Muted.Render("│ "))
+				b.WriteString(style.Render(padRight(text, widths[c])))
+				b.WriteString(" ")
+			}
+			b.WriteString(th.Muted.Render("│"))
+			out = append(out, previewLine{text: b.String(), srcLine: line})
+		}
 		if ri == 0 && sepIdx >= 0 {
 			segs := make([]string, cols)
 			for c := 0; c < cols; c++ {
@@ -464,10 +478,36 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 	return out
 }
 
-func stripInline(s string) string {
-	s = inlineCodeRe.ReplaceAllStringFunc(s, func(m string) string { return m[1 : len(m)-1] })
-	s = strongRe.ReplaceAllStringFunc(s, func(m string) string { return m[2 : len(m)-2] })
-	return s
+// previewTableCells splits a table row at its pipes, leaving alone the pipe
+// of a wikilink's alias and an escaped pipe, which reads as a plain one.
+func previewTableCells(line string) []string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "|")
+	if !strings.HasSuffix(line, `\|`) {
+		line = strings.TrimSuffix(line, "|")
+	}
+	cells := []string{}
+	var cell strings.Builder
+	inLink := false
+	for i := 0; i < len(line); i++ {
+		switch {
+		case strings.HasPrefix(line[i:], "[["):
+			inLink = true
+		case strings.HasPrefix(line[i:], "]]"):
+			inLink = false
+		}
+		switch {
+		case !inLink && strings.HasPrefix(line[i:], `\|`):
+			cell.WriteByte('|')
+			i++
+		case !inLink && line[i] == '|':
+			cells = append(cells, strings.TrimSpace(cell.String()))
+			cell.Reset()
+		default:
+			cell.WriteByte(line[i])
+		}
+	}
+	return append(cells, strings.TrimSpace(cell.String()))
 }
 
 // previewLinesFor returns the cached rows for a buffer at a width.

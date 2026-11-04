@@ -1,0 +1,508 @@
+package tui
+
+import (
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/yashikota/mermaigo/pkg/mermaid"
+	"github.com/yashikota/mermaigo/pkg/mermaid/parser"
+	"github.com/yashikota/mermaigo/pkg/mermaid/types"
+)
+
+// The text form of a Mermaid diagram.
+//
+// The library's text renderer puts flowchart nodes in one straight line and
+// routes nothing: left-to-right boxes overlap, an edge back to an earlier node
+// and every edge label are dropped, and a branch is drawn through the boxes in
+// between. No width fixes that, so zn keeps the library's parser and draws
+// flowcharts and state diagrams itself, at the width of the pane: a row of
+// boxes when a left-to-right diagram fits, otherwise a column. An edge to the
+// box drawn next is an arrow between them, and any other edge is listed under
+// its source by the name of its target, so every node and edge can be read at
+// any width. Sequence, class and ER diagrams still come from the library, and
+// show their source when they do not fit.
+//
+// When the parser cannot have read a whole statement, the block shows its
+// source and says so, since a tidy drawing with an edge missing misleads.
+
+// mermaidText is one parsed diagram, cached by content. Only the layout
+// depends on the width.
+type mermaidText struct {
+	flow    *flowchart // drawn here, at any width
+	rows    []string   // the library's drawing, at its own width
+	err     string     // why it could not be parsed
+	partial bool       // the parser skipped part of the source
+}
+
+func parseMermaidText(src string) *mermaidText {
+	if mermaid.DetectDiagramType(src) != mermaid.DiagramTypeFlowchart {
+		rendered, err := mermaid.RenderText(src, &mermaid.TextRenderOptions{})
+		if err != nil {
+			return &mermaidText{err: err.Error()}
+		}
+		return &mermaidText{rows: strings.Split(strings.TrimRight(rendered, "\n"), "\n")}
+	}
+	flow, partial, err := parseFlowchart(src)
+	if err != nil {
+		return &mermaidText{err: err.Error()}
+	}
+	return &mermaidText{flow: flow, partial: partial}
+}
+
+// mermaidTextLines lays a parsed diagram out for a pane width.
+func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) []previewLine {
+	th := a.theme
+	inner := width - 1 // the row's leading space
+	source := func(note string, noteStyle func(...string) string) []previewLine {
+		out := []previewLine{}
+		for _, row := range wrapCommentText(note, inner) {
+			out = append(out, previewLine{text: " " + noteStyle(row), srcLine: srcLine})
+		}
+		for _, row := range wrapCommentText(strings.ReplaceAll(src, "\t", "  "), inner) {
+			out = append(out, previewLine{text: " " + th.Code.Render(row), srcLine: srcLine})
+		}
+		return out
+	}
+	var rows []string
+	switch {
+	case t.err != "":
+		return source("mermaid: "+firstLine(t.err), th.StatusError.Render)
+	case t.partial:
+		return source("zn cannot draw all of this diagram as text, so this is its source.", th.Muted.Render)
+	case t.flow != nil:
+		rows = t.flow.rows(inner)
+	default:
+		rows = t.rows
+		for _, row := range rows {
+			if cellWidth(row) > inner {
+				return source("This diagram is wider than the pane, so this is its source.", th.Muted.Render)
+			}
+		}
+	}
+	out := make([]previewLine, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, previewLine{text: " " + th.Base.Render(row), srcLine: srcLine})
+	}
+	return out
+}
+
+// --- reading the source ---
+
+// flowchart is a parsed flowchart or state diagram with clean labels.
+type flowchart struct {
+	graph       *types.MermaidGraph
+	order       []string // node IDs in the order they are drawn
+	leftToRight bool
+}
+
+// The parser ends a label at its first closing bracket and splits statements
+// at every semicolon, quoted or not, so quoted text is hidden from it. These
+// runes never appear in Markdown a person writes: they are private use.
+const (
+	mermaidQuoteOpen  = "\uE000"
+	mermaidQuoteClose = "\uE001"
+)
+
+var (
+	mermaidQuotedRe   = regexp.MustCompile(`"[^"\n]*"`)
+	mermaidMaskedRe   = regexp.MustCompile(`"?` + mermaidQuoteOpen + `(\d+)` + mermaidQuoteClose + `"?`)
+	mermaidBareHeadRe = regexp.MustCompile(`(?i)^(graph|flowchart)$`)
+	mermaidBreakRe    = regexp.MustCompile(`(?i)<br\s*/?>`)
+	// Statements the parser would otherwise read as a node with that name.
+	mermaidIgnoredRe = regexp.MustCompile(`^(?:linkStyle|click|accTitle|accDescr|title)\b`)
+	// Statements that draw no node or edge.
+	mermaidStructureRe = regexp.MustCompile(`^(?:classDef|class|style|direction|subgraph|end|state\s.*\{|\})`)
+	// What is left of a statement without its labels shows how many edges it
+	// asks for, spelled in any way Mermaid allows.
+	mermaidLabelsRe = regexp.MustCompile(`\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|\|[^|]*\|`)
+	mermaidArrowRe  = regexp.MustCompile(`<?(?:-{2,}|={2,}|-\.+-|~{3,})[>ox]?`)
+	// Spellings the parser does not know, rewritten to ones it does.
+	mermaidSpellings = []struct {
+		re *regexp.Regexp
+		to string
+	}{
+		{regexp.MustCompile(`-{3,}>`), "-->"},
+		{regexp.MustCompile(`={3,}>`), "==>"},
+		{regexp.MustCompile(`-\.{2,}->`), "-.->"},
+		{regexp.MustCompile(`(^|[^-])--\s*([^-\[\](){}|<>]+?)\s*-->`), "$1-->|$2|"},
+		{regexp.MustCompile(`(^|[^-])-\.\s*([^-.\[\](){}|<>]+?)\s*\.->`), "$1-.->|$2|"},
+		{regexp.MustCompile(`(^|[^=])==\s*([^=\[\](){}|<>]+?)\s*==>`), "$1==>|$2|"},
+	}
+)
+
+// parseFlowchart reads a flowchart or state diagram. partial says some of the
+// source did not make it into the graph.
+func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
+	quoted := []string{}
+	masked := mermaidQuotedRe.ReplaceAllStringFunc(src, func(q string) string {
+		quoted = append(quoted, strings.Trim(q, `"`))
+		return `"` + mermaidQuoteOpen + strconv.Itoa(len(quoted)-1) + mermaidQuoteClose + `"`
+	})
+	lines := []string{}
+	for _, raw := range strings.Split(masked, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(raw), "%%") {
+			continue
+		}
+		for _, line := range strings.Split(raw, ";") {
+			line = strings.TrimSpace(line)
+			if line == "" || mermaidIgnoredRe.MatchString(line) {
+				continue
+			}
+			for _, s := range mermaidSpellings {
+				line = s.re.ReplaceAllString(line, s.to)
+			}
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) > 0 && mermaidBareHeadRe.MatchString(lines[0]) {
+		lines[0] += " TD"
+	}
+	graph, err := parser.ParseMermaid(strings.Join(lines, "\n"))
+	if err != nil {
+		return nil, false, err
+	}
+	f = &flowchart{graph: graph, leftToRight: graph.Direction == types.DirectionLR || graph.Direction == types.DirectionRL}
+
+	// Read each statement alone as well: that shows whether all of it was
+	// understood, and finds the label of a node first used without one, which
+	// the whole-diagram parse drops.
+	statements := []*types.MermaidGraph{}
+	for _, line := range lines[1:] {
+		one, err := parser.ParseMermaid(lines[0] + "\n" + line)
+		if err != nil {
+			return nil, false, err
+		}
+		statements = append(statements, one)
+		if !mermaidStatementRead(line, one) {
+			partial = true
+		}
+		for id, n := range one.Nodes {
+			if known := graph.Nodes[id]; known != nil && known.Label == id && n.Label != id {
+				known.Label, known.Shape = n.Label, n.Shape
+			}
+		}
+	}
+
+	// Nodes run in source order: along the edges, then any with no edge.
+	seen := map[string]bool{}
+	add := func(id string) {
+		if !seen[id] && graph.Nodes[id] != nil {
+			seen[id] = true
+			f.order = append(f.order, id)
+		}
+	}
+	for _, e := range graph.Edges {
+		add(e.Source)
+		add(e.Target)
+	}
+	for _, one := range statements {
+		ids := make([]string, 0, len(one.Nodes))
+		for id := range one.Nodes {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			add(id)
+		}
+	}
+
+	clean := func(s string) string {
+		s = mermaidMaskedRe.ReplaceAllStringFunc(s, func(m string) string {
+			n, _ := strconv.Atoi(mermaidMaskedRe.FindStringSubmatch(m)[1])
+			return quoted[n]
+		})
+		s = strings.ReplaceAll(s, "#quot;", `"`)
+		return strings.TrimSpace(mermaidBreakRe.ReplaceAllString(s, "\n"))
+	}
+	for _, n := range graph.Nodes {
+		n.Label = clean(n.Label)
+		switch n.Shape {
+		case types.ShapeStateStart:
+			n.Label = "start"
+		case types.ShapeStateEnd:
+			n.Label = "end"
+		}
+	}
+	for _, e := range graph.Edges {
+		e.Label = clean(e.Label)
+	}
+	var cleanGroups func(groups []*types.MermaidSubgraph)
+	cleanGroups = func(groups []*types.MermaidSubgraph) {
+		for _, g := range groups {
+			g.Label = clean(g.Label)
+			cleanGroups(g.Children)
+		}
+	}
+	cleanGroups(graph.Subgraphs)
+	return f, partial, nil
+}
+
+// mermaidStatementRead says the parser took in all of one statement: every
+// edge it asks for exists and it named a node.
+func mermaidStatementRead(line string, one *types.MermaidGraph) bool {
+	if strings.Contains(line, "@{") {
+		return false // a node's shape and label in the newer syntax
+	}
+	if mermaidStructureRe.MatchString(line) {
+		return true
+	}
+	groups := mermaidArrowRe.Split(mermaidLabelsRe.ReplaceAllString(line, ""), -1)
+	edges := 0
+	for i := 1; i < len(groups); i++ {
+		edges += (1 + strings.Count(groups[i-1], "&")) * (1 + strings.Count(groups[i], "&"))
+	}
+	return edges == len(one.Edges) && len(one.Nodes) > 0
+}
+
+// --- drawing ---
+
+// rows draws the diagram no wider than width.
+func (f *flowchart) rows(width int) []string {
+	var out []string
+	if f.leftToRight {
+		out = f.rowsAcross(width)
+	}
+	if out == nil {
+		out = f.rowsDown(width)
+	}
+	return append(out, f.groupRows(width)...)
+}
+
+// outgoing splits a node's edges: the first to the node drawn next goes
+// between their boxes, the others are listed by name.
+func (f *flowchart) outgoing(i int) (next *types.MermaidEdge, others []*types.MermaidEdge) {
+	for _, e := range f.graph.Edges {
+		if e.Source != f.order[i] {
+			continue
+		}
+		if next == nil && i+1 < len(f.order) && e.Target == f.order[i+1] {
+			next = e
+			continue
+		}
+		others = append(others, e)
+	}
+	return next, others
+}
+
+func (f *flowchart) label(id string) string {
+	return f.graph.Nodes[id].Label
+}
+
+// flowName is a node's label on one line, for naming it in a list.
+func (f *flowchart) flowName(id string) string {
+	return strings.ReplaceAll(f.label(id), "\n", " ")
+}
+
+// edgeTarget names where a listed edge goes, with its label.
+func (f *flowchart) edgeTarget(e *types.MermaidEdge) string {
+	text := f.flowName(e.Target)
+	if e.Label != "" {
+		text += " (" + strings.ReplaceAll(e.Label, "\n", " ") + ")"
+	}
+	return text
+}
+
+// flowWrap wraps text at spaces, keeping a flag like -m whole, and breaks a
+// word only when it alone is wider than the width.
+func flowWrap(text string, width int) []string {
+	width = max(2, width) // one wide character always fits
+	out := []string{}
+	for _, line := range strings.Split(text, "\n") {
+		row := ""
+		for _, word := range strings.Fields(line) {
+			if row != "" && cellWidth(row)+1+cellWidth(word) <= width {
+				row += " " + word
+				continue
+			}
+			if row != "" {
+				out = append(out, row)
+			}
+			pieces := strings.Split(xansi.Hardwrap(word, width, false), "\n")
+			out = append(out, pieces[:len(pieces)-1]...)
+			row = pieces[len(pieces)-1]
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// flowBox draws a labelled box; shaft marks where an edge leaves its bottom.
+func flowBox(label string, inner int, shaft bool) []string {
+	lines := flowWrap(label, inner)
+	w := 1
+	for _, l := range lines {
+		w = max(w, cellWidth(l))
+	}
+	out := []string{"┌" + strings.Repeat("─", w+2) + "┐"}
+	for _, l := range lines {
+		out = append(out, "│ "+padRight(l, w)+" │")
+	}
+	if shaft {
+		return append(out, "└─┬"+strings.Repeat("─", w)+"┘")
+	}
+	return append(out, "└"+strings.Repeat("─", w+2)+"┘")
+}
+
+func flowShaft(e *types.MermaidEdge) string {
+	switch e.Style {
+	case types.EdgeStyleDotted:
+		return "┆"
+	case types.EdgeStyleThick:
+		return "┃"
+	}
+	return "│"
+}
+
+// flowArrow is an edge's horizontal stroke with its arrowheads, and an edge
+// label, when it has one, in the middle of the stroke.
+func flowArrow(e *types.MermaidEdge, label string) string {
+	line := "─"
+	switch e.Style {
+	case types.EdgeStyleDotted:
+		line = "╌"
+	case types.EdgeStyleThick:
+		line = "━"
+	}
+	start, end := line, line
+	if e.HasArrowStart {
+		start = "◀" + line
+	}
+	if e.HasArrowEnd {
+		end = "▶"
+	}
+	if label != "" {
+		return start + " " + label + " " + line + end
+	}
+	return start + end
+}
+
+// rowsDown is the column of boxes, which fits any width.
+func (f *flowchart) rowsDown(width int) []string {
+	out := []string{}
+	for i, id := range f.order {
+		next, others := f.outgoing(i)
+		out = append(out, flowBox(f.label(id), width-4, next != nil || len(others) > 0)...)
+		for k, e := range others {
+			branch, cont := "  ├", "  │"
+			if k == len(others)-1 && next == nil {
+				branch, cont = "  └", "   "
+			}
+			head := branch + flowArrow(e, "") + " "
+			pad := strings.Repeat(" ", cellWidth(head)-cellWidth(cont))
+			for j, row := range flowWrap(f.edgeTarget(e), width-cellWidth(head)) {
+				if j == 0 {
+					out = append(out, head+row)
+				} else {
+					out = append(out, cont+pad+row)
+				}
+			}
+		}
+		switch {
+		case next != nil:
+			shaft := "  " + flowShaft(next)
+			if next.HasArrowStart {
+				out = append(out, "  ▲")
+			}
+			if next.Label != "" {
+				for _, row := range flowWrap(next.Label, width-5) {
+					out = append(out, shaft+" "+row)
+				}
+			} else if next.Style != types.EdgeStyleSolid {
+				out = append(out, shaft)
+			}
+			if next.HasArrowEnd {
+				out = append(out, "  ▼")
+			} else {
+				out = append(out, shaft)
+			}
+		case i+1 < len(f.order):
+			out = append(out, "")
+		}
+	}
+	return out
+}
+
+// rowsAcross is one row of boxes, or nil when that is wider than width.
+func (f *flowchart) rowsAcross(width int) []string {
+	type piece struct {
+		box       []string
+		w         int
+		connector string
+	}
+	pieces := make([]piece, len(f.order))
+	listed := []string{}
+	height, total := 0, 0
+	for i, id := range f.order {
+		box := flowBox(f.label(id), 1<<16, false)
+		next, others := f.outgoing(i)
+		connector := ""
+		switch {
+		case next != nil:
+			connector = flowArrow(next, strings.ReplaceAll(next.Label, "\n", " "))
+		case i+1 < len(f.order):
+			connector = "  "
+		}
+		pieces[i] = piece{box: box, w: cellWidth(box[0]), connector: connector}
+		total += pieces[i].w + cellWidth(connector)
+		height = max(height, len(box))
+		for _, e := range others {
+			listed = append(listed, f.flowName(id)+" "+flowArrow(e, "")+" "+f.edgeTarget(e))
+		}
+	}
+	if total > width {
+		return nil
+	}
+	out := []string{}
+	for y := 0; y < height; y++ {
+		var b strings.Builder
+		for _, p := range pieces {
+			cell := ""
+			if y < len(p.box) {
+				cell = p.box[y]
+			}
+			b.WriteString(padRight(cell, p.w))
+			if y == 1 {
+				b.WriteString(p.connector)
+			} else {
+				b.WriteString(strings.Repeat(" ", cellWidth(p.connector)))
+			}
+		}
+		out = append(out, strings.TrimRight(b.String(), " "))
+	}
+	for _, text := range listed {
+		out = append(out, flowWrap(text, width)...)
+	}
+	return out
+}
+
+// groupRows names each subgraph or composite state and the nodes in it.
+func (f *flowchart) groupRows(width int) []string {
+	out := []string{}
+	var walk func(groups []*types.MermaidSubgraph, indent string)
+	walk = func(groups []*types.MermaidSubgraph, indent string) {
+		for _, g := range groups {
+			names := make([]string, 0, len(g.NodeIDs))
+			for _, id := range g.NodeIDs {
+				if f.graph.Nodes[id] != nil {
+					names = append(names, f.flowName(id))
+				}
+			}
+			text := "▸ " + strings.ReplaceAll(g.Label, "\n", " ")
+			if len(names) > 0 {
+				text += ": " + strings.Join(names, ", ")
+			}
+			for _, row := range flowWrap(text, width-cellWidth(indent)) {
+				out = append(out, indent+row)
+			}
+			walk(g.Children, indent+"  ")
+		}
+	}
+	walk(f.graph.Subgraphs, "")
+	if len(out) > 0 {
+		return append([]string{""}, out...)
+	}
+	return out
+}
