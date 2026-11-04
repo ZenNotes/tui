@@ -330,16 +330,30 @@ func linkAt(line string, col int) (linkTarget, bool) {
 
 // linksOnLine lists every link on a line, in order.
 func linksOnLine(line string) []linkTarget {
+	return linksOnLineWhere(line, func(int, int) bool { return true })
+}
+
+// linksOnLineWhere lists the links on a line whose byte span keep accepts.
+func linksOnLineWhere(line string, keep func(start, end int) bool) []linkTarget {
 	out := []linkTarget{}
 	seen := map[int]bool{}
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
+		if !keep(m[0], m[1]) {
+			continue
+		}
 		out = append(out, wikilinkTargetOf(line[m[2]:m[3]]))
 		seen[m[0]] = true
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
+		if !keep(m[0], m[1]) {
+			continue
+		}
 		out = append(out, mdLinkTargetOf(line[m[2]:m[3]], line[m[4]:m[5]]))
 	}
 	for _, m := range urlAtRe.FindAllStringIndex(line, -1) {
+		if !keep(m[0], m[1]) {
+			continue
+		}
 		inside := false
 		for _, l := range mdLinkAtRe.FindAllStringIndex(line, -1) {
 			if l[0] <= m[0] && m[1] <= l[1] {
