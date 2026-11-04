@@ -5,6 +5,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,11 @@ type Target struct {
 	Name      string
 	BaseURL   string
 	AuthToken string
+	// VaultPath and VaultName are the vault the server said it is serving,
+	// from Served. A server can change its vault with nothing changing here,
+	// so a target resolved from flags or config leaves them empty.
+	VaultPath string
+	VaultName string
 }
 
 // RemoteTokenEnv carries a server token for CI and headless use.
@@ -96,15 +102,38 @@ func (t Target) Label() string {
 	return t.Root
 }
 
-// SameVault says two targets reach the same vault: the same server URL, or
-// the same directory however its path is spelled. Tokens and profile names
-// do not matter.
+// SameServer says two targets are the same server, whichever vault it serves.
+func SameServer(a, b Target) bool {
+	return a.Kind == KindRemote && b.Kind == KindRemote &&
+		strings.EqualFold(remote.NormalizeBaseURL(a.BaseURL), remote.NormalizeBaseURL(b.BaseURL))
+}
+
+// Served is the target with the vault its server is serving right now filled
+// in, one request. A local target comes back as it is.
+func Served(ctx context.Context, t Target) (Target, error) {
+	if t.Kind != KindRemote {
+		return t, nil
+	}
+	info, err := remote.NewClient(t.BaseURL, t.AuthToken).GetCurrentVault(ctx)
+	if err != nil {
+		return t, err
+	}
+	if info != nil {
+		t.VaultPath, t.VaultName = info.Root, info.Name
+	}
+	return t, nil
+}
+
+// SameVault says two targets reach the same vault: the same server serving the
+// same path as far as Served knows, or the same directory however its path is
+// spelled. Tokens and names do not matter: a vault's display name can change
+// in its settings, and it stays that vault.
 func SameVault(a, b Target) bool {
 	if a.Kind != b.Kind {
 		return false
 	}
 	if a.Kind == KindRemote {
-		return strings.EqualFold(remote.NormalizeBaseURL(a.BaseURL), remote.NormalizeBaseURL(b.BaseURL))
+		return SameServer(a, b) && a.VaultPath == b.VaultPath
 	}
 	if filepath.Clean(a.Root) == filepath.Clean(b.Root) {
 		return true
