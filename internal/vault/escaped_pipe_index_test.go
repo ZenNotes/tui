@@ -30,6 +30,8 @@ func TestExtractWikilinksReadsAnEscapedPipe(t *testing.T) {
 		{"a backslash with no pipe stays", `[[C\]]`, []string{`C\`}},
 		{"a backslash inside a target stays", `[[a\b|d]]`, []string{`a\b`}},
 		{"inline code", "`[[C\\|d]]`", []string{}},
+		{"a separator with no target", `[[\|d]]`, []string{}},
+		{"a backslash alone", `[[\]]`, []string{}},
 	} {
 		if got := ExtractWikilinks(c.body); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: ExtractWikilinks(%q) = %q, want %q", c.name, c.body, got, c.want)
@@ -111,6 +113,36 @@ func TestRewriteAssetReferencesKeepsAnEscapedPipe(t *testing.T) {
 		got, n := RewriteAssetReferencesInBody(c.body, assets, nil, "notes/n.md", "assets/pic.png", c.newPath)
 		if got != c.want || n != c.changed {
 			t.Errorf("%s: rewrote %d, got %s, want %d, %s", c.name, n, got, c.changed, c.want)
+		}
+	}
+}
+
+func TestRewritesKeepTheSpacesAroundATarget(t *testing.T) {
+	notes := []NoteMeta{{Path: "inbox/C.md", Title: "C", Folder: FolderInbox}}
+	for in, want := range map[string]string{
+		`[[C |d]]`:     `[[Renamed |d]]`,
+		`[[ C|d]]`:     `[[ Renamed|d]]`,
+		`[[ C ]]`:      `[[ Renamed ]]`,
+		`[[a/C |d]]`:   `[[a/C |d]]`,
+		`[[inbox/C ]]`: `[[inbox/Renamed ]]`,
+	} {
+		if got, _ := RewriteWikilinksForRename(in, notes, "inbox/C.md", "Renamed"); got != want {
+			t.Errorf("rename: %s -> %s, want %s", in, got, want)
+		}
+	}
+	assets := []AssetMeta{{Path: "assets/pic.png"}}
+	for _, c := range []struct {
+		in, newPath, want string
+		changed           int
+	}{
+		{`| ![[pic.png \|300]] |`, "assets/new.png", `| ![[new.png \|300]] |`, 1},
+		{`![[pic.png |300]]`, "assets/new.png", `![[new.png |300]]`, 1},
+		{`![[ pic.png|300]]`, "assets/new.png", `![[ new.png|300]]`, 1},
+		{`![[pic.png |300]]`, "media/pic.png", `![[pic.png |300]]`, 0},
+	} {
+		got, n := RewriteAssetReferencesInBody(c.in, assets, nil, "notes/n.md", "assets/pic.png", c.newPath)
+		if got != c.want || n != c.changed {
+			t.Errorf("asset: %s -> %d, %s, want %d, %s", c.in, n, got, c.changed, c.want)
 		}
 	}
 }

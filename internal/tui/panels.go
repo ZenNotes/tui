@@ -129,22 +129,25 @@ func (p *connectionsPanel) refresh(a *App) {
 	p.backlinks = links
 	p.outgoing, p.missing = nil, nil
 	seen := map[string]bool{}
+	linked := map[string]bool{}
 	for _, l := range vault.ExtractWikilinks(buf.ed.Text()) {
-		target := strings.TrimPrefix(l, "!")
-		if i := strings.IndexAny(target, "|#"); i >= 0 {
-			target = target[:i]
-		}
+		target, _, _ := vault.SplitWikilinkContent(l)
 		target = strings.TrimSpace(target)
-		if target == "" || seen[target] {
+		key := strings.ToLower(target)
+		if target == "" || seen[key] {
 			continue
 		}
-		seen[target] = true
+		seen[key] = true
 		if a.idx == nil {
 			continue
 		}
+		// Several spellings can reach one note, and a link can name a file.
 		if meta, ok := vault.ResolveWikilink(a.idx.notes, target); ok {
-			p.outgoing = append(p.outgoing, meta)
-		} else {
+			if !linked[meta.Path] {
+				linked[meta.Path] = true
+				p.outgoing = append(p.outgoing, meta)
+			}
+		} else if !a.linkNamesAsset(target, buf.path) {
 			p.missing = append(p.missing, target)
 		}
 	}

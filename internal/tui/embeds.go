@@ -142,6 +142,16 @@ func (a *App) resolveAssetPath(target, fromPath string) string {
 	return clean
 }
 
+// linkNamesAsset reports whether a link's target is a file in the vault's assets.
+func (a *App) linkNamesAsset(target, fromPath string) bool {
+	t := a.resolveEmbed(target, fromPath)
+	if t.kind == "note" || t.kind == "url" {
+		return false
+	}
+	_, ok := a.assetIndex()[strings.ToLower(t.rel)]
+	return ok
+}
+
 // assetIndex maps lower-cased vault-relative asset paths to file names.
 func (a *App) assetIndex() map[string]string {
 	if a.assetPaths != nil {

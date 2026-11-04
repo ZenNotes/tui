@@ -348,7 +348,8 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteM
 		if _, isNote := ResolveWikilink(notes, target); isNote {
 			continue
 		}
-		next := embed + "[[" + assetRetarget(target, r, noteDir, newPath, bareStillUnique, true) + rest + "]]"
+		retargeted := assetRetarget(strings.TrimSpace(target), r, noteDir, newPath, bareStillUnique, true)
+		next := embed + "[[" + wikiKeepSpaces(target, retargeted) + rest + "]]"
 		if next == body[m[0]:m[1]] {
 			continue // a bare name that still resolves reads exactly as before
 		}

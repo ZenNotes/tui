@@ -49,7 +49,7 @@ var noteLinkRe = regexp.MustCompile(`\[\[([^\]|]+?)(?:\\?\|[^\]]*)?\]\]`)
 func SplitNoteLinks(cell string) []string {
 	out := []string{}
 	for _, m := range noteLinkRe.FindAllStringSubmatch(cell, -1) {
-		if t := strings.TrimSpace(m[1]); t != "" {
+		if t := strings.TrimSpace(m[1]); t != "" && t != `\` {
 			out = append(out, t)
 		}
 	}

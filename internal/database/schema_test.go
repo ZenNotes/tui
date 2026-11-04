@@ -98,6 +98,8 @@ func TestSplitNoteLinksReadsAnEscapedPipe(t *testing.T) {
 		{`[[C|]]`, []string{"C"}},
 		{`[[C]]`, []string{"C"}},
 		{`[[C\]]`, []string{`C\`}},
+		{`[[\|d]]`, []string{}},
+		{`[[\]]`, []string{}},
 	} {
 		if got := SplitNoteLinks(c.cell); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("SplitNoteLinks(%q) = %q, want %q", c.cell, got, c.want)

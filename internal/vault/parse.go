@@ -6,11 +6,12 @@ import (
 	"unicode"
 )
 
-// Regexes mirror the extractors in the desktop's vault-ops.ts and the
-// server's parse.go so the extracted metadata matches those builds. A table
-// writes a wikilink's separator as `\|`, the escape GFM needs to keep the pipe
-// in its cell, so the separator takes an optional backslash: note names cannot
-// hold one, and without this the target of `[[C\|d]]` reads as `C\`.
+// Regexes follow the extractors in the desktop's vault-ops.ts and the server's
+// parse.go so the extracted metadata matches those builds. A table writes a
+// wikilink's separator as `\|`, the escape GFM needs to keep the pipe in its cell,
+// so the separator takes an optional backslash: note names cannot hold one. A
+// build without that reading reports `C\` for `[[C\|d]]`, so a listing from an
+// older server still can.
 var (
 	fenceLineRe  = regexp.MustCompile("^[ \t]*(`{3,}|~{3,})(.*)$")
 	inlineCodeRe = regexp.MustCompile("`[^`\n]*`")
@@ -202,7 +203,8 @@ func ExtractWikilinks(body string) []string {
 	out := []string{}
 	for _, m := range wikilinkRe.FindAllStringSubmatch(stripped, -1) {
 		target := strings.TrimSpace(m[2])
-		if target == "" {
+		// `[[\|d]]` and `[[\]]` name nothing: a backslash is never in a note's name.
+		if target == "" || target == `\` {
 			continue
 		}
 		if !seen[target] {
