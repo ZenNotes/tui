@@ -354,6 +354,28 @@ func TestStdioWorkToolsAtFullAccess(t *testing.T) {
 	}
 }
 
+// A file that gains a space keeps its plain Markdown links working. A server
+// rewrites links itself, so this is the local vault's guarantee; its own copy of
+// the rewrite gets the same fix separately.
+func TestStdioASpacedNameKeepsPlainLinksWorking(t *testing.T) {
+	bin := buildZN(t)
+	root := filepath.Join(t.TempDir(), "vault")
+	e2eVault(t, root)
+	note := filepath.Join(root, "Projects", "Links.md")
+	if err := os.WriteFile(note, []byte("[w](../assets/words.txt)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := connectStdio(t, bin, e2eBackend{name: "local", root: root, args: []string{"--vault", root}})
+	e2eOK(t, cs, "rename_asset", map[string]any{"path": "assets/words.txt", "name": "new words.txt"})
+	if got := e2eDisk(t, root, "Projects/Links.md"); got != "[w](<../assets/new words.txt>)\n" {
+		t.Fatalf("%q", got)
+	}
+	e2eOK(t, cs, "move_asset", map[string]any{"path": "assets/new words.txt", "targetDir": "Projects"})
+	if got := e2eDisk(t, root, "Projects/Links.md"); got != "[w](<new words.txt>)\n" {
+		t.Fatalf("%q", got)
+	}
+}
+
 // A denied call under each scope, with the disk unchanged afterwards.
 func TestStdioEveryScopeFailsClosed(t *testing.T) {
 	bin := buildZN(t)

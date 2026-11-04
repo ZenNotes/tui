@@ -681,5 +681,10 @@ Assets are listed for this only when an entry is not found among the notes and f
 scope that names only folders costs no extra request. The three attachment folder names always
 count as known, so `--deny-path assets` holds before the folder exists.
 
+A rename or move that gives a file a space or a parenthesis puts a plain Markdown link in angle
+brackets on a local vault, or it would stop being a link. `asset_link_rename.go` goes beyond
+znserver's and the desktop's copies here until they get the same fix, so on a server these links
+still break.
+
 Leaks, in the terms of section 6: a rename onto a hidden file's exact name answers "already
 exists", the same one bit as the name collisions above. Otherwise none.

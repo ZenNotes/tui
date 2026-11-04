@@ -667,3 +667,42 @@ func TestAssetRenameAndMoveRewriteOnlyWhatTheFilterAccepts(t *testing.T) {
 		t.Fatalf("%+v %v", dup2, err)
 	}
 }
+
+// A Markdown link has to stay a link when its file gains a space or a
+// parenthesis, and the next rename has to find it again.
+func TestAssetRenameKeepsMarkdownLinksWorkingWithSpacedNames(t *testing.T) {
+	assets := []AssetMeta{{Path: "assets/report.pdf"}, {Path: "assets/other.pdf"}}
+	cases := []struct {
+		name, body, next, want string
+	}{
+		{"a plain link gains brackets", "[x](../assets/report.pdf)\n", "assets/new report.pdf", "[x](<../assets/new report.pdf>)\n"},
+		{"a fragment stays inside them", "[x](../assets/report.pdf#page=3)\n", "assets/new report.pdf", "[x](<../assets/new report.pdf#page=3>)\n"},
+		{"a title stays outside them", "[x](../assets/report.pdf \"T\")\n", "assets/new report.pdf", "[x](<../assets/new report.pdf> \"T\")\n"},
+		{"an image too", "![x](../assets/report.pdf)\n", "assets/new report.pdf", "![x](<../assets/new report.pdf>)\n"},
+		{"parentheses need them too", "[x](../assets/report.pdf)\n", "assets/report(1).pdf", "[x](<../assets/report(1).pdf>)\n"},
+		{"a name without either stays plain", "[x](../assets/report.pdf)\n", "assets/renamed.pdf", "[x](../assets/renamed.pdf)\n"},
+		{"brackets already there stay", "[x](<../assets/report.pdf>)\n", "assets/new report.pdf", "[x](<../assets/new report.pdf>)\n"},
+		{"a bracket in a name cannot close them", "[x](<../assets/report.pdf>)\n", "assets/a>b.pdf", "[x](<../assets/a%3Eb.pdf>)\n"},
+		{"a wikilink never takes them", "![[assets/report.pdf]]\n", "assets/new report.pdf", "![[assets/new report.pdf]]\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := rewriteAssetReferencesInBody(tc.body, assets, "notes/n.md", "assets/report.pdf", tc.next)
+			if got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+
+	encoded := []AssetMeta{{Path: "assets/my report.pdf"}}
+	if got, _ := rewriteAssetReferencesInBody("[x](../assets/my%20report.pdf)\n", encoded, "notes/n.md", "assets/my report.pdf", "assets/new report.pdf"); got != "[x](../assets/new%20report.pdf)\n" {
+		t.Fatalf("an encoded link stays encoded: %q", got)
+	}
+
+	first, _ := rewriteAssetReferencesInBody("[x](../assets/report.pdf#page=3)\n", assets, "notes/n.md", "assets/report.pdf", "assets/new report.pdf")
+	renamed := []AssetMeta{{Path: "assets/new report.pdf"}}
+	second, count := rewriteAssetReferencesInBody(first, renamed, "notes/n.md", "assets/new report.pdf", "assets/final.pdf")
+	if count != 1 || second != "[x](<../assets/final.pdf#page=3>)\n" {
+		t.Fatalf("the next rename lost the link: %q (%d)", second, count)
+	}
+}
