@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -89,7 +90,7 @@ func (s *sidebarState) buildRows(a *App) []sidebarRow {
 					continue
 				}
 				if meta, ok := a.noteMeta(f); ok {
-					rows = append(rows, sidebarRow{kind: "note", key: "fav:" + f, label: meta.Title, depth: 1, path: f, folder: meta.Folder})
+					rows = append(rows, sidebarRow{kind: "note", key: "fav:" + f, label: termsafe.Line(meta.Title), depth: 1, path: f, folder: meta.Folder})
 				}
 			}
 		}
@@ -192,7 +193,7 @@ func (s *sidebarState) subtreeRows(a *App, folder vault.NoteFolder, parent strin
 	}
 	sortNotes(direct, a.prefs.NoteSortOrder)
 	for _, n := range direct {
-		rows = append(rows, sidebarRow{kind: "note", key: prefix + "note:" + n.Path, label: n.Title, depth: depth, path: n.Path, folder: folder})
+		rows = append(rows, sidebarRow{kind: "note", key: prefix + "note:" + n.Path, label: termsafe.Line(n.Title), depth: depth, path: n.Path, folder: folder})
 	}
 	return rows
 }

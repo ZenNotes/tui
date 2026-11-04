@@ -14,6 +14,10 @@ func runeWidth(r rune) int {
 	if r == '\t' {
 		return 4
 	}
+	// A control rune is drawn as a one-cell picture of itself.
+	if r < 0x20 && r != '\n' || r >= 0x7f && r <= 0x9f {
+		return 1
+	}
 	w := runewidth.RuneWidth(r)
 	if w == 0 && r >= 0x20 {
 		return 1

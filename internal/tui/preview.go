@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vim"
 )
 
@@ -65,6 +66,7 @@ var (
 
 // renderPreviewLines converts markdown to reading rows at a width.
 func (a *App) renderPreviewLines(text string, width int) []previewLine {
+	text = termsafe.Visible(text)
 	th := a.theme
 	lines := strings.Split(text, "\n")
 	out := []previewLine{}

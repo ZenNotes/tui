@@ -19,6 +19,7 @@ import (
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/fswatch"
 	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
@@ -763,7 +764,7 @@ func (a *App) View() string {
 	if a.cursorOut != nil {
 		a.cursorOut.Set(a.cursor)
 	}
-	return cleanScreen(a.theme.paint(screen))
+	return termsafe.Clean(a.theme.paint(screen))
 }
 
 func (a *App) renderVerticalBorder(h int, focused bool) string {

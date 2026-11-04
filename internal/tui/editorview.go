@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vim"
 )
 
@@ -419,7 +420,7 @@ func (a *App) renderEditor(buf *noteBuffer, w, h int, focused bool) string {
 					j++
 				}
 				_ = r
-				b.WriteString(a.styleFor(key).Render(string(run)))
+				b.WriteString(a.styleFor(key).Render(termsafe.Visible(string(run))))
 				cells += cellWidth(string(run))
 				col = j
 			}

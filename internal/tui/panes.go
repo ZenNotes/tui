@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -618,7 +619,7 @@ func (a *App) tabTitle(t *tab) string {
 		return t.view.title()
 	}
 	if meta, ok := a.noteMeta(t.path); ok {
-		return meta.Title
+		return termsafe.Line(meta.Title)
 	}
 	base := t.path
 	if i := strings.LastIndex(base, "/"); i >= 0 {
