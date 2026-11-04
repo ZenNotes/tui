@@ -299,7 +299,7 @@ func (a *App) paneClick(p *pane, m tea.MouseMsg, double bool) {
 		if t.preview != nil && t.preview.cache != nil {
 			idx := t.preview.scroll + y
 			if idx >= 0 && idx < len(t.preview.cache.lines) {
-				buf.ed.GotoLine(t.preview.cache.lines[idx].srcLine)
+				buf.ed.GotoLine(t.preview.cache.lines[idx].editorLine())
 			}
 		}
 		return
