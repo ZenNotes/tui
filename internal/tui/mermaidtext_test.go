@@ -333,7 +333,7 @@ func TestGlamourBareTableColumnsLineUp(t *testing.T) {
 	}
 }
 
-func zenTable(md string, width int) string {
+func zenTableText(md string, width int) string {
 	a := mermaidTestApp()
 	a.prefs.PreviewStyle = "zen"
 	return joinPreview(a.renderPreviewLinesFrom(md, width, "x.md"))
@@ -341,7 +341,7 @@ func zenTable(md string, width int) string {
 
 // In the zen style a wikilink's pipe split the cell in two.
 func TestZenTableKeepsAliasInOneCell(t *testing.T) {
-	all := zenTable("| Link | Why |\n|---|---|\n| [[Bookmarks|bookmarks]] | unescaped |\n| [[Bookmarks\\|escaped]] | escaped |\n| a \\| b | literal |", 60)
+	all := zenTableText("| Link | Why |\n|---|---|\n| [[Bookmarks|bookmarks]] | unescaped |\n| [[Bookmarks\\|escaped]] | escaped |\n| a \\| b | literal |", 60)
 	for _, bad := range []string{"[[", "]]", "\\"} {
 		if strings.Contains(all, bad) {
 			t.Fatalf("shows %q:\n%s", bad, all)
@@ -360,7 +360,7 @@ func TestZenTableKeepsAliasInOneCell(t *testing.T) {
 // A wide table in the zen style wraps its cells instead of cutting them off.
 func TestZenWideTableWrapsCells(t *testing.T) {
 	md := "| Command | Notes |\n|---|---|\n| jj describe -m message | Rewrites the change id only when the description is new and pushes nothing at all |"
-	all := zenTable(md, 40)
+	all := zenTableText(md, 40)
 	if strings.Contains(all, "…") {
 		t.Fatalf("cut off:\n%s", all)
 	}
@@ -376,7 +376,7 @@ func TestZenWideTableWrapsCells(t *testing.T) {
 }
 
 func TestZenTableWithoutOuterPipes(t *testing.T) {
-	all := zenTable("Name | Value\n-----|------\none  | 1", 40)
+	all := zenTableText("Name | Value\n-----|------\none  | 1", 40)
 	if strings.Contains(all, "---") || !strings.Contains(all, "│ one") {
 		t.Fatalf("a table with no outer pipes is not drawn:\n%s", all)
 	}
@@ -545,7 +545,7 @@ func TestMermaidCommentsAndWrappers(t *testing.T) {
 func TestMermaidLoneRegionalIndicatorKeepsLabel(t *testing.T) {
 	assertDrawn(t, "graph TD\n  A[\"🇺 love\"] --> B", "love", "B")
 	assertDrawn(t, "graph LR\n  A[\"🇺 love\"] --> B", "love", "B")
-	if all := zenTable("| 🇺 flag text | b |\n|---|---|\n| a | c |", 60); !strings.Contains(all, "flag text") {
+	if all := zenTableText("| 🇺 flag text | b |\n|---|---|\n| a | c |", 60); !strings.Contains(all, "flag text") {
 		t.Fatalf("zen cell cut off:\n%s", all)
 	}
 }
@@ -632,7 +632,7 @@ func TestGlamourTableLinkHasNoExtraSpaces(t *testing.T) {
 
 // F15: a zen cell that fits keeps its spacing.
 func TestZenCellKeepsRunsOfSpaces(t *testing.T) {
-	if all := zenTable("| a    b | c |\n|---|---|\n| 1 | 2 |", 60); !strings.Contains(all, "a    b") {
+	if all := zenTableText("| a    b | c |\n|---|---|\n| 1 | 2 |", 60); !strings.Contains(all, "a    b") {
 		t.Fatalf("spaces collapsed:\n%s", all)
 	}
 }
@@ -673,4 +673,12 @@ func TestMermaidLostStructureShowsSource(t *testing.T) {
 func TestMermaidDeepGroupsFitThePane(t *testing.T) {
 	src := "graph TD\n" + strings.Repeat("  subgraph s [Deep name here]\n", 60) + "  A\n" + strings.Repeat("  end\n", 60)
 	assertFits(t, mermaidTestApp().mermaidLines(src, 0, 40), 40)
+}
+
+// A pipe of an alias's own is not a column rule.
+func TestGlamourTableAliasKeepsItsOwnPipe(t *testing.T) {
+	all := joinPreview(glamourTestLines(t, "| A | B |\n|---|---|\n| [[Note|a\\|b]] | x |\n| plain text here | y |", 60))
+	if !strings.Contains(all, "a|b") {
+		t.Fatalf("the alias changed:\n%s", all)
+	}
 }

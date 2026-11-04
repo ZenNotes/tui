@@ -420,8 +420,20 @@ func (a *App) postStyleTableRow(row string) string {
 		b.WriteString(cell)
 		b.WriteString(strings.Repeat(" ", strings.Count(cell, "⟦")+strings.Count(cell, "⟧")))
 	}
+	tokens := wikiTokenRe.FindAllStringIndex(row, -1)
+	inToken := func(i int) bool {
+		for _, t := range tokens {
+			if t[0] <= i && i < t[1] {
+				return true // an alias may hold a pipe of its own
+			}
+		}
+		return false
+	}
 	last := 0
 	for _, rule := range tableRuleRe.FindAllStringIndex(row, -1) {
+		if inToken(rule[0]) {
+			continue
+		}
 		pad(row[last:rule[0]])
 		b.WriteString(row[rule[0]:rule[1]])
 		last = rule[1]
