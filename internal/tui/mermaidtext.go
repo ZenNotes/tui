@@ -71,6 +71,8 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 	switch {
 	case t.err != "":
 		return source("mermaid: "+firstLine(t.err), th.StatusError.Render)
+	case t.flow != nil && len(t.flow.order) == 0:
+		return source("This diagram has nothing to draw yet.", th.Muted.Render)
 	case t.partial:
 		return source("zn cannot draw all of this diagram as text, so this is its source.", th.Muted.Render)
 	case t.flow != nil:
@@ -82,9 +84,6 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 				return source("This diagram is wider than the pane, so this is its source.", th.Muted.Render)
 			}
 		}
-	}
-	if len(rows) == 0 {
-		return source("This diagram has nothing to draw yet.", th.Muted.Render)
 	}
 	out := make([]previewLine, 0, len(rows))
 	for _, row := range rows {
