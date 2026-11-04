@@ -71,7 +71,7 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 	switch {
 	case t.err != "":
 		return source("mermaid: "+firstLine(t.err), th.StatusError.Render)
-	case t.flow != nil && len(t.flow.order) == 0:
+	case t.flow != nil && len(t.flow.order) == 0 && !t.flow.unread:
 		return source("This diagram has nothing to draw yet.", th.Muted.Render)
 	case t.partial:
 		return source("zn cannot draw all of this diagram as text, so this is its source.", th.Muted.Render)
@@ -100,6 +100,7 @@ type flowchart struct {
 	order       []string // node IDs in the order they are drawn
 	leftToRight bool
 	bySource    map[string][]*types.MermaidEdge
+	unread      bool // the parser skipped part of the source
 }
 
 var (
@@ -434,6 +435,7 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 		}
 	}
 	cleanGroups(graph.Subgraphs)
+	f.unread = partial
 	return f, partial, nil
 }
 
