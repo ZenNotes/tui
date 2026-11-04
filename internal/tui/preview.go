@@ -61,10 +61,12 @@ type styledRune struct {
 }
 
 var (
-	tableRowRe   = regexp.MustCompile(`^\s*\|.*\|\s*$`)
-	tableSepRe   = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
-	calloutRe    = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	embedWikiRe  = regexp.MustCompile(`!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
+	tableRowRe = regexp.MustCompile(`^\s*\|.*\|\s*$`)
+	tableSepRe = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
+	calloutRe  = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
+	// embedWikiRe's target starts with something other than the `\` of a `\|`
+	// separator, so `![[\|d]]`, which names nothing, is not an embed.
+	embedWikiRe  = regexp.MustCompile(`!\[\[((?:[^\]|\\]|\\[^\]|])[^\]|]*?)(?:\\?\|[^\]]*)?\]\]`)
 	embedImgRe   = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
 	highlightRe  = regexp.MustCompile(`==[^=\n]+==`)
 	mathInlineRe = regexp.MustCompile(`\$[^$\n]+\$`)
@@ -267,12 +269,16 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	}
 	for _, m := range wikilinkAtRe.FindAllSubmatchIndex(scan, -1) {
 		content := text[m[2]:m[3]]
+		link := wikilinkTargetOf(content)
+		if link.target == "" {
+			continue
+		}
 		target, _, alias := splitWiki(content)
 		display := target
 		if alias != "" {
-			display = alias
+			display = strings.ReplaceAll(alias, `\|`, "|")
 		}
-		links = append(links, wikilinkTargetOf(content))
+		links = append(links, link)
 		add(m[0:2], stLink, display, len(links)-1)
 	}
 	for _, m := range mdLinkRenderRe.FindAllSubmatchIndex(scan, -1) {
@@ -425,7 +431,8 @@ func embedPlaceholders(text string, re *regexp.Regexp) string {
 func splitWiki(content string) (target, heading, alias string) {
 	if i := strings.Index(content, "|"); i >= 0 {
 		alias = strings.TrimSpace(content[i+1:])
-		content = content[:i]
+		// A table escapes the separator as `\|`; the backslash is not the target's.
+		content = strings.TrimSuffix(content[:i], `\`)
 	}
 	if i := strings.Index(content, "#"); i >= 0 {
 		heading = content[i+1:]
