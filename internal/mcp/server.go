@@ -1,6 +1,6 @@
 // Package mcp is the ZenNotes MCP server: the vault operations exposed as
-// tools, with a note-taker-focused system instruction, over stdio. Tool
-// names, argument shapes and result shapes match the server the desktop app
+// tools, with a note-taker-focused system instruction, over stdio (or HTTP,
+// through the mcpserver package). Tool names, argument shapes and result shapes match the server the desktop app
 // bundles, so an installed client keeps working when it launches this
 // binary instead. The tools in assets.go and worktools.go are this server's
 // alone until the desktop's mirrors them; see docs/shared-contracts.md.
@@ -9,14 +9,20 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
+	"regexp"
+	"runtime/debug"
 	"sort"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -44,6 +50,38 @@ type Options struct {
 	Version string
 	// Transport defaults to stdio; tests pass an in-memory one.
 	Transport sdk.Transport
+	// Hosted is the mode for a ZenNotes server serving these tools from inside
+	// itself over HTTP (mcpserver), where the client is on another machine:
+	//   - The server pins the vault itself, so nothing asks which one it serves.
+	//   - A full-access client is wrapped in the scope too, so it gets no absolute
+	//     paths, and vault_info does not report the server's internal address.
+	//   - No zn config file is read; they belong to whoever runs zn, not the server.
+	//   - A hidden tool answers as a tool error, because the SDK's HTTP 400 for an
+	//     unknown tool under protocol 2026-07-28 makes its Go client hang up.
+	//   - A refusal never advises `zn connect`, and names no internal address.
+	//   - A tool that would always refuse under a path scope is not offered.
+	//   - A panic in a tool answers that call instead of stopping the server.
+	Hosted bool
+	// HostedBaseURL is the internal address Hosted keeps out of what clients read.
+	HostedBaseURL string
+	// LogCall, when set, is told each tool call's name, outcome (ok, error or panic)
+	// and duration, and never its arguments or result. Hosted only.
+	LogCall func(tool, outcome string, took time.Duration)
+	// Logf, when set, gets what would otherwise go to stderr. Hosted only.
+	Logf func(format string, args ...any)
+	// MaxResponseBytes, when set, is the largest answer to a tool call, as it goes on the
+	// wire. An answer waits in memory until its client reads it, and JSON encoded twice
+	// can take four times the note it came from. Hosted only.
+	MaxResponseBytes int64
+	// ToolSlots, when set, is how many tool calls run at once, shared with other
+	// servers built on the same channel. Hosted only.
+	ToolSlots chan struct{}
+	// WriteTurn, when set, is the turn writes take, shared with other servers built on
+	// the same channel, since several credentials can write one vault. Hosted only.
+	WriteTurn chan struct{}
+	// CommentAuthor signs every comment and reply. A client's own `author` argument
+	// is ignored, so one credential cannot sign as someone else. Hosted only.
+	CommentAuthor string
 }
 
 // previousVaultKey carries, into vault_info, the vault a session left when
@@ -145,6 +183,27 @@ func containsFold(list []string, needle string) bool {
 	return false
 }
 
+// capped applies a client's limit. A negative one, or one too large for an int, is
+// no limit at all, so that it can never become a bad slice bound.
+func capped[T any](items []T, limit float64) []T {
+	if limit < 0 || limit >= float64(len(items)) {
+		return items
+	}
+	return items[:int(limit)]
+}
+
+// clampedLimit is a client's limit as an int. Converting a float too large for one
+// is undefined, and comes out negative on amd64.
+func clampedLimit(limit float64) int {
+	if limit < 0 {
+		return 0
+	}
+	if limit > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(limit)
+}
+
 func sortByUpdated(notes []vault.NoteMeta) {
 	sort.SliceStable(notes, func(i, j int) bool { return notes[i].UpdatedAt > notes[j].UpdatedAt })
 }
@@ -195,7 +254,7 @@ func coreTools() []toolDef {
 					// An assistant with scoped access gets no absolute paths: it
 					// has no use for them, and they name the user's home folder.
 					result := orderedResult{{"kind", string(description.Kind)}}
-					if description.Kind == backend.KindRemote {
+					if description.Kind == backend.KindRemote && !scoped.hosted {
 						var serverName *string
 						if description.Name != "" {
 							serverName = &description.Name
@@ -334,10 +393,7 @@ func coreTools() []toolDef {
 					notes = append(notes, n)
 				}
 				sortByUpdated(notes)
-				if int(limit) >= 0 && len(notes) > int(limit) {
-					notes = notes[:int(limit)]
-				}
-				return notes, nil
+				return capped(notes, limit), nil
 			},
 		},
 		{
@@ -674,7 +730,7 @@ func coreTools() []toolDef {
 				if !has {
 					limit = 80
 				}
-				return b.SearchText(ctx, query, int(limit))
+				return b.SearchText(ctx, query, clampedLimit(limit))
 			},
 		},
 		{
@@ -705,10 +761,7 @@ func coreTools() []toolDef {
 					}
 				}
 				sortByUpdated(matches)
-				if len(matches) > int(limit) {
-					matches = matches[:int(limit)]
-				}
-				return matches, nil
+				return capped(matches, limit), nil
 			},
 		},
 		{
@@ -740,10 +793,7 @@ func coreTools() []toolDef {
 					}
 				}
 				sortByUpdated(matches)
-				if len(matches) > int(limit) {
-					matches = matches[:int(limit)]
-				}
-				return matches, nil
+				return capped(matches, limit), nil
 			},
 		},
 		{
@@ -797,6 +847,7 @@ func coreTools() []toolDef {
 "tag":{"type":"string"},
 "folder":{"type":"string","enum":["inbox","quick","archive"]},
 "tags":{"type":"array","items":{"type":"string"},"description":"Alternative to tag: require ALL of these tags."},
+"limit":{"type":"number","description":"Cap the number of tasks returned. Default: all."},
 "includeExcluded":{"type":"boolean","description":"Also scan notes opted out of Tasks (frontmatter ` + "`tasks: false`" + ` / ` + "`tasks: note`" + `), folders on the vault's excluded list, its template folder, and notes outside its Task folders. Default false: excluded tasks are invisible."}}}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				status, has, err := a.optionalString("status")
@@ -879,6 +930,11 @@ func coreTools() []toolDef {
 						}
 					}
 					out = append(out, t)
+				}
+				if limit, has, err := a.optionalNumber("limit"); err != nil {
+					return nil, err
+				} else if has {
+					out = capped(out, limit)
 				}
 				return out, nil
 			},
@@ -1079,6 +1135,77 @@ func scopeBackend(b Backend, scope *Scope) Backend {
 	return newScopedBackend(b, *scope)
 }
 
+// hostedScopeBackend always wraps, whatever the scope (Options.Hosted).
+func hostedScopeBackend(b Backend, scope *Scope, logf func(string, ...any)) Backend {
+	s := Scope{Access: AccessWrite}
+	if scope != nil {
+		s = *scope
+	}
+	scoped := newScopedBackend(b, s)
+	scoped.hosted = true
+	scoped.logf = logf
+	return scoped
+}
+
+// hostedAlwaysRefused are tools a hosted server would list and then refuse for any
+// client with a path scope, whatever it asks. Listing them only wastes the model's
+// attention. See errAssetBytesOnAServer, errAssetLinksEverywhere and RenameNote.
+var hostedAlwaysRefused = map[string]bool{
+	"rename_note":     true,
+	"read_asset":      true,
+	"duplicate_asset": true,
+	"rename_asset":    true,
+	"move_asset":      true,
+}
+
+func hostedToolAllowed(name string, scope *Scope) bool {
+	if scope != nil && scope.Restricted() && hostedAlwaysRefused[name] {
+		return false
+	}
+	return toolAllowed(name, scope)
+}
+
+// hostedCommentTools write a comment, which Options.CommentAuthor signs.
+var hostedCommentTools = map[string]bool{"add_comment": true, "reply_to_comment": true, "resolve_comment": true}
+
+// hostedToolError phrases a failure for a client of a hosted server. The server
+// calls itself with its own credentials, so a refusal is nothing the client can
+// fix, and the zn advice DescribeToolError gives does not apply.
+func hostedToolError(err error, b Backend, baseURL string) string {
+	msg := err.Error()
+	if b != nil {
+		msg = scrubPaths(msg, b)
+	}
+	status := remote.StatusOf(err)
+	if status == 401 || status == 403 {
+		return "The ZenNotes server refused this request."
+	}
+	if status >= 500 {
+		return "The ZenNotes server could not do that."
+	}
+	if baseURL != "" {
+		msg = strings.ReplaceAll(msg, baseURL, "the ZenNotes server")
+	}
+	msg = hostedRequestPrefix.ReplaceAllString(msg, "The ZenNotes server refused this ($1)$2")
+	return hostedFileOperation.ReplaceAllString(msg, "")
+}
+
+var (
+	// hostedRequestPrefix is how the remote client starts an error, naming an internal route.
+	hostedRequestPrefix = regexp.MustCompile(`^Remote server request failed \((\d+) [^)]*\) for [^:]*(: )?`)
+	// hostedFileOperation is how Go starts a file error, naming a path on the server.
+	hostedFileOperation = regexp.MustCompile(`\b(?:open|stat|lstat|mkdir|rename|remove|unlinkat|read|write) [^\s:]*/[^\s:]*: `)
+)
+
+// MaxHTTPRequestBytes is the largest MCP request a hosted server should accept:
+// the largest note write the server takes, or the largest upload_asset, whichever
+// is larger, plus room for the JSON around it. The server still applies its own
+// note limit to what the tool sends it.
+func MaxHTTPRequestBytes(maxNoteBytes int64) int64 {
+	const envelope = 1 << 20
+	return max(maxNoteBytes, int64(base64.StdEncoding.EncodedLen(maxUploadAssetBytes))) + envelope
+}
+
 // DescribeToolError phrases a failure for the agent. A server that turns
 // the request away is the one failure an agent cannot fix by retrying: the
 // desktop app keeps its token in the OS secret store, where zn cannot read
@@ -1139,6 +1266,21 @@ func Payload(result any) (string, error) {
 // Run serves MCP (over stdio unless Options names a transport) until the
 // client closes the connection.
 func Run(ctx context.Context, opts Options) error {
+	server := BuildServer(opts)
+	transport := opts.Transport
+	if transport == nil {
+		transport = &sdk.StdioTransport{}
+	}
+	err := server.Run(ctx, transport)
+	if err == nil || errors.Is(err, context.Canceled) || isClientDisconnect(err) {
+		return nil
+	}
+	return err
+}
+
+// BuildServer is the MCP server with every tool the scope offers, ready for a
+// transport.
+func BuildServer(opts Options) *sdk.Server {
 	version := opts.Version
 	if version == "" {
 		version = "0.1.0"
@@ -1155,9 +1297,18 @@ func Run(ctx context.Context, opts Options) error {
 	// trip. Whatever landed between the read and the write would be lost, so writes
 	// take turns. One turn rather than one per note, because a rename rewrites any
 	// number of notes, and on a server it does so where no lock here can reach.
-	writeTurn := make(chan struct{}, 1)
+	writeTurn := opts.WriteTurn
+	if writeTurn == nil {
+		writeTurn = make(chan struct{}, 1)
+	}
 
-	instructions := ResolveInstructions()
+	instructions := DefaultInstructions
+	if opts.Hosted {
+		vaults.served = nil
+		vaults.scoped = true
+	} else {
+		instructions = ResolveInstructions()
+	}
 	if opts.Scope != nil && opts.Scope.Active() {
 		instructions += scopeInstructions(*opts.Scope)
 	}
@@ -1165,11 +1316,20 @@ func Run(ctx context.Context, opts Options) error {
 		Instructions: instructions,
 		Capabilities: &sdk.ServerCapabilities{Tools: &sdk.ToolCapabilities{}},
 	})
+	describeError := func(err error, b Backend) string {
+		if opts.Hosted {
+			return hostedToolError(err, b, opts.HostedBaseURL)
+		}
+		return DescribeToolError(err, b)
+	}
+	if opts.Hosted {
+		server.AddReceivingMiddleware(hostedCalls(opts))
+	}
 	for _, def := range tools() {
 		def := def
 		// A tool the scope does not offer is not listed, so the model never
 		// plans around it, and an SDK call to it is an unknown tool.
-		if !toolAllowed(def.name, opts.Scope) {
+		if !toolAllowed(def.name, opts.Scope) || (opts.Hosted && !hostedToolAllowed(def.name, opts.Scope)) {
 			continue
 		}
 		server.AddTool(&sdk.Tool{
@@ -1183,6 +1343,10 @@ func Run(ctx context.Context, opts Options) error {
 				if err := json.Unmarshal(req.Params.Arguments, &a); err != nil {
 					return errorResult("Error: invalid arguments: " + err.Error()), nil
 				}
+				// `null` decodes to no map at all.
+				if a == nil {
+					a = map[string]any{}
+				}
 			}
 			b, move, err := vaults.backendFor(ctx, def.name == "vault_info")
 			if err != nil {
@@ -1192,12 +1356,19 @@ func Run(ctx context.Context, opts Options) error {
 				if opts.Scope != nil && errors.As(err, &pathErr) {
 					return errorResult("Error: The vault cannot be opened."), nil
 				}
-				return errorResult("Error: " + DescribeToolError(err, b)), nil
+				return errorResult("Error: " + describeError(err, b)), nil
 			}
 			if move != nil {
 				ctx = context.WithValue(ctx, previousVaultKey{}, move.from)
 			}
-			b = scopeBackend(b, opts.Scope)
+			if opts.Hosted {
+				b = hostedScopeBackend(b, opts.Scope, opts.Logf)
+				if hostedCommentTools[def.name] && opts.CommentAuthor != "" {
+					a["author"] = opts.CommentAuthor
+				}
+			} else {
+				b = scopeBackend(b, opts.Scope)
+			}
 			// An edit to a note is recorded so the user can review it in the app.
 			agent := "Assistant"
 			if req.Session != nil {
@@ -1217,7 +1388,7 @@ func Run(ctx context.Context, opts Options) error {
 				return def.handler(ctx, args(a), b)
 			})
 			if err != nil {
-				return errorResult("Error: " + DescribeToolError(err, b)), nil
+				return errorResult("Error: " + describeError(err, b)), nil
 			}
 			// A tool that answers with more than text (read_asset) builds its own.
 			if built, ok := result.(*sdk.CallToolResult); ok {
@@ -1234,15 +1405,134 @@ func Run(ctx context.Context, opts Options) error {
 			return &sdk.CallToolResult{Content: []sdk.Content{&sdk.TextContent{Text: payload}}}, nil
 		})
 	}
-	transport := opts.Transport
-	if transport == nil {
-		transport = &sdk.StdioTransport{}
+	return server
+}
+
+const (
+	// hostedToolSlotWait is how long a call waits for a turn. A client that has hung up
+	// is not noticed, since the SDK detaches calls from their requests, so this is finite.
+	hostedToolSlotWait = 30 * time.Second
+	// hostedCallTimeout bounds one tool call.
+	hostedCallTimeout = 90 * time.Second
+	// HostedCallLimit is the longest a tool call can take, waiting included. A response's
+	// write deadline must be longer, or the answer to a slow call could not be sent.
+	HostedCallLimit = hostedToolSlotWait + hostedCallTimeout
+)
+
+// hostedCalls answers a call to a tool the scope hides as a tool error rather
+// than the protocol error the SDK sends (Options.Hosted), and reports each call.
+func hostedCalls(opts Options) sdk.Middleware {
+	return func(next sdk.MethodHandler) sdk.MethodHandler {
+		return func(ctx context.Context, method string, req sdk.Request) (result sdk.Result, err error) {
+			params, ok := req.GetParams().(*sdk.CallToolParamsRaw)
+			if method != "tools/call" || !ok {
+				return next(ctx, method, req)
+			}
+			if !hostedToolAllowed(params.Name, opts.Scope) || !knownTool(params.Name) {
+				return errorResult("Unknown tool: " + params.Name), nil
+			}
+			if opts.ToolSlots != nil {
+				wait := time.NewTimer(hostedToolSlotWait)
+				defer wait.Stop()
+				select {
+				case opts.ToolSlots <- struct{}{}:
+					defer func() { <-opts.ToolSlots }()
+				case <-wait.C:
+					return errorResult("Error: The ZenNotes server is busy. Try again shortly."), nil
+				case <-ctx.Done():
+					return errorResult("Error: The call was cancelled."), nil
+				}
+			}
+			ctx, cancel := context.WithTimeout(ctx, hostedCallTimeout)
+			defer cancel()
+			started := time.Now()
+			report := func(outcome string) {
+				if opts.LogCall != nil {
+					opts.LogCall(params.Name, outcome, time.Since(started))
+				}
+			}
+			// The SDK runs a call on its own goroutine, where a panic ends the whole
+			// server. The stack names functions, and the value is left out of the log
+			// because it could hold a client's text.
+			defer func() {
+				if failure := recover(); failure != nil {
+					report("panic")
+					if opts.Logf != nil {
+						opts.Logf("mcp: tool=%s panicked (%T)\n%s", params.Name, failure, debug.Stack())
+					}
+					result, err = errorResult("Error: The tool failed."), nil
+				}
+			}()
+			result, err = next(ctx, method, req)
+			if called, isResult := result.(*sdk.CallToolResult); err == nil && isResult && opts.MaxResponseBytes > 0 {
+				if size := encodedResultSize(called); size > opts.MaxResponseBytes {
+					result = errorResult(fmt.Sprintf("Error: This answer is too large to send, at %d MiB. Ask for less, such as one section of a note with note_sections, or a lower limit.", size>>20))
+				}
+			}
+			outcome := "ok"
+			if called, isResult := result.(*sdk.CallToolResult); err != nil || (isResult && called.IsError) {
+				outcome = "error"
+			}
+			report(outcome)
+			return result, err
+		}
 	}
-	err := server.Run(ctx, transport)
-	if err == nil || errors.Is(err, context.Canceled) || isClientDisconnect(err) {
-		return nil
+}
+
+// encodedResultSize is about how many bytes a result takes as JSON, without building it.
+func encodedResultSize(result *sdk.CallToolResult) int64 {
+	var size int64
+	for _, content := range result.Content {
+		switch c := content.(type) {
+		case *sdk.TextContent:
+			size += encodedStringSize(c.Text)
+		case *sdk.ImageContent:
+			size += int64(base64.StdEncoding.EncodedLen(len(c.Data)))
+		case *sdk.AudioContent:
+			size += int64(base64.StdEncoding.EncodedLen(len(c.Data)))
+		default:
+			if raw, err := json.Marshal(content); err == nil {
+				size += int64(len(raw))
+			}
+		}
 	}
-	return err
+	return size
+}
+
+// encodedStringSize is how many bytes a string takes as JSON, with HTML characters
+// escaped, as the SDK writes them.
+func encodedStringSize(text string) int64 {
+	size := int64(len(text))
+	for i := 0; i < len(text); {
+		c := text[i]
+		if c < utf8.RuneSelf {
+			switch {
+			case c == '"' || c == '\\' || c == '\n' || c == '\r' || c == '\t':
+				size++
+			case c == '<' || c == '>' || c == '&' || c < 0x20:
+				size += 5
+			}
+			i++
+			continue
+		}
+		r, width := utf8.DecodeRuneInString(text[i:])
+		if r == utf8.RuneError && width == 1 {
+			size += 5
+		} else if r == '\u2028' || r == '\u2029' {
+			size += 3
+		}
+		i += width
+	}
+	return size
+}
+
+func knownTool(name string) bool {
+	for _, known := range ToolNames() {
+		if known == name {
+			return true
+		}
+	}
+	return false
 }
 
 // isClientDisconnect recognises the SDK's report that the client closed

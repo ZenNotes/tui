@@ -44,6 +44,31 @@ configuration directories, verify persisted note bytes, and clean up the child
 process. They do not contact a deployed server or use a real account. CI runs
 them against the server's `main` branch (the `server-contract` job).
 
+The server also runs `mcp-scope.json` through its own `/mcp` route, over real HTTP:
+
+```sh
+ZENNOTES_SERVER_MCP_CONTRACT_BINARY=/absolute/path/to/server go test ./internal/mcp -run 'ThroughHTTP|TestHTTPMCP'
+```
+
+Every call answers as it does in the server tests below, with these differences: a
+full-access `vault_info` gives no absolute paths or server address, a stale deny entry is
+worded for a server's settings, and a client with a path scope is not offered `rename_note`,
+`read_asset`, `duplicate_asset`, `rename_asset` or `move_asset`, which would refuse anyway. The same run covers
+what is particular to HTTP: tokens staying on their own side, the route being off by
+default, what stops the server from starting, what reaches the log, and vault switches.
+This variable is separate because only a server built against this module has the route.
+ZenNotes/znserver's CI always sets it, from the `tui` tag its `go.mod` pins. Set it in
+this repository's `server-contract` job as well, once the server's `main` has the route.
+
+**This is the first code dependency between the two repositories.** `mcpserver` is this
+module's only public package, and the server imports it, so:
+
+- A change to `mcpserver`'s API needs a change in the server to match.
+- A tool or scope change here reaches self-hosters only when the server pins a new tag.
+- The tag has to exist before a server release can use it, so `tui` releases first.
+- Anything `mcpserver` imports must stay free of the terminal UI's libraries, because
+  the server's binary carries it.
+
 `internal/mcp` runs `mcp-scope.json` behind the real server, where some calls
 answer differently on purpose. `scopeServerDifferences` in
 `internal/mcp/scope_server_contract_test.go` names each one and what it answers

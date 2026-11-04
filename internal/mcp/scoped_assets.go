@@ -135,7 +135,10 @@ func (sb *scopedBackend) knownAssetDirs(ctx context.Context, v *scopeView) []str
 // realDirs says whether every segment of rel that exists is a real directory
 // under the name its parent lists, so a write lands in the folder that was checked.
 func (sb *scopedBackend) realDirs(ctx context.Context, v *scopeView, rel string) bool {
-	if rel == "" || rel == "." {
+	// With no paths to keep a file inside, this has nothing to protect, and a server
+	// refuses a write through a link itself. It cannot tell a subfolder its last file left
+	// from a link, so it would refuse a move back into one.
+	if rel == "" || rel == "." || !sb.scope.Restricted() {
 		return true
 	}
 	if v.root == "" {

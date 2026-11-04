@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -91,14 +92,27 @@ func NewClient(baseURL, authToken string) *Client {
 	}
 }
 
+// NewClientWithTransport is a client whose requests go through transport instead
+// of the network, for a server that calls its own API in-process. It sends no
+// token: the transport is what vouches for the request.
+func NewClientWithTransport(baseURL string, transport http.RoundTripper) *Client {
+	return &Client{
+		BaseURL: NormalizeBaseURL(baseURL),
+		http:    &http.Client{Timeout: 60 * time.Second, Transport: transport},
+	}
+}
+
 func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
 	var reader io.Reader
 	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
+		// Not HTML-escaped: `<` and `&` would take six bytes each against a server's limit.
+		var data bytes.Buffer
+		encoder := json.NewEncoder(&data)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(body); err != nil {
 			return err
 		}
-		reader = bytes.NewReader(data)
+		reader = &data
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reader)
 	if err != nil {
@@ -303,7 +317,16 @@ func (c *Client) ReadNote(ctx context.Context, rel string) (vault.NoteContent, e
 }
 
 func (c *Client) SearchText(ctx context.Context, query string) ([]vault.TextSearchMatch, error) {
+	return c.SearchTextUpTo(ctx, query, 0)
+}
+
+// SearchTextUpTo asks for more matches than a server returns by default, which only a
+// current one honours. Zero takes its default.
+func (c *Client) SearchTextUpTo(ctx context.Context, query string, limit int) ([]vault.TextSearchMatch, error) {
 	params := url.Values{"q": {query}, "backend": {"auto"}}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
 	var out []vault.TextSearchMatch
 	if err := c.Get(ctx, "/api/search/text?"+params.Encode(), &out); err != nil {
 		return nil, err
