@@ -51,10 +51,12 @@ type styledRune struct {
 }
 
 var (
-	tableRowRe   = regexp.MustCompile(`^\s*\|.*\|\s*$`)
-	tableSepRe   = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
-	calloutRe    = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	embedWikiRe  = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\\?\|[^\]]*)?\]\]`)
+	tableRowRe = regexp.MustCompile(`^\s*\|.*\|\s*$`)
+	tableSepRe = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
+	calloutRe  = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
+	// embedWikiRe's target starts with something other than the `\` of a `\|`
+	// separator, so `![[\|d]]`, which names nothing, is not an embed.
+	embedWikiRe  = regexp.MustCompile(`!\[\[((?:[^\]|\\]|\\[^\]|])[^\]|]*?)(?:\\?\|[^\]]*)?\]\]`)
 	embedImgRe   = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
 	highlightRe  = regexp.MustCompile(`==[^=\n]+==`)
 	mathInlineRe = regexp.MustCompile(`\$[^$\n]+\$`)
@@ -246,12 +248,16 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	}
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(text, -1) {
 		content := text[m[2]:m[3]]
+		link := wikilinkTargetOf(content)
+		if link.target == "" {
+			continue
+		}
 		target, _, alias := splitWiki(content)
 		display := target
 		if alias != "" {
-			display = alias
+			display = strings.ReplaceAll(alias, `\|`, "|")
 		}
-		links = append(links, wikilinkTargetOf(content))
+		links = append(links, link)
 		add(m[0:2], stLink, display, len(links)-1)
 	}
 	for _, m := range mdLinkRenderRe.FindAllStringSubmatchIndex(text, -1) {
@@ -388,9 +394,10 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 			sepIdx = i
 			continue
 		}
-		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+		// As GFM reads a cell: `\|` stays inside it and shows as a plain pipe.
+		cells := tableCells(line)
 		for c := range cells {
-			cells[c] = strings.TrimSpace(cells[c])
+			cells[c] = strings.ReplaceAll(cells[c], `\|`, "|")
 		}
 		rows = append(rows, cells)
 	}

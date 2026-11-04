@@ -12,7 +12,7 @@ var (
 	fenceLineRe  = regexp.MustCompile("^[ \t]*(`{3,}|~{3,})(.*)$")
 	inlineCodeRe = regexp.MustCompile("`[^`\n]*`")
 	tagRe        = regexp.MustCompile(`(?:^|\s)#(\p{L}[\p{L}\d_/-]*)`)
-	wikilinkRe   = regexp.MustCompile(`(!?)\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
+	wikilinkRe   = regexp.MustCompile(`(!?)\[\[([^\]|]+?)(?:\\?\|[^\]]+)?\]\]`)
 	linkRe       = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
 	embedRe      = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]`)
 	// A block may be empty (`---\n---`): record pages without properties
@@ -23,7 +23,7 @@ var (
 	headingRe     = regexp.MustCompile(`(?m)^#{1,6}\s+`)
 	imageMdRe     = regexp.MustCompile(`!\[[^\]]*\]\([^)]*\)`)
 	mdLinkRe      = regexp.MustCompile(`\[([^\]]+)\]\([^)]*\)`)
-	mdWikiAltRe   = regexp.MustCompile(`\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`)
+	mdWikiAltRe   = regexp.MustCompile(`\[\[([^\]|]+?)(?:\\?\|([^\]]+)|\\\|)?\]\]`)
 	markupTrimRe  = regexp.MustCompile(`[*_~>]+`)
 	wsCollapseRe  = regexp.MustCompile(`\s+`)
 	schemeRe      = regexp.MustCompile(`^[a-zA-Z][a-zA-Z\d+.\-]*:`)
@@ -270,7 +270,7 @@ func BuildExcerpt(body string) string {
 		text = mdWikiAltRe.ReplaceAllStringFunc(text, func(s string) string {
 			m := mdWikiAltRe.FindStringSubmatch(s)
 			if len(m) >= 3 && m[2] != "" {
-				return m[2]
+				return strings.ReplaceAll(m[2], `\|`, "|")
 			}
 			return m[1]
 		})

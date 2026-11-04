@@ -79,7 +79,7 @@ type embedTarget struct {
 // names look through the attachment folders, paths resolve relative to the
 // note and to the vault root.
 func (a *App) resolveEmbed(raw, fromPath string) embedTarget {
-	raw = strings.TrimSpace(raw)
+	raw = strings.Replace(strings.TrimSpace(raw), `\|`, "|", 1)
 	if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
 		return embedTarget{kind: "url", raw: raw, url: raw}
 	}
@@ -178,7 +178,7 @@ func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath str
 			return nil, false
 		}
 		line := lines[b.start]
-		if m := embedLineRe.FindStringSubmatch(line); m != nil {
+		if m := embedLineRe.FindStringSubmatch(line); m != nil && wikilinkTargetOf(m[1]).target != "" {
 			return a.embedTargetLines(a.resolveEmbed(m[1], fromPath), b.start, width, fromPath), true
 		}
 		if m := embedMDLineRe.FindStringSubmatch(line); m != nil {

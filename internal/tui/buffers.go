@@ -288,7 +288,7 @@ type linkTarget struct {
 // wikilinkTargetOf builds the link for what sits inside `[[...]]`.
 func wikilinkTargetOf(content string) linkTarget {
 	target, anchor, alias := vault.SplitWikilinkContent(content)
-	alias = strings.TrimPrefix(strings.TrimPrefix(alias, `\`), "|")
+	alias = strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(alias, `\`), "|"), `\|`, "|")
 	return linkTarget{kind: "wikilink", target: strings.TrimSpace(target + anchor), alias: alias}
 }
 
@@ -311,7 +311,9 @@ func linkAt(line string, col int) (linkTarget, bool) {
 	byteCol := byteAt(col)
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
 		if m[0] <= byteCol && byteCol < m[1] {
-			return wikilinkTargetOf(line[m[2]:m[3]]), true
+			if link := wikilinkTargetOf(line[m[2]:m[3]]); link.target != "" {
+				return link, true
+			}
 		}
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
@@ -332,7 +334,9 @@ func linksOnLine(line string) []linkTarget {
 	out := []linkTarget{}
 	seen := map[int]bool{}
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
-		out = append(out, wikilinkTargetOf(line[m[2]:m[3]]))
+		if link := wikilinkTargetOf(line[m[2]:m[3]]); link.target != "" {
+			out = append(out, link)
+		}
 		seen[m[0]] = true
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
@@ -466,6 +470,10 @@ func (a *App) offerNoteFromLink(from string, link linkTarget) {
 	}
 	name, _, _ := vault.SplitWikilinkContent(link.target)
 	name = strings.TrimSpace(name)
+	if name == "" {
+		a.notify("This link names no note")
+		return
+	}
 	a.confirm("Create note \""+name+"\"?", func() {
 		folder, sub := a.currentFolderContext()
 		a.createNote(folder, name, sub, nil, true)

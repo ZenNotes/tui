@@ -36,6 +36,21 @@ func TestResolveWikilinkReadsAnEscapedPipe(t *testing.T) {
 	}
 }
 
+func TestExcerptReadsAnEscapedPipe(t *testing.T) {
+	for _, c := range []struct{ body, want string }{
+		{`See [[Note\|]] now`, "See Note now"},
+		{`See [[Note\|d]] now`, "See d now"},
+		{`See [[Note\|a\|b]] now`, "See a|b now"},
+		{`See [[Note|d]] now`, "See d now"},
+		{`See [[Note]] now`, "See Note now"},
+		{`See [[Note|]] now`, "See [[Note|]] now"},
+	} {
+		if got := BuildExcerpt(c.body); got != c.want {
+			t.Errorf("excerpt of %q = %q, want %q", c.body, got, c.want)
+		}
+	}
+}
+
 // A rename has to leave the escape in place: an unescaped pipe in a table row
 // ends the cell and breaks the row.
 func TestRenameKeepsAnEscapedPipeEscaped(t *testing.T) {
