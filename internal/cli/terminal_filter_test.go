@@ -32,3 +32,23 @@ func TestScreenTextFollowsTheOutput(t *testing.T) {
 		t.Fatalf("text lost: %q", screen.String())
 	}
 }
+
+// An error can name a note, and shows the same way on a terminal.
+func TestEmitErrorFollowsTheOutput(t *testing.T) {
+	saved := stderr
+	t.Cleanup(func() { stderr = saved })
+
+	var piped bytes.Buffer
+	stderr = &piped
+	emitError("no note a\x1b[8mb")
+	if !strings.Contains(piped.String(), "\x1b[8m") {
+		t.Fatalf("a pipe lost bytes: %q", piped.String())
+	}
+
+	var screen bytes.Buffer
+	stderr = termsafe.Writer{W: &screen}
+	emitError("no note a\x1b[8mb")
+	if strings.Contains(screen.String(), "\x1b") {
+		t.Fatalf("the terminal got an escape: %q", screen.String())
+	}
+}

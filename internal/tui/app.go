@@ -621,11 +621,13 @@ func (a *App) ignoreChange(path string) {
 // --- messages and toasts ---
 
 func (a *App) notify(text string) {
+	text = termsafe.Visible(text) // it often names a note
 	a.message, a.messageErr = text, false
 	a.addToast(text, false)
 }
 
 func (a *App) notifyError(text string) {
+	text = termsafe.Visible(text)
 	a.message, a.messageErr = text, true
 	a.addToast(text, true)
 }

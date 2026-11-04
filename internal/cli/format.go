@@ -79,6 +79,9 @@ func emitOK(message string) {
 }
 
 func emitError(message string) {
+	if _, ok := stderr.(termsafe.Writer); ok {
+		message = termsafe.Visible(message)
+	}
 	fmt.Fprintf(stderr, "zn: %s\n", message)
 }
 

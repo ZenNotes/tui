@@ -6,6 +6,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
+
+	"github.com/ZenNotes/tui/internal/termsafe"
 )
 
 // runeWidth is the cell width of a rune; tabs count as tabSize cells here
@@ -93,6 +95,7 @@ func padRight(s string, width int) string {
 
 // truncateCells shortens a plain string to width cells with an ellipsis.
 func truncateCells(s string, width int) string {
+	s = termsafe.Line(s) // what the views truncate is note text, on one row
 	if width <= 0 {
 		return ""
 	}

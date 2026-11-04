@@ -1,14 +1,19 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/termsafe"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // The real frame: a note's bytes are text on screen wherever they are drawn,
@@ -144,5 +149,66 @@ func TestBreakLongWordsKeepsLines(t *testing.T) {
 	}
 	if plain := "short words\nstay as they are"; breakLongWords(plain) != plain {
 		t.Fatal("short text changed")
+	}
+}
+
+// A note's own colour does not reach the terminal from any view that lists note
+// text: tasks, the board, comments, the outline and Home.
+func TestNoteTextInViewsCannotSetColours(t *testing.T) {
+	const colour = "\x1b[8m"
+	root := newSessionParityVault(t)
+	body := "# Head " + colour + "ing\n\n- [ ] task " + colour + "one\n"
+	name := "Name" + colour + "d.md"
+	if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Plain.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := newSessionParityApp(t, root)
+	a.sidebarOpen = false
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if _, err := backend.AddComment(context.Background(), a.backend, backend.AddCommentInput{Path: "Plain.md", AnchorText: "task", Body: "said " + colour + "this"}); err != nil {
+		t.Fatal(err)
+	}
+	a.openNote("Plain.md", true)
+	a.idx.tasks = []vault.Task{{ID: "t", Content: "task " + colour + "one", NoteTitle: "Name" + colour + "d", SourcePath: "Plain.md"}}
+
+	for _, line := range []string{"tasklist", "kanban", "home", "comments", "outline"} {
+		a.runCommandLine(line)
+		if a.commentsOpen {
+			a.comments.refresh(a)
+			for i := 0; i < 50 && a.comments.loading; i++ {
+				time.Sleep(10 * time.Millisecond)
+			}
+		}
+		frame := a.View()
+		if strings.Contains(frame, colour) {
+			t.Errorf(":%s sends the note's colour:\n%s", line, stripAnsi(frame))
+		}
+		if !strings.ContainsRune(frame, '␛') {
+			t.Errorf(":%s does not show the note's text:\n%s", line, stripAnsi(frame))
+		}
+	}
+}
+
+func TestCommentThreadShowsControlRunes(t *testing.T) {
+	for _, row := range wrapCommentText("said \x1b[8mthis\nnext", 40) {
+		if strings.Contains(row, "\x1b") {
+			t.Fatalf("got %q", row)
+		}
+	}
+}
+
+// A message that names a note shows it as text, in the status line and a toast.
+func TestMessagesCannotSetColours(t *testing.T) {
+	a, _ := cursorApp(t, "text", 100)
+	a.notify("saved a\x1b[8mb")
+	if strings.Contains(a.View(), "\x1b[8m") {
+		t.Fatal("a notice sent the colour")
+	}
+	a.notifyError("could not save a\x1b[8mb")
+	if strings.Contains(a.View(), "\x1b[8m") {
+		t.Fatal("an error sent the colour")
 	}
 }

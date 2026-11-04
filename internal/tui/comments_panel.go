@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 	tea "github.com/charmbracelet/bubbletea"
@@ -93,7 +94,7 @@ func (p *commentsPanel) render(a *App, w, h int) string {
 }
 func wrapCommentText(s string, w int) []string {
 	out := []string{}
-	for _, line := range strings.Split(s, "\n") {
+	for _, line := range strings.Split(termsafe.Visible(s), "\n") {
 		r := []rune(line)
 		for _, seg := range wrapLine(r, max(1, w)) {
 			out = append(out, string(r[seg.start:seg.end]))
