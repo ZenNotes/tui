@@ -19,7 +19,8 @@ import (
 // tool calls and the bytes a client must get back. The desktop's bundled MCP
 // server runs the same cases in apps/desktop/src/mcp/scope-contract.test.ts
 // (ZenNotes/zennotes), whose packages/bridge-contract/fixtures/mcp-scope.json
-// this is a copy of; see docs/shared-contracts.md. When a case fails, settle
+// this is a copy of, for now ahead of it on the tools the desktop has not yet
+// mirrored; see docs/shared-contracts.md. When a case fails, settle
 // which behavior is intended before changing anything; never copy this
 // engine's output into the fixture.
 

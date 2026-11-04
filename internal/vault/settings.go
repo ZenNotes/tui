@@ -31,6 +31,9 @@ var legacyAttachmentsDirs = []string{PrimaryAttachmentsDir, "_assets"}
 // attachmentsDirs are every directory whose files are assets, canonical first.
 var attachmentsDirs = []string{AssetsDir, PrimaryAttachmentsDir, "_assets"}
 
+// AttachmentDirs lists them for callers outside the engine.
+func AttachmentDirs() []string { return append([]string{}, attachmentsDirs...) }
+
 // reservedNonSystemRootNames stay reserved however the system folders are
 // remapped: asset dirs and the internal dir are never user note folders.
 var reservedNonSystemRootNames = map[string]struct{}{

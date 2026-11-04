@@ -378,7 +378,7 @@ func TestScopeListsOnlyTheToolsItOffers(t *testing.T) {
 			t.Errorf("read access lists %s", name)
 		}
 	}
-	if _, ok := listed["vault_info"]; !ok || len(listed) != 12 {
+	if _, ok := listed["vault_info"]; !ok || len(listed) != 15 {
 		t.Fatalf("read access lists %d tools", len(listed))
 	}
 	if _, err := read.CallTool(context.Background(), &sdk.CallToolParams{Name: "write_note", Arguments: map[string]any{"path": "Projects/Plan.md", "body": "gone"}}); err == nil {
