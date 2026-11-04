@@ -269,14 +269,14 @@ func escapeCodePipes(row string) string {
 		case '\\':
 			i += 2
 		case '`':
-			n := backtickRun(row[i:])
+			n := leadingBackticks(row[i:])
 			closer := -1
 			for j := i + n; j < len(row); {
 				if row[j] != '`' {
 					j++
 					continue
 				}
-				m := backtickRun(row[j:])
+				m := leadingBackticks(row[j:])
 				if m == n {
 					closer = j
 					break
@@ -303,7 +303,7 @@ func escapeCodePipes(row string) string {
 	return out.String()
 }
 
-func backtickRun(s string) int {
+func leadingBackticks(s string) int {
 	return len(s) - len(strings.TrimLeft(s, "`"))
 }
 
