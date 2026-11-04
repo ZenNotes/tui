@@ -67,10 +67,8 @@ func (v *filesView) refresh(a *App) {
 						err = e
 						continue
 					}
-					for _, as := range assets {
-						if _, count := vault.RewriteAssetLinks(body.Body, n.Path, as.Path, as.Path); count > 0 {
-							uses[as.Path] = append(uses[as.Path], n)
-						}
+					for p := range vault.AssetsReferencedBy(body.Body, assets, n.Path) {
+						uses[p] = append(uses[p], n)
 					}
 				}
 			}
@@ -283,6 +281,12 @@ func (v *filesView) rename(a *App, as vault.AssetMeta) {
 			a.notifyError(err.Error())
 			return
 		}
+		// A bare name resolves against the listing, so take it before the rename.
+		assets, err := a.backend.ListAssets(a.ctx)
+		if err != nil {
+			a.notifyError(err.Error())
+			return
+		}
 		next, err := m.RenameAsset(a.ctx, as.Path, name)
 		if err != nil {
 			a.notifyError(err.Error())
@@ -291,7 +295,7 @@ func (v *filesView) rename(a *App, as vault.AssetMeta) {
 		failures := []string{}
 		for _, n := range notes {
 			err := a.mutateNote(n.Path, func(body string) (string, bool) {
-				text, count := vault.RewriteAssetLinks(body, n.Path, as.Path, next.Path)
+				text, count := vault.RewriteAssetReferencesInBody(body, assets, n.Path, as.Path, next.Path)
 				return text, count > 0
 			})
 			if err != nil {

@@ -368,6 +368,45 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notePath, old
 	return sb.String(), changed
 }
 
+// RewriteAssetReferencesInBody is rewriteAssetReferencesInBody for a caller that
+// writes through its own buffers, as `zn tui` does.
+func RewriteAssetReferencesInBody(body string, assets []AssetMeta, notePath, oldPath, newPath string) (string, int) {
+	return rewriteAssetReferencesInBody(body, assets, notePath, oldPath, newPath)
+}
+
+// AssetsReferencedBy returns the vault-relative paths of the assets body
+// references, read the way a rename reads them: note-relative, then vault-root,
+// then by unique basename. Code is skipped. assets is the current listing;
+// notePath is the note holding body.
+func AssetsReferencedBy(body string, assets []AssetMeta, notePath string) map[string]bool {
+	found := map[string]bool{}
+	if !strings.Contains(body, "[[") && !strings.Contains(body, "](") {
+		return found
+	}
+	mask := wikiCodeMask(body)
+	add := func(reference string) {
+		t := strings.TrimSpace(reference)
+		if strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">") {
+			t = t[1 : len(t)-1]
+		}
+		if p, ok := resolveAssetPathAmong(assets, notePath, t); ok {
+			found[p] = true
+		}
+	}
+	for _, m := range assetWikilinkRe.FindAllStringSubmatchIndex(body, -1) {
+		if !mask[m[0]] {
+			target, _, _ := strings.Cut(body[m[4]:m[5]], "|")
+			add(target)
+		}
+	}
+	for _, m := range assetMdDestRe.FindAllStringSubmatchIndex(body, -1) {
+		if !mask[m[0]] {
+			add(body[m[2]:m[3]])
+		}
+	}
+	return found
+}
+
 // rewriteAssetReferences rewrites every note that referenced the renamed or
 // moved asset, skipping the trash and whatever rewrite turns down (nil: every
 // note). This vault's listing carries no attachment flag, so it reads each note

@@ -108,6 +108,49 @@ func TestFileRenameFindsReferencesAddedAfterFilesRefresh(t *testing.T) {
 	}
 }
 
+func TestFileRenameAndUseCountFollowBareEmbeds(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	m := a.backend.(backend.AssetManager)
+	as, err := m.ImportAsset(a.ctx, "note.md", "pic.png", strings.NewReader("png"))
+	if err != nil || as.Path != "assets/pic.png" {
+		t.Fatalf("%+v %v", as, err)
+	}
+	closed := "![[pic.png]] ![[assets/pic.png|300]] [rel](../assets/pic.png) `![[pic.png]]` `[rel](../assets/pic.png)`\n"
+	if err = os.MkdirAll(filepath.Join(root, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "notes", "closed.md"), []byte(closed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "note.md"), []byte("![[pic.png]]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	buf := openLoaded(t, a, "note.md")
+	buf.ed.ReplaceText("Unsaved ![[pic.png]]\n")
+
+	v := &filesView{}
+	a.pendingCmds = nil
+	v.refresh(a)
+	loaded := a.pendingCmds[0]().(filesLoadedMsg)
+	a.pendingCmds = nil
+	if got := len(loaded.uses[as.Path]); got != 2 || loaded.err != nil {
+		t.Fatalf("a bare embed must count as a use: %d notes, %v", got, loaded.err)
+	}
+
+	v.rename(a, loaded.assets[0])
+	a.overlay.(*prompt).onSubmit(a, "new.png")
+	wantClosed := "![[new.png]] ![[assets/new.png|300]] [rel](../assets/new.png) `![[pic.png]]` `[rel](../assets/pic.png)`\n"
+	if got := noteOnDisk(t, root, "notes/closed.md"); got != wantClosed {
+		t.Fatalf("closed note: %q", got)
+	}
+	if got := buf.ed.Text(); got != "Unsaved ![[new.png]]\n" {
+		t.Fatalf("open buffer: %q", got)
+	}
+	if got := noteOnDisk(t, root, "note.md"); got != "Unsaved ![[new.png]]\n" {
+		t.Fatalf("open note on disk: %q", got)
+	}
+}
+
 func TestTemplateMetadataDoesNotOverwriteAnExternalBodyEdit(t *testing.T) {
 	a, _ := newFeatureTestApp(t)
 	original := templates.Template{Name: "Example", Body: "Original body"}
