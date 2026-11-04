@@ -176,5 +176,11 @@ func EditSectionInBody(body string, s NoteSection, mode SectionEditMode, text st
 	if end < len(lines) {
 		out = append(out, lines[end:]...)
 	}
-	return strings.Join(out, "\n")
+	edited := strings.Join(out, "\n")
+	// A Windows note stays one, the new lines included. A note mixing endings
+	// comes out with plain newlines.
+	if crlf := strings.Count(body, "\r\n"); crlf > 0 && crlf == strings.Count(body, "\n") {
+		return strings.ReplaceAll(edited, "\n", "\r\n")
+	}
+	return edited
 }

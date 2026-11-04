@@ -6,8 +6,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -118,11 +122,19 @@ func refuseDatabaseFile(meta vault.AssetMeta, all []vault.AssetMeta) error {
 	return nil
 }
 
+// windowsReservedName is a device name Windows keeps, with or without an
+// extension.
+var windowsReservedName = regexp.MustCompile(`(?i)^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)`)
+
 // checkAssetName refuses a name the asset listing would not show afterwards,
 // since a file the listing cannot see is one no tool can reach again.
 func checkAssetName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	lower := strings.ToLower(trimmed)
+	// Not every system keeps a trailing dot or what follows a colon, so a name
+	// that reads as a note after losing them counts as one.
+	stem, _, _ := strings.Cut(lower, ":")
+	stem = strings.TrimRight(stem, ". ")
 	switch {
 	case trimmed == "" || trimmed == "." || trimmed == "..":
 		return errors.New("A file name is required.")
@@ -130,8 +142,10 @@ func checkAssetName(name string) error {
 		return errors.New("Use only a file name, with no folder in it.")
 	case strings.HasPrefix(trimmed, "."):
 		return errors.New("A file name cannot start with a dot.")
-	case strings.HasSuffix(lower, ".md"):
+	case strings.HasSuffix(stem, ".md"):
 		return errors.New("Notes are not attachments: use create_note or rename_note.")
+	case windowsReservedName.MatchString(trimmed):
+		return errors.New("That name is reserved on Windows, so choose another.")
 	case strings.HasSuffix(lower, ".excalidraw"), vault.IsAtomicWriteTempPath(trimmed), database.IsSidecarPath(trimmed):
 		return errors.New("That kind of file cannot be managed as an attachment.")
 	}
@@ -139,17 +153,18 @@ func checkAssetName(name string) error {
 }
 
 // checkAssetRename adds what a rename must refuse and an upload need not, since
-// an upload's name is cleaned the way the app's import cleans it. These are read
-// as link syntax (`#` a heading, `?` a query, `|` an alias, `]` the end of a
-// wikilink, `^` a block, `%` an escape), so every link to the file would stop
+// an upload's name is cleaned the way the app's import cleans it. Most of these
+// are read as link syntax (`#` a heading, `?` a query, `|` an alias, `]` the end
+// of a wikilink, `^` a block, `%` an escape), and a colon or a trailing dot does
+// not survive on every system. Either way every link to the file would stop
 // resolving while the rename reported success.
 func checkAssetRename(name string) error {
 	if err := checkAssetName(name); err != nil {
 		return err
 	}
 	trimmed := strings.TrimSpace(name)
-	if strings.ContainsAny(trimmed, "#?|[]^%") || strings.IndexFunc(trimmed, unicode.IsControl) >= 0 {
-		return errors.New("That name would break links to the file: leave out # ? | [ ] ^ % and control characters.")
+	if strings.ContainsAny(trimmed, "#?|[]^%:") || strings.IndexFunc(trimmed, unicode.IsControl) >= 0 || strings.HasSuffix(trimmed, ".") {
+		return errors.New("A file name cannot contain # ? | [ ] ^ % : or a control character, or end with a dot, since links to it would break.")
 	}
 	return nil
 }
@@ -164,9 +179,14 @@ func checkAssetTargetDir(ctx context.Context, b Backend, raw string) (string, er
 		return "", refused
 	}
 	for _, seg := range strings.Split(clean, "/") {
-		if strings.HasSuffix(strings.ToLower(seg), database.FormDirSuffix) {
+		// A name ending in a dot or a space, or holding a colon, does not mean the
+		// same folder on every system.
+		if strings.HasSuffix(strings.ToLower(seg), database.FormDirSuffix) || strings.HasSuffix(seg, ".") || strings.HasSuffix(seg, " ") || strings.Contains(seg, ":") {
 			return "", refused
 		}
+	}
+	if b.Kind() == backend.KindLocal && !foldersListed(b.Root(), clean) {
+		return "", refused
 	}
 	settings, err := b.VaultSettings(ctx)
 	if err != nil {
@@ -176,6 +196,38 @@ func checkAssetTargetDir(ctx context.Context, b Backend, raw string) (string, er
 		return "", refused
 	}
 	return clean, nil
+}
+
+// foldersListed says whether each segment of rel that exists is a name its parent
+// lists. A filesystem can answer to more spellings than the one it lists, and a
+// path checked under another spelling is not the folder it lands in.
+func foldersListed(root, rel string) bool {
+	walk := root
+	for _, seg := range strings.Split(rel, "/") {
+		parent := walk
+		walk = filepath.Join(walk, seg)
+		if _, err := os.Lstat(walk); errors.Is(err, fs.ErrNotExist) {
+			return true
+		}
+		if !folderNameListed(parent, seg) {
+			return false
+		}
+	}
+	return true
+}
+
+func folderNameListed(parent, name string) bool {
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return false
+	}
+	folded := search.Fold(name)
+	for _, e := range entries {
+		if search.Fold(e.Name()) == folded {
+			return true
+		}
+	}
+	return false
 }
 
 // decodeAssetBase64 reads what a client plausibly sends: standard or URL-safe,
@@ -348,7 +400,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "rename_asset",
-			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name; `linksNotUpdated` lists any it could not change, so fix those by hand. Names holding # ? | [ ] ^ or % are refused, since links could not reach the file.",
+			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name, and `linksNotUpdated` lists any that could not be.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string","description":"New file name with its extension, no folder."}},"required":["path","name"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")
@@ -374,7 +426,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "move_asset",
-			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated; `linksNotUpdated` lists any it could not change. A taken name gets a number, so use the returned `path`.",
+			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated, and `linksNotUpdated` lists any that could not be. A taken name gets a number, so use the returned `path`.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"targetDir":{"type":"string","description":"Vault-relative folder, such as assets/plots."}},"required":["path","targetDir"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")

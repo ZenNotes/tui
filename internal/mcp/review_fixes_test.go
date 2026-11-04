@@ -3,7 +3,9 @@ package mcp
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -37,9 +39,9 @@ func TestRenameAssetRefusesNamesThatBreakLinks(t *testing.T) {
 	})
 	cs := runScoped(t, root, nil)
 	before := readFile(t, root, "n.md")
-	for _, name := range []string{"b#c.png", "h?i.png", "50%25.png", "d|e.png", "f]g.png", "g[h.png", "j^k.png", "a\nb.png", "a\tb.png", "a\x7fb.png"} {
+	for _, name := range []string{"b#c.png", "h?i.png", "50%25.png", "d|e.png", "f]g.png", "g[h.png", "j^k.png", "a:b.png", "pic.png.", "a\nb.png", "a\tb.png", "a\x7fb.png"} {
 		got := mustFail(t, cs, "rename_asset", map[string]any{"path": "assets/pic.png", "name": name})
-		if !strings.Contains(got, "would break links") {
+		if !strings.Contains(got, "links to it would break") {
 			t.Errorf("%q: %s", name, got)
 		}
 	}
@@ -135,8 +137,8 @@ func TestDoneOnARecurringTaskWritesTheNextOccurrence(t *testing.T) {
 }
 
 func TestAssetRewriteReportsNotesItCouldNotChange(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root writes through a read-only folder")
+	if os.Geteuid() == 0 || runtime.GOOS == "windows" {
+		t.Skip("needs a folder that refuses a write")
 	}
 	root := seedFiles(t, map[string]string{
 		".zennotes/vault.json": rootVault,
@@ -350,8 +352,7 @@ func TestUpdateTaskExpectedTextCatchesAnIdThatMoved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "s.md"), []byte("- [ ] second\n- [ ] third\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := mustFail(t, cs, "update_task", map[string]any{"id": second.ID, "state": "done", "expectedText": second.Content})
-	if !strings.Contains(got, `now reads "third"`) || !strings.Contains(got, "list_tasks") {
+	if got := mustCall(t, cs, "update_task", map[string]any{"id": second.ID, "state": "done", "expectedText": second.Content}); got != "null" {
 		t.Fatalf("%s", got)
 	}
 	if body := readFile(t, root, "s.md"); body != "- [ ] second\n- [ ] third\n" {
@@ -444,7 +445,7 @@ func TestFileTaskFieldsTheParserReads(t *testing.T) {
 			{"waiting": true, "state": "open"},
 		} {
 			root, _, refuse := setup(t, "open")
-			if got := refuse(both); !strings.Contains(got, "frontmatter status") {
+			if got := refuse(both); !strings.Contains(got, "A task note has one status") {
 				t.Errorf("%v: %s", both, got)
 			}
 			if body := readFile(t, root, "t.md"); body != note("open") {
@@ -496,5 +497,138 @@ func TestListAssetsLeavesOutWhatTheAppHides(t *testing.T) {
 		if tool.name == "list_assets" && strings.Contains(tool.description, "attachments directory") {
 			t.Errorf("assets live anywhere in the vault: %s", tool.description)
 		}
+	}
+}
+
+// A note that lands as one once a system drops the end of its name is a note, and
+// a device name is nothing a file can be called there.
+func TestAssetNamesThatDoNotSurviveEverySystem(t *testing.T) {
+	for name, want := range map[string]string{
+		"note.md.":       "Notes are not attachments",
+		"note.md ":       "Notes are not attachments",
+		"note.md::$DATA": "Notes are not attachments",
+		"CON":            "reserved on Windows",
+		"nul.txt":        "reserved on Windows",
+		"lpt1.png":       "reserved on Windows",
+	} {
+		err := checkAssetName(name)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v", name, err)
+		}
+	}
+	for _, name := range []string{"console.png", "null.txt", "lpt.png", "com0.png", "notes.mdx"} {
+		if err := checkAssetName(name); err != nil {
+			t.Errorf("%q: %v", name, err)
+		}
+	}
+}
+
+func TestMoveAssetRefusesFolderNamesThatDoNotSurviveEverySystem(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"assets/pic.png":       "png",
+	})
+	cs := runScoped(t, root, nil)
+	for _, dir := range []string{"Files.", "Files ", "a/b.", "a:b"} {
+		if got := mustFail(t, cs, "move_asset", map[string]any{"path": "assets/pic.png", "targetDir": dir}); !strings.Contains(got, "cannot put files there") {
+			t.Errorf("%q: %s", dir, got)
+		}
+	}
+	if !exists(root, "assets/pic.png") {
+		t.Fatal("the file moved")
+	}
+}
+
+func TestFolderNameListedIsWhatTheParentLists(t *testing.T) {
+	root := seedFiles(t, map[string]string{"Kept/x.png": "png", "Café/y.png": "png"})
+	for name, want := range map[string]bool{"Kept": true, "kept": true, "cafe": true, "Other": false, "Kep": false} {
+		if got := folderNameListed(root, name); got != want {
+			t.Errorf("%q: %v", name, got)
+		}
+	}
+	if !foldersListed(root, "Kept/new/deeper") || !foldersListed(root, "Missing/x") {
+		t.Error("a folder that does not exist yet is fine")
+	}
+	if folderNameListed(filepath.Join(root, "Missing"), "x") {
+		t.Error("a parent that cannot be read lists nothing")
+	}
+}
+
+func TestEditsKeepAWindowsNotesLineEndings(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"task.md":              "# T\r\n\r\n- [ ] one\r\n- [ ] two\r\n",
+		"rec.md":               "- [ ] water @repeat:daily due:2026-01-01\r\n- [ ] after\r\n",
+		"sec.md":               "# A\r\n\r\nbody\r\n\r\n# B\r\n\r\nmore\r\n",
+		"mixed.md":             "- [ ] one\r\n- [ ] two\nlast\n",
+	})
+	cs := runScoped(t, root, nil)
+	mustCall(t, cs, "update_task", map[string]any{"id": "task.md#1", "state": "done", "due": "2026-02-02"})
+	if got := readFile(t, root, "task.md"); got != "# T\r\n\r\n- [ ] one\r\n- [x] two due:2026-02-02\r\n" {
+		t.Fatalf("%q", got)
+	}
+	mustCall(t, cs, "update_task", map[string]any{"id": "mixed.md#0", "priority": "high"})
+	if got := readFile(t, root, "mixed.md"); got != "- [ ] one !high\r\n- [ ] two\nlast\n" {
+		t.Fatalf("each line keeps its own ending: %q", got)
+	}
+	var done vault.Task
+	if err := json.Unmarshal([]byte(mustCall(t, cs, "update_task", map[string]any{"id": "rec.md#0", "state": "done"})), &done); err != nil {
+		t.Fatal(err)
+	}
+	next := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	if got := readFile(t, root, "rec.md"); got != "- [ ] water @repeat:daily due:"+next+"\r\n- [x] water due:2026-01-01\r\n- [ ] after\r\n" {
+		t.Fatalf("%q", got)
+	}
+	if done.LineNumber != 1 || !done.Checked {
+		t.Fatalf("%+v", done)
+	}
+	mustCall(t, cs, "edit_section", map[string]any{"path": "sec.md", "heading": "A", "mode": "append", "text": "x\ny"})
+	if got := readFile(t, root, "sec.md"); got != "# A\r\n\r\nbody\r\n\r\nx\r\ny\r\n\r\n# B\r\n\r\nmore\r\n" {
+		t.Fatalf("%q", got)
+	}
+}
+
+// Windows makes a junction without any privilege. Elsewhere this is a symbolic
+// link, which the same rules cover.
+func linkFolder(t *testing.T, target, link string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		return
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAFolderLinkShowsNothingAndTakesNoWrite(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"Journal/Diary.md":     "# Diary\n",
+		"Journal/secret.png":   "png",
+		"Open/Free.md":         "# Free\n",
+		"Open/pic.png":         "png",
+	})
+	linkFolder(t, filepath.Join(root, "Journal"), filepath.Join(root, "Open", "jn"))
+	cs := runScoped(t, root, testScope(t, "write", []string{"Open"}, nil))
+	if got := notePaths(t, mustCall(t, cs, "list_notes", map[string]any{})); len(got) != 1 || got[0] != "Open/Free.md" {
+		t.Fatalf("%v", got)
+	}
+	if text := mustCall(t, cs, "list_assets", map[string]any{}); strings.Contains(text, "secret.png") {
+		t.Fatalf("%s", text)
+	}
+	if got := mustFail(t, cs, "read_note", map[string]any{"path": "Open/jn/Diary.md"}); !strings.Contains(got, "Note not found") {
+		t.Fatalf("%s", got)
+	}
+	if got := mustFail(t, cs, "read_asset", map[string]any{"path": "Open/jn/secret.png"}); !strings.Contains(got, "Asset not found") {
+		t.Fatalf("%s", got)
+	}
+	mustFail(t, cs, "create_note", map[string]any{"folder": "inbox", "subpath": "Open/jn", "title": "In"})
+	mustFail(t, cs, "move_note", map[string]any{"path": "Open/Free.md", "targetFolder": "inbox", "targetSubpath": "Open/jn"})
+	mustFail(t, cs, "move_asset", map[string]any{"path": "Open/pic.png", "targetDir": "Open/jn"})
+	if exists(root, "Journal/In.md") || exists(root, "Journal/Free.md") || exists(root, "Journal/pic.png") {
+		t.Fatal("something landed behind the link")
 	}
 }

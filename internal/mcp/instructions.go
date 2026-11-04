@@ -229,12 +229,11 @@ const DefaultInstructions = "You are connected to a user's ZenNotes vault: plain
 	"- Deletion: move_to_trash first, empty_trash only with explicit\n" +
 	"  confirmation.\n" +
 	"- Before rename_note, run backlinks.\n" +
-	"- Task ids from list_tasks (`path#index`) count a task's position in\n" +
-	"  its note, so list_tasks again after that note changes. Pass them to\n" +
+	"- Task ids from list_tasks (`path#index`) are positions in the\n" +
+	"  note, so use them before the note changes. Pass them to\n" +
 	"  toggle_task, or to update_task to change a due date, priority,\n" +
-	"  @waiting, state, status or text. Use update_task rather than editing\n" +
-	"  a task's line by hand, and give it expectedText when the note may\n" +
-	"  have changed since you listed its tasks.\n" +
+	"  @waiting, state, status or text. Use update_task rather than\n" +
+	"  editing a task's line by hand.\n" +
 	"- Long note: note_sections lists its headings, and with `heading`\n" +
 	"  reads just that part. edit_section adds to or rewrites the part\n" +
 	"  under a heading, so you need no line numbers.\n" +

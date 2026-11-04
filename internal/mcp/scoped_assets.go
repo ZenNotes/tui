@@ -132,9 +132,10 @@ func (sb *scopedBackend) knownAssetDirs(ctx context.Context, v *scopeView) []str
 	return known
 }
 
-// realDirs says whether every segment of rel that exists is a real directory.
-// The listings skip symbolic links, so a folder they do not know may be a link
-// into a hidden one, and a write through it would land there.
+// realDirs says whether every segment of rel that exists is a real directory
+// under the name its parent lists. The listings skip symbolic links, so a folder
+// they do not know may be a link into a hidden one, and a write through it would
+// land there.
 func (sb *scopedBackend) realDirs(ctx context.Context, v *scopeView, rel string) bool {
 	if rel == "" || rel == "." {
 		return true
@@ -152,12 +153,13 @@ func (sb *scopedBackend) realDirs(ctx context.Context, v *scopeView, rel string)
 	}
 	walk := v.root
 	for _, seg := range strings.Split(rel, "/") {
+		parent := walk
 		walk = filepath.Join(walk, seg)
 		info, err := os.Lstat(walk)
 		if errors.Is(err, fs.ErrNotExist) {
 			return true
 		}
-		if err != nil || !info.IsDir() {
+		if err != nil || !info.IsDir() || !folderNameListed(parent, seg) {
 			return false
 		}
 	}

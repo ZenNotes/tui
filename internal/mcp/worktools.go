@@ -97,7 +97,7 @@ func workTools() []toolDef {
 	return []toolDef{
 		{
 			name:        "update_task",
-			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes, except that state done on a task with `@repeat:` writes its next occurrence above it, as toggle_task does, and returns the finished one. An id counts the task's position in its note, so pass expectedText to be told when an edit moved it. On a task note, state, status and waiting are one field: pass only one. Returns the updated task, or null if the id no longer matches one.",
+			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes, except that state done on a task with `@repeat:` writes its next occurrence above it and returns the finished one. Returns the updated task, or null if the id no longer matches one.",
 			schema: `{"type":"object","properties":{
 "id":{"type":"string","description":"Task id from list_tasks: sourcePath#taskIndex."},
 "due":{"type":"string","description":"YYYY-MM-DD, or \"\" to clear."},
@@ -106,7 +106,7 @@ func workTools() []toolDef {
 "state":{"type":"string","enum":["open","done","in-progress","cancelled"]},
 "status":{"type":"string","description":"The column a Kanban board groups it under, one word, or \"\" to clear."},
 "text":{"type":"string","description":"Replaces everything after the checkbox, one line, due and priority tokens included. Not for a task note: use rename_note."},
-"expectedText":{"type":"string","description":"The task's content from list_tasks. If it no longer reads this, nothing changes and the call fails."}},"required":["id"]}`,
+"expectedText":{"type":"string","description":"The task's ` + "`content`" + ` from list_tasks. An id is its position in the note, so pass this if the note may have changed: a different task there answers null and changes nothing."}},"required":["id"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				in := backend.UpdateTaskInput{}
 				var err error

@@ -350,7 +350,7 @@ func coreTools() []toolDef {
 		},
 		{
 			name:        "list_assets",
-			description: "List the vault’s attachments: every file that is not a note, wherever it is (images, PDFs, audio, video, other binaries). Useful when a note references an asset you need to inspect. With deleted: true, lists the attachments in the app's Trash instead, with the undoToken restore_asset takes.",
+			description: "List every file in the vault that is not a note (images, PDFs, audio, video, other binaries), wherever it is. Useful when a note references an asset you need to inspect. With deleted: true, lists the attachments in the app's Trash instead, with the undoToken restore_asset takes.",
 			schema:      `{"type":"object","properties":{"deleted":{"type":"boolean","description":"List deleted attachments instead."}}}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				if a.boolIs("deleted") {

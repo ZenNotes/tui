@@ -697,7 +697,7 @@ The Go server gained eleven tools, 45 in all. The desktop's server has not mirro
 | `list_assets {deleted: true}` | read | Entries whose original path is visible. |
 | `upload_asset` | write | Writes only to the vault's assets folder, so `assets` must be visible (and on a local vault a real directory). Otherwise it refuses with one message. |
 | `rename_asset` | write | Source and new path visible. Links are rewritten in visible notes only on a local vault. A server rewrites every note, so a path-restricted client is refused there, as with `rename_note` (decision 6). |
-| `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. The final path must be visible too, numbered name included, since a deny entry can name a file inside a shared folder. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
+| `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. The final path must be visible too, numbered name included, since a deny entry can name a file inside a shared folder. A folder that exists must be a name its parent lists. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
 | `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. `duplicate_asset` makes a readable copy, so a path-restricted client on a server is refused it, as with `read_asset`. |
 | `restore_asset` | write | Only an entry `list_assets {deleted: true}` would show, else `Deleted asset not found: <token>`. |
 | `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name, and no `subpath` when the note's folder is hidden from it. |
@@ -709,8 +709,9 @@ changes a loose CSV database or its schema file. That check reads the whole list
 scope can share the CSV and hide its schema file. `list_assets` leaves out a schema file and the
 `.csv.bak` backups, as the app does.
 
-A rename refuses a name holding `# ? | [ ] ^ %` or a control character: each is link syntax, so
-every link to the file would stop resolving while the rename reported success. An upload's name
+A rename refuses a name holding `# ? | [ ] ^ % :` or a control character, or ending in a dot: each
+is link syntax or does not survive on every system, so every link to the file would stop resolving
+while the rename reported success. An upload's name
 is cleaned instead, as the app's import does. A note a rewrite could not read or write comes back
 in `linksNotUpdated`, on a local vault. A server rewrites links itself and does not say.
 

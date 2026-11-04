@@ -28,7 +28,7 @@ type UpdateTaskInput struct {
 	Text *string
 	// ExpectedText is the task's content as the caller last saw it. An id counts
 	// the task's position, so after an edit above it the id names another task;
-	// when this no longer matches, nothing changes.
+	// when this no longer matches, nothing changes and the answer is nil.
 	ExpectedText *string
 }
 
@@ -86,7 +86,7 @@ func UpdateTask(ctx context.Context, b Backend, in UpdateTaskInput) (*vault.Task
 		return nil, err
 	}
 	if in.ExpectedText != nil && strings.TrimSpace(*in.ExpectedText) != strings.TrimSpace(task.Content) {
-		return nil, fmt.Errorf("Task %s now reads %q, not %q: the note changed. Run list_tasks again for its id.", in.ID, task.Content, strings.TrimSpace(*in.ExpectedText))
+		return nil, nil
 	}
 	note, err := b.ReadNote(ctx, task.SourcePath)
 	if err != nil {
@@ -154,11 +154,16 @@ func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, i
 	if task.Forwarded && in.State != nil {
 		return "", 0, false, errors.New("That task was forwarded to another note; change it there.")
 	}
-	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
-	if task.LineNumber < 0 || task.LineNumber >= len(lines) || strings.TrimRight(lines[task.LineNumber], " \t") != strings.TrimRight(task.RawText, " \t") {
+	// Split on the bare newline, so every line keeps its own ending.
+	lines := strings.Split(body, "\n")
+	if task.LineNumber < 0 || task.LineNumber >= len(lines) || strings.TrimRight(lines[task.LineNumber], " \t\r") != strings.TrimRight(task.RawText, " \t\r") {
 		return "", 0, false, nil
 	}
-	line := lines[task.LineNumber]
+	ending := ""
+	if strings.HasSuffix(lines[task.LineNumber], "\r") {
+		ending = "\r"
+	}
+	line := strings.TrimSuffix(lines[task.LineNumber], "\r")
 	if in.Text != nil {
 		line = vault.SetTaskText(line, 0, *in.Text)
 	}
@@ -184,14 +189,14 @@ func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, i
 	if in.Status != nil {
 		line = vault.SetTaskField(line, 0, "status", *in.Status)
 	}
-	lines[task.LineNumber] = line
+	lines[task.LineNumber] = line + ending
 	if in.State != nil && *in.State == "done" {
 		// Last, so a due date changed in the same call is what the series counts from.
 		joined := strings.Join(lines, "\n")
 		if done, recurring := vault.CompleteRecurringTaskOnLine(joined, task.LineNumber, vault.DialectApp, vault.RecurringOptions{Today: vault.TodayISO(time.Now())}); recurring {
 			return done.Body, task.LineNumber + done.InsertedLines, true, nil
 		}
-		lines[task.LineNumber] = vault.SetTaskChecked(line, 0, true)
+		lines[task.LineNumber] = vault.SetTaskChecked(line, 0, true) + ending
 	}
 	return strings.Join(lines, "\n"), task.LineNumber, true, nil
 }
@@ -210,7 +215,7 @@ func updateFileTask(body string, task vault.Task, in UpdateTaskInput) (string, e
 		}
 	}
 	if asked > 1 {
-		return "", errors.New("A task note keeps state, status and waiting in its one frontmatter status: pass only one of them.")
+		return "", errors.New("A task note has one status, so pass only one of state, status and waiting.")
 	}
 	now := time.Now()
 	if in.State != nil {
