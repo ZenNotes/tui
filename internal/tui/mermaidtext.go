@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -82,6 +83,9 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 			}
 		}
 	}
+	if len(rows) == 0 {
+		return source("This diagram has nothing to draw yet.", th.Muted.Render)
+	}
 	out := make([]previewLine, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, previewLine{text: " " + th.Base.Render(row), srcLine: srcLine})
@@ -103,7 +107,7 @@ var (
 	// A quote mark opens quoted text only where a label can start, so the 5"
 	// in A[5" disk] is text. A backslash escapes a quote mark inside.
 	mermaidQuotedRe    = regexp.MustCompile(`(^|[\[({|>/\\\s])"((?:[^"\\\n]|\\.)*)"`)
-	mermaidFrontRe     = regexp.MustCompile(`(?s)^\s*---\n.*?\n---[ \t]*\n`)
+	mermaidFrontRe     = regexp.MustCompile(`(?s)^\s*---\r?\n.*?\n---[ \t]*\r?\n`)
 	mermaidHeadRe      = regexp.MustCompile(`(?i)^(graph|flowchart)(?:-elk)?(\s+\w+)?$`)
 	mermaidStateHeadRe = regexp.MustCompile(`(?i)^stateDiagram`)
 	mermaidBreakRe     = regexp.MustCompile(`(?i)<br\s*/?>`)
@@ -119,11 +123,17 @@ var (
 	mermaidLabelsRe = regexp.MustCompile(`\[[^\]]*\]|\([^)]*\)|\{[^}]*\}|\|[^|]*\|`)
 	mermaidFlagRe   = regexp.MustCompile(`(\w)>[^\]]*\]`)
 	mermaidArrowRe  = regexp.MustCompile(`<?(?:-{2,}|={2,}|-\.+-|~{3,})[>ox]?`)
-	// One node in what is left: an ID, the closers of a doubled shape such as
-	// ((text)), and a class.
-	mermaidNodeRe = regexp.MustCompile(`^\s*(\w+(?:-\w+)*)[)\]}]*\s*(?::::[\w-]+)?\s*$`)
+	// Shapes that open doubled, taken out whole before the plain labels, so a
+	// closer left over after that means the parser ended a label early.
+	mermaidDoubledRe = regexp.MustCompile(`\(\(\(.*?\)\)\)|\(\(.*?\)\)|\[\[.*?\]\]|\{\{.*?\}\}|\(\[.*?\]\)|\[\(.*?\)\]`)
+	// One node in what is left: an ID and a class.
+	mermaidNodeRe = regexp.MustCompile(`^\s*(\w+(?:-\w+)*)\s*(?::::[\w-]+)?\s*$`)
 	// A circle or cross on an edge, not the start of edge text: A --x B.
 	mermaidEndMarkRe = regexp.MustCompile(`(?:--|==)[ox]\s`)
+	// A word that could be an ID, in any script.
+	mermaidWordRe = regexp.MustCompile(`[\p{L}\p{N}_][\p{L}\p{N}\p{M}_.]*`)
+	// Mermaid's #name; and #35; entities.
+	mermaidEntityRe = regexp.MustCompile(`#(\w+);`)
 	// Spellings the parser does not know, rewritten to ones it does.
 	mermaidSpellings = []struct {
 		re *regexp.Regexp
@@ -146,30 +156,78 @@ var (
 // every semicolon, quoted or not, so quoted text is hidden from it behind
 // these. A note may hold any fixed choice, as Nerd Font icons do.
 func mermaidMaskRunes(src string) (open, shut string) {
+	held := map[rune]bool{}
+	for _, r := range src {
+		if r >= 0xF0000 {
+			held[r] = true
+		}
+	}
 	found := []string{}
 	for r := rune(0xF0000); len(found) < 2; r++ {
-		if !strings.ContainsRune(src, r) {
+		if !held[r] {
 			found = append(found, string(r))
 		}
 	}
 	return found[0], found[1]
 }
 
-// mermaidStatement readies one statement for the parser: no trailing comment,
-// nothing for one that draws nothing, and known spellings outside its labels.
-func mermaidStatement(line string) string {
-	blanked := mermaidLabelsRe.ReplaceAllStringFunc(line, func(m string) string { return strings.Repeat(" ", len(m)) })
-	// After a colon, %% is a state's label text.
-	if i := strings.Index(blanked, "%%"); i >= 0 && !strings.Contains(blanked[:i], ":") {
-		line = strings.TrimSpace(line[:i])
+// mermaidPlainID says the parser can read a word as a node ID as it is. Its IDs
+// are ASCII, so others are renamed while it reads them.
+func mermaidPlainID(word string) bool {
+	for _, r := range word {
+		if r > 127 || r == '.' {
+			return false
+		}
 	}
+	return true
+}
+
+// mermaidStateClasses takes the :::class off a state statement's nodes, since
+// the state parser reads any colon as the start of a label.
+func mermaidStateClasses(line string) string {
+	for from := 0; ; {
+		i := strings.Index(line[from:], ":")
+		if i < 0 {
+			return line
+		}
+		i += from
+		if !strings.HasPrefix(line[i:], ":::") {
+			return line
+		}
+		end := i + 3
+		for end < len(line) && (line[end] == '-' || line[end] == '_' || line[end] >= '0' && line[end] <= '9' || line[end] >= 'a' && line[end] <= 'z' || line[end] >= 'A' && line[end] <= 'Z') {
+			end++
+		}
+		line = line[:i] + line[end:]
+		from = i
+	}
+}
+
+// mermaidComment cuts a trailing %% comment from a raw line, before its
+// statements are split. After a label's colon, %% is the label's text.
+func mermaidComment(raw string) string {
+	blanked := mermaidLabelsRe.ReplaceAllStringFunc(raw, func(m string) string { return strings.Repeat(" ", len(m)) })
+	i := strings.Index(blanked, "%%")
+	if i < 0 || strings.Contains(strings.ReplaceAll(blanked[:i], ":::", ""), ":") {
+		return raw
+	}
+	return raw[:i]
+}
+
+// mermaidStatement readies one statement for the parser: nothing for one that
+// draws nothing, and known spellings and IDs it can read outside its labels.
+func mermaidStatement(line string, rename func(string) string) string {
+	blanked := mermaidLabelsRe.ReplaceAllStringFunc(line, func(m string) string { return strings.Repeat(" ", len(m)) })
 	if line == "" || mermaidIgnoredRe.MatchString(line) && !mermaidArrowRe.MatchString(blanked) {
 		return ""
+	}
+	respell := func(segment string) string {
+		return mermaidRespell(mermaidWordRe.ReplaceAllStringFunc(segment, rename))
 	}
 	var b strings.Builder
 	last := 0
 	for _, label := range mermaidLabelsRe.FindAllStringIndex(line, -1) {
-		before := mermaidRespell(line[last:label[0]])
+		before := respell(line[last:label[0]])
 		if line[label[0]] == '|' {
 			before = strings.TrimRight(before, " \t") // the parser wants -->|text|
 		}
@@ -177,7 +235,7 @@ func mermaidStatement(line string) string {
 		b.WriteString(line[label[0]:label[1]])
 		last = label[1]
 	}
-	b.WriteString(mermaidRespell(line[last:]))
+	b.WriteString(respell(line[last:]))
 	return b.String()
 }
 
@@ -207,13 +265,29 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 		return m[1] + `"` + open + strconv.Itoa(len(quoted)-1) + shut + `"`
 	})
 	partial = badCloseRe.MatchString(masked)
+	// Renamed IDs use a prefix the source does not hold.
+	idPrefix := "znid"
+	for strings.Contains(src, idPrefix) {
+		idPrefix += "x"
+	}
+	idPrefix += "n"
+	renamedRe := regexp.MustCompile(idPrefix + `(\d+)z`)
+	names := []string{}
+	renames := map[string]string{}
+	rename := func(word string) string {
+		if mermaidPlainID(word) {
+			return word
+		}
+		if renames[word] == "" {
+			renames[word] = idPrefix + strconv.Itoa(len(names)) + "z"
+			names = append(names, word)
+		}
+		return renames[word]
+	}
 	lines := []string{}
 	for _, raw := range strings.Split(masked, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(raw), "%%") {
-			continue
-		}
-		for _, line := range strings.Split(raw, ";") {
-			if line = mermaidStatement(strings.TrimSpace(line)); line != "" {
+		for _, line := range strings.Split(mermaidComment(raw), ";") {
+			if line = mermaidStatement(strings.TrimSpace(line), rename); line != "" {
 				lines = append(lines, line)
 			}
 		}
@@ -227,6 +301,12 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 			lines[0] = m[1] + " " + direction
 		}
 	}
+	isState := len(lines) > 0 && mermaidStateHeadRe.MatchString(lines[0])
+	if isState {
+		for i := 1; i < len(lines); i++ {
+			lines[i] = mermaidStateClasses(lines[i])
+		}
+	}
 	graph, err := parser.ParseMermaid(strings.Join(lines, "\n"))
 	if err != nil {
 		return nil, false, err
@@ -236,7 +316,6 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 	// Read each statement alone as well: that shows whether all of it was
 	// understood, and finds the label of a node first used without one, which
 	// the whole-diagram parse drops.
-	isState := mermaidStateHeadRe.MatchString(lines[0])
 	depth := 0
 	statements := []*types.MermaidGraph{}
 	for _, line := range lines[1:] {
@@ -303,14 +382,27 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 			n, _ := strconv.Atoi(maskedRe.FindStringSubmatch(m)[1])
 			return quoted[n]
 		})
-		s = strings.ReplaceAll(s, "#quot;", `"`)
+		s = renamedRe.ReplaceAllStringFunc(s, func(m string) string {
+			n, _ := strconv.Atoi(renamedRe.FindStringSubmatch(m)[1])
+			return names[n]
+		})
+		s = mermaidEntityRe.ReplaceAllStringFunc(s, func(m string) string {
+			name := m[1 : len(m)-1]
+			if name[0] >= '0' && name[0] <= '9' {
+				name = "#" + name
+			}
+			if text := html.UnescapeString("&" + name + ";"); text != "&"+name+";" {
+				return text
+			}
+			return m
+		})
 		return strings.TrimSpace(mermaidBreakRe.ReplaceAllString(s, "\n"))
 	}
 	sameLabel := map[string]int{}
 	for id, n := range graph.Nodes {
 		n.Label = clean(n.Label)
 		if n.Label == "" {
-			n.Label = id
+			n.Label = clean(id)
 		}
 		switch n.Shape {
 		case types.ShapeStateStart:
@@ -325,7 +417,7 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 	// show their IDs too. Every start or end of a state diagram means the same.
 	for id, n := range graph.Nodes {
 		if sameLabel[n.Label] > 1 {
-			n.Label += " [" + id + "]"
+			n.Label += " [" + clean(id) + "]"
 		}
 	}
 	f.bySource = map[string][]*types.MermaidEdge{}
@@ -358,7 +450,7 @@ func mermaidStatementRead(line string, one *types.MermaidGraph, isState bool) bo
 			line = line[:i]
 		}
 	}
-	bare := mermaidFlagRe.ReplaceAllString(mermaidLabelsRe.ReplaceAllString(line, ""), "$1")
+	bare := mermaidFlagRe.ReplaceAllString(mermaidLabelsRe.ReplaceAllString(mermaidDoubledRe.ReplaceAllString(line, ""), ""), "$1")
 	if mermaidStructureRe.MatchString(line) && !mermaidArrowRe.MatchString(bare) {
 		return true
 	}

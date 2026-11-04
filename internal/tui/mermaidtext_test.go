@@ -323,6 +323,89 @@ func TestGlamourTableAliasKeepsItsOwnPipe(t *testing.T) {
 	}
 }
 
+// A state's class is not its label.
+func TestMermaidStateClasses(t *testing.T) {
+	all := mermaidText40("stateDiagram-v2\n  A:::x --> B\n  B --> C:::y : go")
+	if strings.Contains(all, "::") || strings.Contains(all, "source") || strings.Count(all, "┌") != 3 || !strings.Contains(all, "go") {
+		t.Fatalf("classes read as labels:\n%s", all)
+	}
+	if all := mermaidText40("stateDiagram-v2\n  A --> B:::x"); strings.Contains(all, ":") || strings.Contains(all, "x") {
+		t.Fatalf("a class became a label:\n%s", all)
+	}
+}
+
+// A comment ends its line, whatever it holds.
+func TestMermaidCommentHidesItsStatements(t *testing.T) {
+	for _, src := range []string{"graph TD\n  A --> B %% c; D --> E", "graph TD\n  A --> B; %% D --> E; F --> G"} {
+		all := mermaidText40(src)
+		if strings.Count(all, "┌") != 2 || strings.Contains(all, "source") {
+			t.Fatalf("%q draws from its comment:\n%s", src, all)
+		}
+	}
+	assertDrawn(t, "stateDiagram-v2\n  A --> B : 100%% sure", "100%% sure")
+}
+
+// A closer the parser left behind means it ended a label early.
+func TestMermaidLeftoverClosersShowSource(t *testing.T) {
+	for _, src := range []string{"graph TD\n  A --> C(f(x))", "graph TD\n  A --> C[a[1]]", "graph TD\n  A --> C{a{b}}", "graph TD\n  A((a(b))) --> C"} {
+		assertSource(t, src)
+	}
+}
+
+func TestMermaidEntitiesDecode(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A[\"a #amp; b #35; #lt;c#gt; #nosuch;\"] --> B", "a & b # <c> #nosuch;", "B")
+}
+
+func TestMermaidEmptyDiagramSaysSo(t *testing.T) {
+	for _, src := range []string{"graph TD", "flowchart LR", "stateDiagram-v2", "graph TD\n  classDef a fill:#fff"} {
+		if all := mermaidText40(src); !strings.Contains(all, "nothing to draw") {
+			t.Fatalf("%q says nothing:\n%s", src, all)
+		}
+	}
+}
+
+// IDs may be in any script, and may hold dots.
+func TestMermaidIDsInAnyScript(t *testing.T) {
+	assertDrawn(t, "graph TD\n  节点A --> 节点B\n  节点B --> Größe\n  Größe -- 是的 --> a.b", "节点A", "节点B", "Größe", "是的", "a.b")
+	assertDrawn(t, "stateDiagram-v2\n  开始 --> 结束 : 完成", "开始", "结束", "完成")
+	same := mermaidText40("graph TD\n  节点[Same] --> 其他[Same]")
+	if !strings.Contains(same, "Same [节点]") || !strings.Contains(same, "Same [其他]") {
+		t.Fatalf("an ID shows its stand-in:\n%s", same)
+	}
+	assertDrawn(t, "graph TD\n  znidn0z --> 节点", "znidn0z", "节点")
+}
+
+func TestMermaidCRLFFrontMatter(t *testing.T) {
+	assertDrawn(t, "---\r\ntitle: Hello\r\n---\r\nflowchart LR\r\n  A --> B\r\n", "A", "B")
+}
+
+// Long inputs stay quick: a row of many links, and a label of many icons.
+func TestLongInputsAreLinear(t *testing.T) {
+	row := "|" + strings.Repeat(" [[a|b]]", 40000) + " | c |"
+	start := time.Now()
+	if cells := previewTableCells(row); len(cells) != 2 {
+		t.Fatalf("got %d cells", len(cells))
+	}
+	var label strings.Builder
+	for r := rune(0xF0000); r < 0xF0000+60000; r++ {
+		label.WriteRune(r)
+	}
+	if _, _, err := parseFlowchart("graph TD\n  A[\"" + label.String() + "\"] --> B"); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("took %s", took)
+	}
+}
+
+// A table's rows need no outer pipes once its separator has been seen.
+func TestZenTableKeepsBareRows(t *testing.T) {
+	all := zenTableText("| a | b |\n|---|---|\n1 | 2\n| 3 | 4 |", 40)
+	if strings.Contains(all, "1 | 2") || !strings.Contains(all, "│ 1") {
+		t.Fatalf("a bare row left the table:\n%s", all)
+	}
+}
+
 // A table with no outer pipes lines up too.
 func TestGlamourBareTableColumnsLineUp(t *testing.T) {
 	lines := glamourTestLines(t, "Link | Why\n---|---\n[[Bookmarks|bookmarks]] | pipe\nplain text here | third", 60)

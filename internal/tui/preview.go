@@ -135,12 +135,12 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			i++
 			continue
 		}
-		// A table may leave out its outer pipes; its separator row says so.
-		bare := !tableRowRe.MatchString(line) && strings.Contains(line, "|") && i+1 < len(lines) && strings.Contains(lines[i+1], "|") && tableSepRe.MatchString(lines[i+1])
-		if tableRowRe.MatchString(line) || bare {
+		// A table's separator row says its rows need no outer pipes.
+		hasSep := strings.Contains(line, "|") && i+1 < len(lines) && strings.Contains(lines[i+1], "|") && tableSepRe.MatchString(lines[i+1])
+		if tableRowRe.MatchString(line) || hasSep {
 			j := i
 			block := []string{}
-			for j < len(lines) && (tableRowRe.MatchString(lines[j]) || bare && strings.Contains(lines[j], "|")) {
+			for j < len(lines) && (tableRowRe.MatchString(lines[j]) || hasSep && strings.Contains(lines[j], "|")) {
 				block = append(block, lines[j])
 				j++
 			}
@@ -488,12 +488,10 @@ func previewTableCells(line string) []string {
 	}
 	links := wikilinkAtRe.FindAllStringIndex(line, -1)
 	inLink := func(i int) bool {
-		for _, l := range links {
-			if l[0] <= i && i < l[1] {
-				return true
-			}
+		for len(links) > 0 && links[0][1] <= i {
+			links = links[1:]
 		}
-		return false
+		return len(links) > 0 && links[0][0] <= i
 	}
 	cells := []string{}
 	var cell strings.Builder
