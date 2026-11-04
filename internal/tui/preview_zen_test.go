@@ -55,10 +55,91 @@ func TestZenPreviewStillShowsEmbedsOutsideCode(t *testing.T) {
 		{"code in the alt text", "![see `x`](b.png)", "⟦image: see x⟧"},
 		{"bracket in the alt text's code", "![see `]`](b.png)", "⟦image: see ]⟧"},
 		{"lone backtick", "a ` ![[pic.png]]", "a ` ⟦image: pic.png⟧"},
+		{"unmatched double run, then a span", "`` ![[a.png]] `b`", "`` ⟦image: a.png⟧ b"},
+		{"unmatched double run, then an image", "`` ![a](b.png) `c`", "`` ⟦image: a⟧ c"},
+		{"single run against a double run", "` ![[a.png]] ``", "` ⟦image: a.png⟧ ``"},
+		{"double run against a single run", "`` ![[a.png]] `", "`` ⟦image: a.png⟧ `"},
+		{"escaped backticks", "\\`![[a.png]]\\`", "\\`⟦image: a.png⟧\\`"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := zenPreviewText(a, tc.body); got != tc.want {
 				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestZenPreviewCodeSpansFollowBacktickRuns(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"double run", "`` ![[x.png]] ``", "![[x.png]]"},
+		{"backtick inside a double run", "`` ` ![[x.png]] ``", "` ![[x.png]]"},
+		{"wikilink beside a backtick in a double run", "`` ` [[x]] ``", "` [[x]]"},
+		{"backslash ends a span", "`a\\` ![[x.png]]", "a\\ ⟦image: x.png⟧"},
+		{"escaped backslash leaves the backtick real", "\\\\`![[x.png]]`", "\\\\![[x.png]]"},
+		{"only spaces stay", "a `  ` b", "a    b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestZenPreviewFindsLinksPastCodeThatOpensThem(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want, target string }{
+		{"wikilink", "`[[` then [[Note]]", "[[ then Note", "Note"},
+		{"markdown link", "`[` then [label](https://example.com)", "[ then label", "https://example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := a.renderPreviewLines(tc.body, 200)
+			if len(rows) != 1 || ansi.Strip(rows[0].text) != tc.want {
+				t.Fatalf("got %#v", rows)
+			}
+			if len(rows[0].links) != 1 || rows[0].links[0].target != tc.target {
+				t.Fatalf("links %#v", rows[0].links)
+			}
+		})
+	}
+	if rows := a.renderPreviewLines("`[[Note]]`", 200); len(rows[0].links) != 0 {
+		t.Fatalf("code linked: %#v", rows[0].links)
+	}
+}
+
+func TestZenPreviewFencesCloseOnlyOnTheirOwnMarker(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{
+			"tilde line inside a backtick fence",
+			"```\n~~~\n![[pic.png]]\n```\n![[out.png]]",
+			"┌\n│ ~~~\n│ ![[pic.png]]\n└\n⟦image: out.png⟧",
+		},
+		{
+			"shorter marker inside a long fence",
+			"````\n```\n![[pic.png]]\n````\n![[out.png]]",
+			"┌\n│ ```\n│ ![[pic.png]]\n└\n⟦image: out.png⟧",
+		},
+		{
+			"marker with text after it does not close",
+			"```\n``` not yet\n![[pic.png]]\n```\n![[out.png]]",
+			"┌\n│ ``` not yet\n│ ![[pic.png]]\n└\n⟦image: out.png⟧",
+		},
+		{
+			"a code span on its own line is no fence",
+			"``` ![[pic.png]] ```\n![[out.png]]",
+			"![[pic.png]]\n⟦image: out.png⟧",
+		},
+		{
+			"language label",
+			"```go\nx\n```",
+			"┌ go\n│ x\n└",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); got != tc.want {
+				t.Fatalf("got:\n%s\nwant:\n%s", got, tc.want)
 			}
 		})
 	}

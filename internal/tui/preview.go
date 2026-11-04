@@ -68,7 +68,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 	th := a.theme
 	lines := strings.Split(text, "\n")
 	out := []previewLine{}
-	inFence := false
+	fenceChar, fenceLen := byte(0), 0
 	inFront := len(lines) > 0 && lines[0] == "---"
 	frontDone := false
 	i := 0
@@ -88,18 +88,24 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			i++
 			continue
 		}
-		if fenceRe.MatchString(line) {
-			inFence = !inFence
-			lang := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "`~"))
-			if inFence && lang != "" {
-				out = append(out, previewLine{text: th.Muted.Render("┌ " + lang), srcLine: i})
-			} else {
-				out = append(out, previewLine{text: th.Muted.Render(map[bool]string{true: "┌", false: "└"}[inFence]), srcLine: i})
+		if fenceChar == 0 {
+			if char, n, ok := fenceOpens(line); ok {
+				fenceChar, fenceLen = char, n
+				opening := "┌"
+				if lang := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "`~")); lang != "" {
+					opening += " " + lang
+				}
+				out = append(out, previewLine{text: th.Muted.Render(opening), srcLine: i})
+				i++
+				continue
 			}
-			i++
-			continue
-		}
-		if inFence {
+		} else {
+			if fenceCloses(line, fenceChar, fenceLen) {
+				fenceChar = 0
+				out = append(out, previewLine{text: th.Muted.Render("└"), srcLine: i})
+				i++
+				continue
+			}
 			for _, seg := range wrapLine([]rune(strings.ReplaceAll(line, "\t", "    ")), max(1, width-2)) {
 				out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string([]rune(strings.ReplaceAll(line, "\t", "    "))[seg.start:seg.end])), srcLine: i})
 			}
@@ -228,6 +234,8 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	// Embeds become placeholders first.
 	text = embedPlaceholders(text, embedWikiRe)
 	text = embedPlaceholders(text, embedImgRe)
+	codes := inlineCodeSpans(text)
+	scan := blankCodeSyntax(text, codes)
 	spans := []inlineSpan{}
 	taken := make([]bool, len(text))
 	add := func(m []int, class int, display string, link int) {
@@ -241,10 +249,10 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		}
 		spans = append(spans, inlineSpan{m[0], m[1], class, display, link})
 	}
-	for _, m := range inlineCodeRe.FindAllStringIndex(text, -1) {
-		add(m, stCode, text[m[0]+1:m[1]-1], -1)
+	for _, c := range codes {
+		add([]int{c.start, c.end}, c.class, c.text, c.link)
 	}
-	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(text, -1) {
+	for _, m := range wikilinkAtRe.FindAllSubmatchIndex(scan, -1) {
 		content := text[m[2]:m[3]]
 		target, _, alias := splitWiki(content)
 		display := target
@@ -254,7 +262,7 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		links = append(links, wikilinkTargetOf(content))
 		add(m[0:2], stLink, display, len(links)-1)
 	}
-	for _, m := range mdLinkRenderRe.FindAllStringSubmatchIndex(text, -1) {
+	for _, m := range mdLinkRenderRe.FindAllSubmatchIndex(scan, -1) {
 		label := text[m[2]:m[3]]
 		link := mdLinkTargetOf(label, text[m[4]:m[5]])
 		links = append(links, link)
@@ -311,20 +319,85 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	return out, links
 }
 
-// embedPlaceholders swaps each embed re finds for its placeholder. It scans a copy
-// with the embed syntax blanked inside code spans, so `![[pic.png]]` stays as
-// written, while an image whose alt text holds code, ![see `x`](b.png), is still
-// an image. re's first group is the placeholder's label.
-func embedPlaceholders(text string, re *regexp.Regexp) string {
+// inlineCodeSpans finds the code spans of one line by CommonMark's rules. A span
+// runs between two backtick runs of equal length, a run with no partner is plain
+// text, and a backslash escapes a backtick outside a span but not inside one.
+func inlineCodeSpans(text string) []inlineSpan {
+	spans := []inlineSpan{}
+	for i := 0; i < len(text); {
+		switch {
+		case text[i] == '\\':
+			i += 2
+		case text[i] != '`':
+			i++
+		default:
+			n := backtickRun(text[i:])
+			end := closingBacktickRun(text, i+n, n)
+			if end < 0 {
+				i += n
+				continue
+			}
+			spans = append(spans, inlineSpan{i, end + n, stCode, codeSpanText(text[i+n : end]), -1})
+			i = end + n
+		}
+	}
+	return spans
+}
+
+func backtickRun(s string) int {
+	n := 0
+	for n < len(s) && s[n] == '`' {
+		n++
+	}
+	return n
+}
+
+// closingBacktickRun is where the next run of exactly n backticks starts, or -1.
+func closingBacktickRun(text string, from, n int) int {
+	for i := from; i < len(text); {
+		if text[i] != '`' {
+			i++
+			continue
+		}
+		run := backtickRun(text[i:])
+		if run == n {
+			return i
+		}
+		i += run
+	}
+	return -1
+}
+
+// codeSpanText drops the one space on each side that lets a span start or end
+// with a backtick. A span of only spaces keeps them.
+func codeSpanText(s string) string {
+	if len(s) > 1 && s[0] == ' ' && s[len(s)-1] == ' ' && strings.Trim(s, " ") != "" {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// blankCodeSyntax copies text with link and embed syntax blanked inside code
+// spans, so a scan of the copy only finds what renders as a link or an embed.
+// Offsets into the copy are offsets into text.
+func blankCodeSyntax(text string, codes []inlineSpan) []byte {
 	scan := []byte(text)
-	for _, m := range inlineCodeRe.FindAllStringIndex(text, -1) {
-		for i := m[0]; i < m[1]; i++ {
+	for _, c := range codes {
+		for i := c.start; i < c.end; i++ {
 			switch scan[i] {
 			case '!', '[', ']', '(', ')':
 				scan[i] = ' '
 			}
 		}
 	}
+	return scan
+}
+
+// embedPlaceholders swaps each embed re finds for its placeholder. `![[pic.png]]`
+// stays as written, while an image whose alt text holds code, ![see `x`](b.png),
+// is still an image. re's first group is the placeholder's label.
+func embedPlaceholders(text string, re *regexp.Regexp) string {
+	scan := blankCodeSyntax(text, inlineCodeSpans(text))
 	var out strings.Builder
 	pos := 0
 	for _, m := range re.FindAllSubmatchIndex(scan, -1) {
