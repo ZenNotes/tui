@@ -226,8 +226,8 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		}
 	}
 	// Embeds become placeholders first.
-	text = embedWikiRe.ReplaceAllString(text, "⟦image: $1⟧")
-	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
+	text = embedPlaceholders(text, embedWikiRe)
+	text = embedPlaceholders(text, embedImgRe)
 	spans := []inlineSpan{}
 	taken := make([]bool, len(text))
 	add := func(m []int, class int, display string, link int) {
@@ -309,6 +309,31 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		emit(text[pos:], stBase, -1)
 	}
 	return out, links
+}
+
+// embedPlaceholders swaps each embed re finds for its placeholder. It scans a copy
+// with the embed syntax blanked inside code spans, so `![[pic.png]]` stays as
+// written, while an image whose alt text holds code, ![see `x`](b.png), is still
+// an image. re's first group is the placeholder's label.
+func embedPlaceholders(text string, re *regexp.Regexp) string {
+	scan := []byte(text)
+	for _, m := range inlineCodeRe.FindAllStringIndex(text, -1) {
+		for i := m[0]; i < m[1]; i++ {
+			switch scan[i] {
+			case '!', '[', ']', '(', ')':
+				scan[i] = ' '
+			}
+		}
+	}
+	var out strings.Builder
+	pos := 0
+	for _, m := range re.FindAllSubmatchIndex(scan, -1) {
+		out.WriteString(text[pos:m[0]])
+		out.WriteString("⟦image: " + text[m[2]:m[3]] + "⟧")
+		pos = m[1]
+	}
+	out.WriteString(text[pos:])
+	return out.String()
 }
 
 func splitWiki(content string) (target, heading, alias string) {
