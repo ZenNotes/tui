@@ -315,6 +315,14 @@ func TestGlamourWrappedAliasShowsNoTokenBrackets(t *testing.T) {
 	}
 }
 
+// A pipe of an alias's own is not a column rule.
+func TestGlamourTableAliasKeepsItsOwnPipe(t *testing.T) {
+	all := joinPreview(glamourTestLines(t, "| A | B |\n|---|---|\n| [[Note|a\\|b]] | x |\n| plain text here | y |", 60))
+	if !strings.Contains(all, "a|b") {
+		t.Fatalf("the alias changed:\n%s", all)
+	}
+}
+
 // A table with no outer pipes lines up too.
 func TestGlamourBareTableColumnsLineUp(t *testing.T) {
 	lines := glamourTestLines(t, "Link | Why\n---|---\n[[Bookmarks|bookmarks]] | pipe\nplain text here | third", 60)
@@ -673,12 +681,4 @@ func TestMermaidLostStructureShowsSource(t *testing.T) {
 func TestMermaidDeepGroupsFitThePane(t *testing.T) {
 	src := "graph TD\n" + strings.Repeat("  subgraph s [Deep name here]\n", 60) + "  A\n" + strings.Repeat("  end\n", 60)
 	assertFits(t, mermaidTestApp().mermaidLines(src, 0, 40), 40)
-}
-
-// A pipe of an alias's own is not a column rule.
-func TestGlamourTableAliasKeepsItsOwnPipe(t *testing.T) {
-	all := joinPreview(glamourTestLines(t, "| A | B |\n|---|---|\n| [[Note|a\\|b]] | x |\n| plain text here | y |", 60))
-	if !strings.Contains(all, "a|b") {
-		t.Fatalf("the alias changed:\n%s", all)
-	}
 }
