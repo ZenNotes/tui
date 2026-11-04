@@ -558,7 +558,7 @@ func previewRowFor(lines []previewLine, srcLine int) int {
 func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) string {
 	th := a.theme
 	pad := 1
-	width := max(10, w-2*pad)
+	width := max(1, w-2*pad)
 	lines := a.previewLinesFor(t, buf, width)
 	pv := t.preview
 	if t.mode == modeSplit {
