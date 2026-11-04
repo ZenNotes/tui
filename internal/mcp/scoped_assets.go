@@ -44,6 +44,12 @@ func (sb *scopedBackend) visibleAssets(ctx context.Context) ([]vault.AssetMeta, 
 		}
 		sb.assets = []vault.AssetMeta{}
 		for _, a := range all {
+			// A server lists a link to a file, whose contents are whatever it
+			// names. A local listing never holds one. As for notes, a client with
+			// no paths in its scope sees what an unscoped one does.
+			if a.Symlink && sb.scope.Restricted() {
+				continue
+			}
 			if v.visible(a.Path) {
 				sb.assets = append(sb.assets, a)
 			}
@@ -51,6 +57,11 @@ func (sb *scopedBackend) visibleAssets(ctx context.Context) ([]vault.AssetMeta, 
 	})
 	return sb.assets, sb.assetsErr
 }
+
+// trimsDifferently says whether the asset routes would use another path than
+// this one: they trim surrounding whitespace, on a vault here and on a server, so
+// " Journal" would pass the scope check and reach "Journal".
+func trimsDifferently(raw string) bool { return strings.TrimSpace(raw) != raw }
 
 // assetFor resolves a client's path to a visible listed asset, the first step
 // of every per-asset operation.
@@ -65,6 +76,9 @@ func (sb *scopedBackend) assetFor(ctx context.Context, raw string, a Access) (va
 	all, err := sb.visibleAssets(ctx)
 	if err != nil {
 		return vault.AssetMeta{}, nil, err
+	}
+	if trimsDifferently(raw) {
+		return vault.AssetMeta{}, nil, assetNotFound(raw)
 	}
 	meta, ok := matchAsset(all, raw)
 	if !ok {
@@ -82,12 +96,38 @@ func (v *scopeView) assetRefusal() error {
 	return errors.New("This assistant cannot put files there.")
 }
 
-// realDirs says whether every segment of rel that exists on disk is a real
-// directory. The listings skip symbolic links, so a folder they do not know may
-// be a link into a hidden one, and a write through it would land there. A
-// server's vault is left to the server's own walker, as for notes.
-func (v *scopeView) realDirs(rel string) bool {
-	if v.root == "" || rel == "" || rel == "." {
+// knownAssetDirs are the folders the listings prove are real, plus the
+// attachment folders, which listings hide. Whether one of those is itself a link
+// cannot be told on a server, since a read answers the same for a real folder,
+// so the server refuses that write itself.
+func (sb *scopedBackend) knownAssetDirs(ctx context.Context, v *scopeView) []string {
+	known := append(append([]string{}, v.dirs...), vault.AttachmentDirs()...)
+	if all, err := sb.visibleAssets(ctx); err == nil {
+		for _, a := range all {
+			for dir := path.Dir(a.Path); dir != "." && dir != "/"; dir = path.Dir(dir) {
+				known = append(known, dir)
+			}
+		}
+	}
+	return known
+}
+
+// realDirs says whether every segment of rel that exists is a real directory.
+// The listings skip symbolic links, so a folder they do not know may be a link
+// into a hidden one, and a write through it would land there.
+func (sb *scopedBackend) realDirs(ctx context.Context, v *scopeView, rel string) bool {
+	if rel == "" || rel == "." {
+		return true
+	}
+	if v.root == "" {
+		known := sb.knownAssetDirs(ctx, v)
+		walked := ""
+		for _, seg := range strings.Split(rel, "/") {
+			walked = joinRel(walked, seg)
+			if _, ok := spell(walked, known); !ok {
+				return !v.occupied(walked)
+			}
+		}
 		return true
 	}
 	walk := v.root
@@ -108,17 +148,10 @@ func (v *scopeView) realDirs(rel string) bool {
 // spelling, or refuses.
 func (sb *scopedBackend) assetDestination(ctx context.Context, v *scopeView, raw string) (string, error) {
 	clean, ok := cleanRequest(raw)
-	if !ok {
+	if !ok || trimsDifferently(raw) {
 		return "", v.assetRefusal()
 	}
-	known := append(append([]string{}, v.dirs...), vault.AttachmentDirs()...)
-	if all, err := sb.visibleAssets(ctx); err == nil {
-		for _, a := range all {
-			for dir := path.Dir(a.Path); dir != "." && dir != "/"; dir = path.Dir(dir) {
-				known = append(known, dir)
-			}
-		}
-	}
+	known := sb.knownAssetDirs(ctx, v)
 	spelled := ""
 	for _, seg := range strings.Split(clean, "/") {
 		next := joinRel(spelled, seg)
@@ -127,7 +160,7 @@ func (sb *scopedBackend) assetDestination(ctx context.Context, v *scopeView, raw
 		}
 		spelled = next
 	}
-	if !v.visible(spelled) || !v.realDirs(spelled) {
+	if !v.visible(spelled) || !sb.realDirs(ctx, v, spelled) {
 		return "", v.assetRefusal()
 	}
 	return spelled, nil
@@ -172,7 +205,7 @@ func (sb *scopedBackend) ImportAsset(ctx context.Context, note, name string, r i
 		return vault.ImportedAsset{}, err
 	}
 	refused := errors.New("This assistant cannot add files: the vault's assets folder is not shared with it.")
-	if !v.visible(vault.AssetsDir) || !v.realDirs(vault.AssetsDir) {
+	if !v.visible(vault.AssetsDir) || !sb.realDirs(ctx, v, vault.AssetsDir) {
 		return vault.ImportedAsset{}, refused
 	}
 	got, err := m.ImportAsset(ctx, note, name, r)
@@ -302,7 +335,7 @@ func (sb *scopedBackend) RestoreDeletedAsset(ctx context.Context, d vault.Delete
 	}
 	for _, entry := range visible {
 		if entry.UndoToken == d.UndoToken {
-			if !v.realDirs(path.Dir(entry.Path)) {
+			if !sb.realDirs(ctx, v, path.Dir(entry.Path)) {
 				return vault.AssetMeta{}, deletedAssetNotFound(d.UndoToken)
 			}
 			return m.RestoreDeletedAsset(ctx, entry)

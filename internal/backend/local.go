@@ -27,7 +27,13 @@ func newLocal(root string, opts Options) (*Local, error) {
 // Vault exposes the engine for callers that need local-only operations.
 func (l *Local) Vault() *vault.Vault { return l.vault }
 
-func (l *Local) Kind() Kind    { return KindLocal }
+func (l *Local) Kind() Kind { return KindLocal }
+
+// LinkedSystemFolders names the system folders that are symbolic links.
+func (l *Local) LinkedSystemFolders(context.Context) ([]string, error) {
+	return l.vault.LinkedSystemFolders(), nil
+}
+
 func (l *Local) Label() string { return l.vault.Root() }
 func (l *Local) Root() string  { return l.vault.Root() }
 

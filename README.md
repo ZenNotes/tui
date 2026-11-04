@@ -1125,7 +1125,13 @@ What the client gets:
   never through a symbolic link (which the listings skip, so it would otherwise
   look like a new folder). Archiving and trashing a visible note are allowed
   even when the archive or trash is not shared; the note then leaves what the
-  client sees.
+  client sees. If that system folder is a symbolic link, they are refused.
+- A system folder that is a symbolic link is hidden from the client, even if
+  `--allow-path` names it, since what is in it may belong to another folder.
+  `zn mcp` says so once on stderr, which ends up in the MCP client's logs.
+- On a ZenNotes server, a path scope needs a server that marks symbolic links in
+  its listings. An older server shares nothing with such a client until it is
+  updated.
 - Renaming a note rewrites `[[links]]` only in notes the client can see. On a
   ZenNotes server, which rewrites links in every note itself, a scoped client
   cannot rename notes.

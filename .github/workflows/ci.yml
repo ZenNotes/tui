@@ -20,6 +20,29 @@ jobs:
       - run: go test ./...
       - run: go build ./cmd/zn
 
+  # The contracts against a real server, built from the server's main branch.
+  # Nothing here can skip: the tests only skip when the binary is not set.
+  server-contract:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    env:
+      ZENNOTES_SERVER_CONTRACT_BINARY: ${{ github.workspace }}/.znserver-bin/zennotes-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ZenNotes/znserver
+          ref: main
+          path: .znserver
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go build -trimpath -o "$ZENNOTES_SERVER_CONTRACT_BINARY" ./cmd/zennotes-server
+        working-directory: .znserver
+      - run: go test -count=1 ./internal/mcp ./internal/remote
+
   homebrew:
     runs-on: ${{ matrix.os }}
     strategy:

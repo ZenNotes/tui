@@ -236,7 +236,9 @@ func newFakeVaultServer(t *testing.T, root, name string, notes ...string) *fakeV
 		var out any
 		switch r.URL.Path {
 		case "/api/vault":
-			out = map[string]string{"root": f.root, "name": f.name}
+			out = map[string]any{"root": f.root, "name": f.name, "linkedSystemFolders": []string{}}
+		case "/api/capabilities":
+			out = map[string]bool{"supportsSymlinkMarks": true}
 		case "/api/vault/settings":
 			out = map[string]string{"primaryNotesLocation": "root"}
 		case "/api/notes":

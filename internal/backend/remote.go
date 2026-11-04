@@ -28,6 +28,27 @@ func newRemote(target Target) *Remote {
 // Client exposes the HTTP client for callers that need server-only routes.
 func (r *Remote) Client() *remote.Client { return r.client }
 
+// Capabilities is what the server says it supports.
+func (r *Remote) Capabilities(ctx context.Context) (map[string]any, error) {
+	return r.client.Capabilities(ctx)
+}
+
+// ErrLinkedFoldersUnknown says a server does not report which system folders are
+// links. A current one always sends the list, empty when there are none.
+var ErrLinkedFoldersUnknown = errors.New("the server does not report linked system folders")
+
+// LinkedSystemFolders names the system folders the server reports as links.
+func (r *Remote) LinkedSystemFolders(ctx context.Context) ([]string, error) {
+	info, err := r.client.GetCurrentVault(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil || info.LinkedSystemFolders == nil {
+		return nil, ErrLinkedFoldersUnknown
+	}
+	return info.LinkedSystemFolders, nil
+}
+
 func (r *Remote) Kind() Kind { return KindRemote }
 func (r *Remote) Label() string {
 	if r.target.Name != "" {

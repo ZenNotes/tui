@@ -280,9 +280,11 @@ and the check runs on that:
    remote alike: exact path first, else the single listed path equal under case and accent
    folding, so the vault's spelling is what the scope checks and what the backend opens. The
    listings walk real directories and regular files only (`walkNotes` and `listNotes` read
-   `Dirent` types; the server's walker does the same), so a path through a symlink, a case
-   variant of a hidden folder, a hidden directory or an unexpanded Windows 8.3 name simply
-   has no match, and G5 to G7 close. A path the client was never shown does not exist for it.
+   `Dirent` types), so a path through a symlink, a case variant of a hidden folder, a hidden
+   directory or an unexpanded Windows 8.3 name simply has no match, and G5 to G7 close. A path
+   the client was never shown does not exist for it. A server's walker skips links to folders
+   but lists links to notes and assets, marking them `symlink`, and the scoped view drops those
+   (section 14).
    (The design first had a per-segment `Lstat` walk for local vaults; one rule for both
    backends is simpler and needs no platform cases. The cost is a listing per call, which
    most tools already pay.)
@@ -623,10 +625,44 @@ as the link fix and the contract test in zn 0.13.0:
 Found while building it, and fixed in both engines: a destination segment the listings do
 not know was taken as new. The listings skip symbolic links, so under `--allow-path Projects`,
 `create_note`, `create_folder`, `move_note` and `rename_folder` into `Projects/inner` (a link
-to the hidden `Journal`) wrote into `Journal`. On a vault on this machine, the first segment
-of a destination the listings do not know must now have nothing on disk (anything but "does
-not exist" refuses, with the usual refusal); fixture case `nothing-is-created-through-a-link`.
-A server's vault is left to the server's own walker.
+to the hidden `Journal`) wrote into `Journal`. The first segment of a destination the listings
+do not know must now have nothing there (anything but "does not exist" refuses, with the usual
+refusal); fixture case `nothing-is-created-through-a-link`.
+
+This first shipped for a vault on this machine only, on the assumption that a server's walker
+covered the rest. It did not: the walker skips links, and the server's write path followed the
+ones that stay inside the vault. Run against a real server for the first time, the fixture
+found the same writes. A server is now covered this way:
+
+- zn looks before it writes. The server has no route that says what is at a path, but its read
+  does: 404 for nothing there, 400 for a link to a folder or out of the vault. Only a 404 counts
+  as free.
+- The server refuses too (`SafeDestination` in znserver's `internal/vault`). A place a client
+  names to create or move something may not go through a symbolic link, inside the vault or not,
+  and neither may an upload through a linked assets folder. A new file does not land on a dangling
+  link: that name counts as taken, which a read cannot show zn. This covers the moment between
+  zn's look and its write, and clients that do not look. Routes that take a note's own path (write,
+  rename, duplicate) still follow links; a scoped zn only sends paths it found in the listings.
+- Links to notes and assets. The server lists these, and reads and writes follow them, so
+  `Projects/alias.md -> ../Journal/Diary.md` made a hidden note readable and writable under
+  `--allow-path Projects`. Links to notes are a supported way to file a note in two places, so
+  the server keeps following them and marks them `symlink` in its listings, and the scoped view
+  drops what is marked, as a local listing does. A scope with no paths keeps them, having nothing
+  to hide.
+- A system folder that is a link, such as `quick -> Journal`. On a vault on this machine the
+  walks start at a system folder whatever it is, so `--deny-path Journal` still showed
+  `quick/Diary.md` and let it be read and overwritten, and on both kinds of vault creates,
+  archiving and trashing landed in `Journal`. Neither listing nor read can show this on a server,
+  so `GET /api/vault` names them in `linkedSystemFolders`, behind the token, as capabilities need
+  none. A path scope hides such a folder, whatever its allow entries say, and refuses archiving
+  or trashing into it.
+- An older server does not mark links, so a limit could not hold there. The server reports
+  `supportsSymlinkMarks`, and zn with a path scope shares nothing with a server that does not, or
+  that cannot be asked. An old zn on a new server is still exposed to linked notes, so both need
+  the update.
+
+The fixture now runs against a real server in CI (`docs/shared-contracts.md`), with the two
+calls that differ on purpose named in the test.
 
 Engine differences that remain, left out of the fixture on purpose:
 

@@ -158,6 +158,34 @@ func (v *Vault) FolderRoot(folder NoteFolder) string {
 	return filepath.Join(v.root, ResolveFolderPath(folder, paths))
 }
 
+// LinkedSystemFolders lists the system folders with a symbolic link on the way
+// to them, as vault-relative paths. The walks start at a system folder whatever
+// it is, so one that is a link shows another folder's notes under its own name.
+// Anything but a real directory or nothing at all counts, so a stat that fails
+// reports the folder rather than hiding it.
+func (v *Vault) LinkedSystemFolders() []string {
+	var linked []string
+	for _, folder := range AllFolders {
+		rel, err := filepath.Rel(v.root, v.FolderRoot(folder))
+		if err != nil || rel == "." {
+			continue
+		}
+		walk := v.root
+		for _, part := range strings.Split(rel, string(filepath.Separator)) {
+			walk = filepath.Join(walk, part)
+			info, err := os.Lstat(walk)
+			if errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			if err != nil || !info.IsDir() {
+				linked = append(linked, filepath.ToSlash(rel))
+				break
+			}
+		}
+	}
+	return linked
+}
+
 // FolderDirName is a bucket's on-disk directory name; "" for the inbox in
 // root primary mode.
 func (v *Vault) FolderDirName(folder NoteFolder) string {

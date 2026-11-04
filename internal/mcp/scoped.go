@@ -5,14 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/vault"
 )
@@ -27,6 +30,10 @@ import (
 // folder on a case-insensitive volume, or a hidden directory simply has no
 // match. Whatever the client is never shown does not exist for it, and the
 // error for a hidden path is the same bytes as for a missing one.
+//
+// A server lists a linked note or asset and marks it Symlink, and its writes
+// follow links to folders. So the view drops what is marked, and a destination
+// the listings do not know is checked for what is really there (occupied).
 //
 // One is made per tool call; the listings it reads are cached for that call.
 type scopedBackend struct {
@@ -76,9 +83,15 @@ type scopeView struct {
 	missingAllow []string
 	ancestors    map[string]bool
 
-	// root is the vault on this machine, where destinations are checked on
-	// disk; "" for a server's, whose walker is its own.
+	// linkedBuckets are the system folders with a symbolic link on the way to
+	// them, kept out of a client's view with its deny entries.
+	linkedBuckets []string
+
+	// root is the vault on this machine, "" for a server's.
 	root string
+	// occupied says whether anything at all is at a vault path. A listing
+	// cannot answer that, because it leaves links out.
+	occupied func(rel string) bool
 }
 
 func notFound(rel string) error     { return fmt.Errorf("Note not found: %s", rel) }
@@ -90,12 +103,68 @@ var errNotOffered = errors.New("That is not available to an assistant with scope
 // line per entry for the life of the process.
 var staleDenyLogged sync.Map
 
+// linkedBucketLogged does the same for a system folder hidden for being a link.
+var linkedBucketLogged sync.Map
+
 func (sb *scopedBackend) load(ctx context.Context) (*scopeView, error) {
 	sb.once.Do(func() { sb.view, sb.err = sb.build(ctx) })
 	return sb.view, sb.err
 }
 
+// errServerMarksNoLinks is the refusal on a server whose listings do not say
+// which notes and files are links. A listed path there may lead anywhere in the
+// vault, so a client that sees part of it gets nothing rather than a limit that
+// does not hold.
+var errServerMarksNoLinks = errors.New("This ZenNotes server cannot share part of a vault: its listings do not mark links, so nothing is shared until the server is updated.")
+
+// cleanVaultDir says whether a server's linked folder entry is a plain
+// vault-relative path. Anything else would match nothing as a deny entry and hide
+// nothing, so such an answer counts as no answer.
+func cleanVaultDir(dir string) bool {
+	// TrimSpace leaves a byte order mark alone, and it would hide nothing either.
+	if dir == "" || strings.TrimSpace(dir) != dir || strings.ContainsAny(dir, "\\\ufeff") {
+		return false
+	}
+	for _, seg := range strings.Split(dir, "/") {
+		if seg == "" || seg == "." || seg == ".." || strings.TrimSpace(seg) != seg {
+			return false
+		}
+	}
+	return true
+}
+
+// capabilityReader is a backend that can say what its server supports.
+type capabilityReader interface {
+	Capabilities(ctx context.Context) (map[string]any, error)
+}
+
+// requireLinkMarks fails closed: a server that does not say it marks links, or
+// cannot be asked, shares nothing with a client that sees part of the vault.
+func (sb *scopedBackend) requireLinkMarks(ctx context.Context) error {
+	if !sb.scope.Restricted() || sb.inner.Kind() == backend.KindLocal {
+		return nil
+	}
+	reader, ok := sb.inner.(capabilityReader)
+	if !ok {
+		return errServerMarksNoLinks
+	}
+	capabilities, err := reader.Capabilities(ctx)
+	if remote.StatusOf(err) == http.StatusNotFound {
+		return errServerMarksNoLinks
+	}
+	if err != nil {
+		return err
+	}
+	if capabilities["supportsSymlinkMarks"] != true {
+		return errServerMarksNoLinks
+	}
+	return nil
+}
+
 func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
+	if err := sb.requireLinkMarks(ctx); err != nil {
+		return nil, err
+	}
 	settings, err := sb.inner.VaultSettings(ctx)
 	if err != nil {
 		return nil, err
@@ -123,6 +192,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	if sb.inner.Kind() == backend.KindLocal {
 		v.root = sb.inner.Root()
 	}
+	v.occupied = sb.occupiedCheck(ctx, v.root)
 	for _, f := range vault.AllFolders {
 		if dir := v.bucketDir(f); dir != "" {
 			v.dirs = append(v.dirs, dir)
@@ -132,6 +202,19 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		rel := v.folderRel(f)
 		v.folders[rel] = f
 		v.dirs = append(v.dirs, rel)
+	}
+	// A linked note's content is whatever the link names, possibly a hidden
+	// note, and a write lands there too. A local listing never holds one. A
+	// client with no paths in its scope has nothing to be kept from, so it
+	// sees what an unscoped one does. Deny entries may still name one.
+	var linked []string
+	if sb.scope.Restricted() {
+		notes = slices.DeleteFunc(notes, func(n vault.NoteMeta) bool {
+			if n.Symlink {
+				linked = append(linked, n.Path)
+			}
+			return n.Symlink
+		})
 	}
 	known := make([]string, 0, len(notes)+len(v.dirs))
 	for _, n := range notes {
@@ -189,7 +272,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// the entry.
 	for _, entry := range sb.scope.Deny {
 		matched := false
-		for _, p := range known {
+		for _, p := range slices.Concat(known, linked) {
 			if search.Fold(p) == search.Fold(entry) {
 				matched = true
 				break
@@ -215,12 +298,56 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		}
 		v.deny = append(v.deny, entry)
 	}
+	// A system folder that is a link holds another folder's notes under its own
+	// name, and a write there lands in that other folder. A client that sees part
+	// of the vault cannot tell which, so the folder is hidden from it, whatever
+	// its allow entries say.
+	if sb.scope.Restricted() {
+		v.linkedBuckets, err = sb.inner.LinkedSystemFolders(ctx)
+		if errors.Is(err, backend.ErrLinkedFoldersUnknown) {
+			return nil, errServerMarksNoLinks
+		}
+		if err != nil {
+			return nil, err
+		}
+		if slices.ContainsFunc(v.linkedBuckets, func(dir string) bool { return !cleanVaultDir(dir) }) {
+			return nil, errServerMarksNoLinks
+		}
+		// Only stderr names it, as for a stale deny entry: it lands in the client's
+		// logs, not in front of the model.
+		for _, dir := range v.linkedBuckets {
+			if _, seen := linkedBucketLogged.LoadOrStore(dir, true); !seen {
+				fmt.Fprintf(os.Stderr, "zn mcp: the system folder %s is a symbolic link, so it is hidden from a client with --allow-path or --deny-path\n", dir)
+			}
+		}
+		v.deny = append(v.deny, v.linkedBuckets...)
+	}
 	for _, n := range notes {
 		if v.visible(n.Path) {
 			v.notes = append(v.notes, n)
 		}
 	}
 	return v, nil
+}
+
+// occupiedCheck is how this backend tells a free path from a taken one. Only
+// "not there" counts as free, so a failed check refuses the destination.
+//
+// A server has no route that says what is at a path, but its read does: a
+// missing path is a 404, while a link to a folder is a 400 for being a
+// directory and a link out of the vault a 400 for escaping. A dangling link also
+// reads as missing; the server then refuses the write itself.
+func (sb *scopedBackend) occupiedCheck(ctx context.Context, root string) func(string) bool {
+	if root != "" {
+		return func(rel string) bool {
+			_, err := os.Lstat(filepath.Join(root, filepath.FromSlash(rel)))
+			return !errors.Is(err, fs.ErrNotExist)
+		}
+	}
+	return func(rel string) bool {
+		_, err := sb.inner.ReadNote(ctx, rel)
+		return remote.StatusOf(err) != http.StatusNotFound
+	}
 }
 
 // spell finds the vault's spelling of p among known paths: exact, else the
@@ -393,10 +520,8 @@ func (v *scopeView) destination(folder vault.NoteFolder, rawSub string) (string,
 	// A segment the listings do not know is new only when nothing is there.
 	// The walks skip symbolic links, so `Projects/inner -> ../Journal` reads
 	// as missing, and creating through it would write into the hidden folder.
-	if firstNew != "" && v.root != "" {
-		if _, err := os.Lstat(filepath.Join(v.root, filepath.FromSlash(firstNew))); !errors.Is(err, fs.ErrNotExist) {
-			return "", v.createRefusal()
-		}
+	if firstNew != "" && v.occupied(firstNew) {
+		return "", v.createRefusal()
 	}
 	if bucket == "" {
 		return spelled, nil
@@ -457,8 +582,11 @@ func (sb *scopedBackend) noteFor(ctx context.Context, rel string, a Access) (vau
 // --- Backend ---
 
 func (sb *scopedBackend) Kind() backend.Kind { return sb.inner.Kind() }
-func (sb *scopedBackend) Label() string      { return sb.inner.Label() }
-func (sb *scopedBackend) Root() string       { return sb.inner.Root() }
+func (sb *scopedBackend) LinkedSystemFolders(ctx context.Context) ([]string, error) {
+	return sb.inner.LinkedSystemFolders(ctx)
+}
+func (sb *scopedBackend) Label() string { return sb.inner.Label() }
+func (sb *scopedBackend) Root() string  { return sb.inner.Root() }
 
 func (sb *scopedBackend) Describe(ctx context.Context) (backend.Description, error) {
 	return sb.inner.Describe(ctx)
@@ -585,6 +713,48 @@ func (sb *scopedBackend) MoveNote(ctx context.Context, rel string, folder vault.
 	return sb.inner.MoveNote(ctx, meta.Path, folder, sub)
 }
 
+// exitOpen refuses a lifecycle exit that would file the note through a link: the
+// system folder itself, or the note's folder kept below it. A server checks the
+// kept part itself, and exitRefusal gives its answer the same words.
+func (sb *scopedBackend) exitOpen(ctx context.Context, meta vault.NoteMeta, folder vault.NoteFolder) error {
+	if !sb.scope.Restricted() {
+		return nil
+	}
+	v, err := sb.load(ctx)
+	if err != nil {
+		return err
+	}
+	bucket := v.bucketDir(folder)
+	if slices.ContainsFunc(v.linkedBuckets, func(dir string) bool { return search.Fold(dir) == search.Fold(bucket) }) {
+		return v.createRefusal()
+	}
+	if v.root != "" {
+		sub := vault.FolderSubpathOf(meta.Path, meta.Folder, v.primaryAtRoot, v.paths)
+		if !sb.realDirs(ctx, v, joinRel(bucket, sub)) {
+			return v.createRefusal()
+		}
+	}
+	return nil
+}
+
+// exitRefusal gives a server's answer about a lifecycle move's destination the
+// usual refusal, so it does not say that a link exists somewhere the client may
+// not see: a 400 for one that goes through a link, a 404 for a dangling one. The
+// note itself was just found in the listings.
+func (sb *scopedBackend) exitRefusal(ctx context.Context, err error) error {
+	if err == nil || !sb.scope.Restricted() {
+		return err
+	}
+	if status := remote.StatusOf(err); status != http.StatusBadRequest && status != http.StatusNotFound {
+		return err
+	}
+	v, loadErr := sb.load(ctx)
+	if loadErr != nil {
+		return loadErr
+	}
+	return v.createRefusal()
+}
+
 // Archiving and trashing are lifecycle exits: the note may leave what the
 // client sees, and the user can undo either in the app.
 func (sb *scopedBackend) ArchiveNote(ctx context.Context, rel string) (vault.NoteMeta, error) {
@@ -592,7 +762,11 @@ func (sb *scopedBackend) ArchiveNote(ctx context.Context, rel string) (vault.Not
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
-	return sb.inner.ArchiveNote(ctx, meta.Path)
+	if err := sb.exitOpen(ctx, meta, vault.FolderArchive); err != nil {
+		return vault.NoteMeta{}, err
+	}
+	archived, err := sb.inner.ArchiveNote(ctx, meta.Path)
+	return archived, sb.exitRefusal(ctx, err)
 }
 
 func (sb *scopedBackend) MoveToTrash(ctx context.Context, rel string) (vault.NoteMeta, error) {
@@ -600,7 +774,11 @@ func (sb *scopedBackend) MoveToTrash(ctx context.Context, rel string) (vault.Not
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
-	return sb.inner.MoveToTrash(ctx, meta.Path)
+	if err := sb.exitOpen(ctx, meta, vault.FolderTrash); err != nil {
+		return vault.NoteMeta{}, err
+	}
+	trashed, err := sb.inner.MoveToTrash(ctx, meta.Path)
+	return trashed, sb.exitRefusal(ctx, err)
 }
 
 // restoreTarget checks that a note brought back to the inbox lands where the
@@ -612,8 +790,16 @@ func (sb *scopedBackend) restoreTarget(ctx context.Context, rel string) (vault.N
 	}
 	v, _ := sb.load(ctx)
 	sub := vault.FolderSubpathOf(meta.Path, meta.Folder, v.primaryAtRoot, v.paths)
-	if _, err := v.destination(vault.FolderInbox, sub); err != nil {
+	spelled, err := v.destination(vault.FolderInbox, sub)
+	if err != nil {
 		return vault.NoteMeta{}, err
+	}
+	// The check folds case and accents, but the restore keeps the note's own
+	// spelling. Where they differ, the note would land somewhere other than what
+	// was checked: `archive/Pröjects` beside `Projects`, or a link beside a real
+	// folder.
+	if spelled != sub {
+		return vault.NoteMeta{}, v.createRefusal()
 	}
 	return meta, nil
 }
@@ -623,7 +809,8 @@ func (sb *scopedBackend) UnarchiveNote(ctx context.Context, rel string) (vault.N
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
-	return sb.inner.UnarchiveNote(ctx, meta.Path)
+	restored, err := sb.inner.UnarchiveNote(ctx, meta.Path)
+	return restored, sb.exitRefusal(ctx, err)
 }
 
 func (sb *scopedBackend) RestoreFromTrash(ctx context.Context, rel string) (vault.NoteMeta, error) {
@@ -631,7 +818,8 @@ func (sb *scopedBackend) RestoreFromTrash(ctx context.Context, rel string) (vaul
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
-	return sb.inner.RestoreFromTrash(ctx, meta.Path)
+	restored, err := sb.inner.RestoreFromTrash(ctx, meta.Path)
+	return restored, sb.exitRefusal(ctx, err)
 }
 
 func (sb *scopedBackend) DuplicateNote(ctx context.Context, rel string) (vault.NoteMeta, error) {
@@ -779,7 +967,7 @@ func (sb *scopedBackend) Backlinks(ctx context.Context, rel string) ([]vault.Not
 	}
 	out := []vault.NoteMeta{}
 	for _, n := range all {
-		if v.visible(n.Path) {
+		if _, listed := v.byPath[n.Path]; listed && v.visible(n.Path) {
 			out = append(out, n)
 		}
 	}

@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -198,6 +200,17 @@ func containsAny(text string, needles []string) bool {
 	return false
 }
 
+// replaceDiskPaths drops the paths in remove and adds those in add.
+func replaceDiskPaths(paths, remove, add []string) []string {
+	out := []string{}
+	for _, p := range paths {
+		if !slices.Contains(remove, p) {
+			out = append(out, p)
+		}
+	}
+	return append(out, add...)
+}
+
 func sortedCopy(values []string) []string {
 	out := append([]string{}, values...)
 	sort.Strings(out)
@@ -205,7 +218,40 @@ func sortedCopy(values []string) []string {
 }
 
 func TestSharedScopeContract(t *testing.T) {
+	runScopeContract(t, runScoped, nil)
+}
+
+// scopeContractDifference is one call whose answer differs on purpose where
+// the contract runs. Tool guards against the fixture's calls moving, and Why is
+// the reason it is allowed to differ.
+type scopeContractDifference struct {
+	Case   string
+	Call   int
+	Tool   string
+	Why    string
+	Expect scopeContractExpect
+	// Exists and Absent correct the case's disk check for that call: a path
+	// named in one is taken out of the other.
+	Exists []string
+	Absent []string
+	// Equals replaces what the case says a file holds after that call.
+	Equals map[string]string
+}
+
+// runScopeContract runs every case of the fixture against what open serves.
+// A difference replaces what the fixture expects of that call, so it is still
+// checked, and one that no longer matches a call fails the run.
+func runScopeContract(t *testing.T, open func(*testing.T, string, *Scope) *sdk.ClientSession, differences []scopeContractDifference) {
 	contract := loadScopeContract(t)
+	unused := map[string]scopeContractDifference{}
+	for _, d := range differences {
+		unused[fmt.Sprintf("%s/%d", d.Case, d.Call)] = d
+	}
+	t.Cleanup(func() {
+		for key, d := range unused {
+			t.Errorf("difference %s (%s) matches no call in the fixture", key, d.Why)
+		}
+	})
 	for _, tc := range contract.Cases {
 		t.Run(tc.ID, func(t *testing.T) {
 			seed := contract.Vaults[tc.Vault]
@@ -238,7 +284,7 @@ func TestSharedScopeContract(t *testing.T) {
 				}
 				scope = &s
 			}
-			cs := runScoped(t, root, scope)
+			cs := open(t, root, scope)
 
 			if tc.Tools != nil {
 				listed := listedTools(t, cs)
@@ -278,11 +324,25 @@ func TestSharedScopeContract(t *testing.T) {
 				}
 			}
 
-			for _, call := range tc.Calls {
+			var diskExists, diskAbsent []string
+			diskEquals := map[string]string{}
+			if tc.Disk != nil {
+				diskExists, diskAbsent = tc.Disk.Exists, tc.Disk.Absent
+				maps.Copy(diskEquals, tc.Disk.Equals)
+			}
+			for index, call := range tc.Calls {
 				argsJSON, _ := json.Marshal(call.Args)
 				where := call.Tool + " " + string(argsJSON)
 				text, failed := contractCall(cs, call.Tool, call.Args)
 				e := call.Expect
+				key := fmt.Sprintf("%s/%d", tc.ID, index)
+				if d, ok := unused[key]; ok && d.Tool == call.Tool {
+					delete(unused, key)
+					e = d.Expect
+					diskExists = replaceDiskPaths(diskExists, d.Absent, d.Exists)
+					diskAbsent = replaceDiskPaths(diskAbsent, d.Exists, d.Absent)
+					maps.Copy(diskEquals, d.Equals)
+				}
 				if e.NotOffered {
 					if !failed {
 						t.Errorf("%s: should not be offered, got %s", where, text)
@@ -361,17 +421,17 @@ func TestSharedScopeContract(t *testing.T) {
 
 			if tc.Disk != nil {
 				at := func(rel string) string { return filepath.Join(root, filepath.FromSlash(rel)) }
-				for _, rel := range tc.Disk.Exists {
+				for _, rel := range diskExists {
 					if _, err := os.Lstat(at(rel)); err != nil {
 						t.Errorf("%s should exist: %v", rel, err)
 					}
 				}
-				for _, rel := range tc.Disk.Absent {
+				for _, rel := range diskAbsent {
 					if _, err := os.Lstat(at(rel)); err == nil {
 						t.Errorf("%s should be absent", rel)
 					}
 				}
-				for rel, want := range tc.Disk.Equals {
+				for rel, want := range diskEquals {
 					got, err := os.ReadFile(at(rel))
 					if err != nil || string(got) != want {
 						t.Errorf("%s: got %q (%v), want %q", rel, got, err, want)

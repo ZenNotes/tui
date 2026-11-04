@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"sort"
 	"strings"
@@ -1174,6 +1175,12 @@ func Run(ctx context.Context, opts Options) error {
 			}
 			b, move, err := vaults.backendFor(ctx, def.name == "vault_info")
 			if err != nil {
+				// A failed open names the vault's location, which a scoped client
+				// is not told.
+				var pathErr *fs.PathError
+				if opts.Scope != nil && errors.As(err, &pathErr) {
+					return errorResult("Error: The vault cannot be opened."), nil
+				}
 				return errorResult("Error: " + DescribeToolError(err, b)), nil
 			}
 			if move != nil {
