@@ -763,7 +763,7 @@ func (a *App) View() string {
 	if a.cursorOut != nil {
 		a.cursorOut.Set(a.cursor)
 	}
-	return a.theme.paint(screen)
+	return cleanScreen(a.theme.paint(screen))
 }
 
 func (a *App) renderVerticalBorder(h int, focused bool) string {
