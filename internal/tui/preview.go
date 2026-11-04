@@ -54,7 +54,7 @@ var (
 	tableRowRe   = regexp.MustCompile(`^\s*\|.*\|\s*$`)
 	tableSepRe   = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
 	calloutRe    = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	embedWikiRe  = regexp.MustCompile(`!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
+	embedWikiRe  = regexp.MustCompile(`!\[\[([^\]|]+?)(?:\\?\|[^\]]*)?\]\]`)
 	embedImgRe   = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
 	highlightRe  = regexp.MustCompile(`==[^=\n]+==`)
 	mathInlineRe = regexp.MustCompile(`\$[^$\n]+\$`)
@@ -314,7 +314,8 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 func splitWiki(content string) (target, heading, alias string) {
 	if i := strings.Index(content, "|"); i >= 0 {
 		alias = strings.TrimSpace(content[i+1:])
-		content = content[:i]
+		// A table escapes the separator as `\|`; the backslash is not the target's.
+		content = strings.TrimSuffix(content[:i], `\`)
 	}
 	if i := strings.Index(content, "#"); i >= 0 {
 		heading = content[i+1:]

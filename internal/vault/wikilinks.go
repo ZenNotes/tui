@@ -117,10 +117,15 @@ func ResolveWikilink(notes []NoteMeta, target string) (NoteMeta, bool) {
 }
 
 // SplitWikilinkContent separates `Target#anchor|alias` into its parts; the
-// anchor keeps its leading `#` or `^` and the alias its leading `|`.
+// anchor keeps its leading `#` or `^` and the alias its leading separator, so
+// the three join back into content. A table writes that separator as `\|`, the
+// escape GFM needs to keep the pipe in its cell, and a rewrite must keep it.
 func SplitWikilinkContent(content string) (target, anchor, alias string) {
 	rest := content
 	if pipe := strings.IndexByte(rest, '|'); pipe >= 0 {
+		if pipe > 0 && rest[pipe-1] == '\\' {
+			pipe--
+		}
 		alias = rest[pipe:]
 		rest = rest[:pipe]
 	}

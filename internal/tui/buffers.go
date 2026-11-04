@@ -288,7 +288,8 @@ type linkTarget struct {
 // wikilinkTargetOf builds the link for what sits inside `[[...]]`.
 func wikilinkTargetOf(content string) linkTarget {
 	target, anchor, alias := vault.SplitWikilinkContent(content)
-	return linkTarget{kind: "wikilink", target: strings.TrimSpace(target + anchor), alias: strings.TrimPrefix(alias, "|")}
+	alias = strings.TrimPrefix(strings.TrimPrefix(alias, `\`), "|")
+	return linkTarget{kind: "wikilink", target: strings.TrimSpace(target + anchor), alias: alias}
 }
 
 // mdLinkTargetOf builds the link for a Markdown link's raw destination.
