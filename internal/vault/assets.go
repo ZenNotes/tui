@@ -493,7 +493,7 @@ func sanitizeFileName(name string) string {
 
 func uniquePath(dir, stem, ext string) (string, error) {
 	candidate := filepath.Join(dir, stem+ext)
-	for i := 2; ; i++ {
+	for i := 2; i <= maxUniqueAttempts; i++ {
 		if _, err := os.Lstat(candidate); errors.Is(err, os.ErrNotExist) {
 			return candidate, nil
 		} else if err != nil {
@@ -501,6 +501,7 @@ func uniquePath(dir, stem, ext string) (string, error) {
 		}
 		candidate = filepath.Join(dir, fmt.Sprintf("%s %d%s", stem, i, ext))
 	}
+	return "", fmt.Errorf("no free name for %q after %d tries", stem+ext, maxUniqueAttempts)
 }
 
 func kindForExt(ext string) string {

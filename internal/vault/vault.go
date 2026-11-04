@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Vault is one vault root on disk. Mutating operations serialize through a
@@ -551,20 +552,38 @@ func SanitizeTitle(raw string) string {
 	if len(runes) > 200 {
 		t = string(runes[:200])
 	}
+	// 200 characters of Chinese or emoji is past the 255 bytes most filesystems allow.
+	for len(t) > maxTitleBytes {
+		_, size := utf8.DecodeLastRuneInString(t)
+		t = t[:len(t)-size]
+	}
+	t = strings.TrimSpace(t)
 	if t == "" {
 		return "Untitled"
 	}
 	return t
 }
 
-func uniqueTitle(dir, base string) string {
+// maxTitleBytes leaves room in a file name for a copy number and an extension.
+const maxTitleBytes = 200
+
+// maxUniqueAttempts bounds the search for a free name.
+const maxUniqueAttempts = 10000
+
+// uniqueTitle finds a title no note in dir uses. Any answer but "exists" or "does not
+// exist" (a name too long, a folder it cannot read) stops the search: the next number
+// would get the same answer.
+func uniqueTitle(dir, base string) (string, error) {
 	candidate := base
-	for n := 2; ; n++ {
+	for n := 2; n <= maxUniqueAttempts; n++ {
 		if _, err := os.Lstat(filepath.Join(dir, candidate+".md")); errors.Is(err, os.ErrNotExist) {
-			return candidate
+			return candidate, nil
+		} else if err != nil {
+			return "", err
 		}
 		candidate = fmt.Sprintf("%s %d", base, n)
 	}
+	return "", fmt.Errorf("no free name for %q after %d tries", base, maxUniqueAttempts)
 }
 
 // CreateNote creates a note in a bucket (and subpath), picking a
@@ -589,7 +608,10 @@ func (v *Vault) CreateNote(folder NoteFolder, title, subpath string, body *strin
 	if err := os.MkdirAll(dir, v.dirMode); err != nil {
 		return NoteMeta{}, err
 	}
-	finalTitle := uniqueTitle(dir, base)
+	finalTitle, err := uniqueTitle(dir, base)
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	abs := filepath.Join(dir, finalTitle+".md")
 	content := "# " + finalTitle + "\n\n"
 	if body != nil {
@@ -734,7 +756,10 @@ func (v *Vault) moveBetweenFolders(rel string, target NoteFolder) (NoteMeta, err
 		return NoteMeta{}, err
 	}
 	baseTitle := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
-	finalTitle := uniqueTitle(destDir, baseTitle)
+	finalTitle, err := uniqueTitle(destDir, baseTitle)
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	destAbs := filepath.Join(destDir, finalTitle+".md")
 	if err := v.relocateWithMetadata(abs, destAbs, false); err != nil {
 		return NoteMeta{}, err
@@ -790,7 +815,10 @@ func (v *Vault) MoveNote(rel string, target NoteFolder, targetSubpath string) (N
 	}
 	ext := filepath.Ext(oldAbs)
 	baseTitle := strings.TrimSuffix(filepath.Base(oldAbs), ext)
-	finalTitle := uniqueTitle(destDir, baseTitle)
+	finalTitle, err := uniqueTitle(destDir, baseTitle)
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	destAbs := filepath.Join(destDir, finalTitle+ext)
 	if err := v.relocateWithMetadata(oldAbs, destAbs, false); err != nil {
 		return NoteMeta{}, err
@@ -812,7 +840,10 @@ func (v *Vault) DuplicateNote(rel string) (NoteMeta, error) {
 	dir := filepath.Dir(abs)
 	ext := filepath.Ext(abs)
 	baseTitle := strings.TrimSuffix(filepath.Base(abs), ext)
-	copyTitle := uniqueTitle(dir, baseTitle+" copy")
+	copyTitle, err := uniqueTitle(dir, baseTitle+" copy")
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	destAbs := filepath.Join(dir, copyTitle+ext)
 	body, err := os.ReadFile(abs)
 	if err != nil {
