@@ -133,9 +133,24 @@ func (sb *scopedBackend) assetDestination(ctx context.Context, v *scopeView, raw
 	return spelled, nil
 }
 
+// errAssetBytesOnAServer is the refusal for handing a file's contents to a
+// client that sees only part of a server's vault. It holds until a server can
+// say enough about a file for this check to be made here.
+var errAssetBytesOnAServer = errors.New("Reading or copying attachments on a ZenNotes server is not available to an assistant that sees only part of the vault.")
+
+func (sb *scopedBackend) refuseAssetBytes() error {
+	if sb.scope.Restricted() && sb.inner.Kind() == backend.KindRemote {
+		return errAssetBytesOnAServer
+	}
+	return nil
+}
+
 func (sb *scopedBackend) ReadAsset(ctx context.Context, rel string) ([]byte, error) {
 	meta, _, err := sb.assetFor(ctx, rel, AccessRead)
 	if err != nil {
+		return nil, err
+	}
+	if err := sb.refuseAssetBytes(); err != nil {
 		return nil, err
 	}
 	return sb.inner.ReadAsset(ctx, meta.Path)
@@ -215,6 +230,9 @@ var errAssetLinksEverywhere = errors.New("Renaming or moving attachments on a Ze
 func (sb *scopedBackend) DuplicateAsset(ctx context.Context, rel string) (vault.AssetMeta, error) {
 	meta, v, err := sb.assetFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.AssetMeta{}, err
+	}
+	if err := sb.refuseAssetBytes(); err != nil {
 		return vault.AssetMeta{}, err
 	}
 	m, err := sb.assetsInner()

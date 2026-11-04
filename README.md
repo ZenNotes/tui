@@ -1135,7 +1135,8 @@ What the client gets:
   `--deny-path assets/private`). `upload_asset` writes only to `assets`, so it
   needs that folder shared. Renaming or moving a file follows the note rule
   above: only visible notes are rewritten, and on a server a scoped client
-  cannot do it.
+  cannot do it. A scoped client on a server cannot read or duplicate a file
+  either; it can list, upload, delete and restore.
 - A folder is renamed or deleted as a whole only when nothing inside it is
   hidden.
 - A `--deny-path` that matches nothing in the vault (renamed outside ZenNotes,

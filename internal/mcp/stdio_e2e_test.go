@@ -439,6 +439,16 @@ func TestStdioEveryScopeFailsClosed(t *testing.T) {
 			e2eFails(t, cs, "edit_section", map[string]any{"path": "Journal/Diary.md", "heading": "Diary", "mode": "append", "text": "x"}, "Note not found: Journal/Diary.md")
 			e2eFails(t, cs, "update_task", map[string]any{"id": "Journal/Diary.md#0", "due": "2026-12-01"}, "Note not found: Journal/Diary.md")
 
+			// A path scope on a server gets no file contents at all.
+			if b.name == "server" {
+				for _, tool := range []string{"read_asset", "duplicate_asset"} {
+					e2eFails(t, cs, tool, map[string]any{"path": "assets/words.txt"}, "not available to an assistant that sees only part of the vault")
+				}
+				e2eAbsent(t, b.root, "assets/words copy.txt")
+			} else {
+				e2eOK(t, cs, "read_asset", map[string]any{"path": "assets/words.txt"})
+			}
+
 			// A rename under a path scope touches only what the client sees, and a
 			// server, which rewrites every note itself, refuses it.
 			rename := map[string]any{"path": "assets/pic.png", "name": "photo.png"}

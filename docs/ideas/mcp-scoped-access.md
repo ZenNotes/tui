@@ -657,12 +657,12 @@ The Go server gained eleven tools, 45 in all. The desktop's server has not mirro
 
 | Tool | Needs | Under a scope |
 |------|-------|---------------|
-| `read_asset` | read | A visible listed asset, else `Asset not found: <path as given>`, the same bytes for hidden and missing. Case and accent variants resolve through the listing. |
+| `read_asset` | read | A visible listed asset, else `Asset not found: <path as given>`, the same bytes for hidden and missing. Case and accent variants resolve through the listing. A path-restricted client on a server is refused file contents. |
 | `list_assets {deleted: true}` | read | Entries whose original path is visible. |
 | `upload_asset` | write | Writes only to the vault's assets folder, so `assets` must be visible (and on a local vault a real directory). Otherwise it refuses with one message. |
 | `rename_asset` | write | Source and new path visible. Links are rewritten in visible notes only on a local vault. A server rewrites every note, so a path-restricted client is refused there, as with `rename_note` (decision 6). |
 | `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
-| `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. |
+| `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. `duplicate_asset` makes a readable copy, so a path-restricted client on a server is refused it, as with `read_asset`. |
 | `restore_asset` | write | Only an entry `list_assets {deleted: true}` would show, else `Deleted asset not found: <token>`. |
 | `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name. |
 | `update_task`, `edit_section` | write | Composed from `ReadNote` and `WriteNote`, so the note must be visible; recorded for agent edit review. |
