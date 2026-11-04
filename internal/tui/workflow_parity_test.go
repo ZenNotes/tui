@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
@@ -148,6 +149,104 @@ func TestFileRenameAndUseCountFollowBareEmbeds(t *testing.T) {
 	}
 	if got := noteOnDisk(t, root, "note.md"); got != "Unsaved ![[new.png]]\n" {
 		t.Fatalf("open note on disk: %q", got)
+	}
+}
+
+// renameFile renames rel through the Files view's real prompt.
+func renameFile(t *testing.T, a *App, rel, name string) {
+	t.Helper()
+	assets, err := a.backend.ListAssets(a.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, as := range assets {
+		if as.Path == rel {
+			(&filesView{}).rename(a, as)
+			a.overlay.(*prompt).onSubmit(a, name)
+			return
+		}
+	}
+	t.Fatalf("no asset %s in %v", rel, assets)
+}
+
+func writeVaultFile(t *testing.T, root, rel, body string) {
+	t.Helper()
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(abs, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFileRenameLeavesLinksToANoteOfTheSameName(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultFile(t, root, "TODO.md", "# TODO\n")
+	writeVaultFile(t, root, "inbox/TODO", "a file")
+	links := "see [[TODO]] and [[TODO|my list]] and ![[TODO]]\n"
+	writeVaultFile(t, root, "links.md", links)
+
+	v := &filesView{}
+	a.pendingCmds = nil
+	v.refresh(a)
+	loaded := a.pendingCmds[0]().(filesLoadedMsg)
+	a.pendingCmds = nil
+	if got := loaded.uses["inbox/TODO"]; len(got) != 0 {
+		t.Fatalf("a link to the note is not a use of the file: %v", got)
+	}
+
+	renameFile(t, a, "inbox/TODO", "TODO.old")
+	if got := noteOnDisk(t, root, "links.md"); got != links {
+		t.Fatalf("a link to the note followed the file: %q", got)
+	}
+}
+
+func TestFileRenameLeavesTrashedNotes(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	writeVaultFile(t, root, "assets/pic.png", "png")
+	writeVaultFile(t, root, "trash/gone.md", "![[pic.png]]\n")
+	writeVaultFile(t, root, "kept.md", "![[pic.png]]\n")
+	renameFile(t, a, "assets/pic.png", "new.png")
+	if got := noteOnDisk(t, root, "trash/gone.md"); got != "![[pic.png]]\n" {
+		t.Fatalf("trashed note edited: %q", got)
+	}
+	if got := noteOnDisk(t, root, "kept.md"); got != "![[new.png]]\n" {
+		t.Fatalf("live note: %q", got)
+	}
+}
+
+// selfRewritingServer behaves like a server backend: it is no
+// AssetLinkRewriter, and RenameAsset re-targets every note itself.
+type selfRewritingServer struct {
+	backend.Backend
+	backend.AssetManager
+	local *backend.Local
+}
+
+func (s selfRewritingServer) RenameAsset(ctx context.Context, rel, name string) (vault.AssetMeta, error) {
+	return s.local.RenameAssetRewritingLinksIn(ctx, rel, name, nil)
+}
+
+func TestFileRenameOnAServerLeavesNotesToTheServerAndRefreshesBuffers(t *testing.T) {
+	a, root := newFeatureTestApp(t)
+	local := a.backend.(*backend.Local)
+	a.backend = selfRewritingServer{Backend: local, AssetManager: local, local: local}
+	writeVaultFile(t, root, "assets/pic.png", "png")
+	writeVaultFile(t, root, "inbox/case.md", "![[pic.png]] ![[assets/pic.png|3]] [r](../assets/pic.png) [s](/assets/pic.png)\n")
+	writeVaultFile(t, root, "note.md", "![[assets/pic.png]]\n")
+	buf := openLoaded(t, a, "note.md")
+	buf.ed.ReplaceText("Saved first ![[assets/pic.png]]\n")
+
+	// A case-only rename: the old listing would read the server's new bare
+	// name back as the old file and flatten every path.
+	renameFile(t, a, "assets/pic.png", "Pic.png")
+
+	if got, want := noteOnDisk(t, root, "inbox/case.md"), "![[Pic.png]] ![[assets/Pic.png|3]] [r](../assets/Pic.png) [s](/assets/Pic.png)\n"; got != want {
+		t.Fatalf("server's rewrite was changed:\n got %q\nwant %q", got, want)
+	}
+	if got, want := buf.ed.Text(), "Saved first ![[assets/Pic.png]]\n"; got != want || buf.dirty() {
+		t.Fatalf("open buffer: %q (dirty %v), want %q", got, buf.dirty(), want)
 	}
 }
 

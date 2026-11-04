@@ -67,7 +67,7 @@ func (v *filesView) refresh(a *App) {
 						err = e
 						continue
 					}
-					for p := range vault.AssetsReferencedBy(body.Body, assets, n.Path) {
+					for p := range vault.AssetsReferencedBy(body.Body, assets, notes, n.Path) {
 						uses[p] = append(uses[p], n)
 					}
 				}
@@ -292,10 +292,23 @@ func (v *filesView) rename(a *App, as vault.AssetMeta) {
 			a.notifyError(err.Error())
 			return
 		}
+		if _, rewritesHere := a.backend.(backend.AssetLinkRewriter); !rewritesHere {
+			// A server re-targets every note itself, and its new links would
+			// read wrongly against the old listing. Open buffers only need its text.
+			for _, buf := range a.buffers {
+				a.reloadBuffer(buf)
+			}
+			v.refresh(a)
+			a.notify("Renamed file and updated references")
+			return
+		}
 		failures := []string{}
 		for _, n := range notes {
+			if n.Folder == vault.FolderTrash {
+				continue
+			}
 			err := a.mutateNote(n.Path, func(body string) (string, bool) {
-				text, count := vault.RewriteAssetReferencesInBody(body, assets, n.Path, as.Path, next.Path)
+				text, count := vault.RewriteAssetReferencesInBody(body, assets, notes, n.Path, as.Path, next.Path)
 				return text, count > 0
 			})
 			if err != nil {

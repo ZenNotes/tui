@@ -687,7 +687,7 @@ func TestAssetRenameKeepsMarkdownLinksWorkingWithSpacedNames(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, _ := rewriteAssetReferencesInBody(tc.body, assets, "notes/n.md", "assets/report.pdf", tc.next)
+			got, _ := rewriteAssetReferencesInBody(tc.body, assets, nil, "notes/n.md", "assets/report.pdf", tc.next)
 			if got != tc.want {
 				t.Fatalf("got  %q\nwant %q", got, tc.want)
 			}
@@ -695,13 +695,13 @@ func TestAssetRenameKeepsMarkdownLinksWorkingWithSpacedNames(t *testing.T) {
 	}
 
 	encoded := []AssetMeta{{Path: "assets/my report.pdf"}}
-	if got, _ := rewriteAssetReferencesInBody("[x](../assets/my%20report.pdf)\n", encoded, "notes/n.md", "assets/my report.pdf", "assets/new report.pdf"); got != "[x](../assets/new%20report.pdf)\n" {
+	if got, _ := rewriteAssetReferencesInBody("[x](../assets/my%20report.pdf)\n", encoded, nil, "notes/n.md", "assets/my report.pdf", "assets/new report.pdf"); got != "[x](../assets/new%20report.pdf)\n" {
 		t.Fatalf("an encoded link stays encoded: %q", got)
 	}
 
-	first, _ := rewriteAssetReferencesInBody("[x](../assets/report.pdf#page=3)\n", assets, "notes/n.md", "assets/report.pdf", "assets/new report.pdf")
+	first, _ := rewriteAssetReferencesInBody("[x](../assets/report.pdf#page=3)\n", assets, nil, "notes/n.md", "assets/report.pdf", "assets/new report.pdf")
 	renamed := []AssetMeta{{Path: "assets/new report.pdf"}}
-	second, count := rewriteAssetReferencesInBody(first, renamed, "notes/n.md", "assets/new report.pdf", "assets/final.pdf")
+	second, count := rewriteAssetReferencesInBody(first, renamed, nil, "notes/n.md", "assets/new report.pdf", "assets/final.pdf")
 	if count != 1 || second != "[x](<../assets/final.pdf#page=3>)\n" {
 		t.Fatalf("the next rename lost the link: %q (%d)", second, count)
 	}
