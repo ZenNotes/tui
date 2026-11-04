@@ -42,7 +42,16 @@ type previewLine struct {
 	srcLine int
 	links   []linkTarget
 	task    bool
+	// taskBack is how many source lines above srcLine the row's task sits, for a
+	// paragraph under a task item.
+	taskBack int
 }
+
+// taskLine is the source line of the task a row toggles.
+func (l previewLine) taskLine() int { return l.srcLine - l.taskBack }
+
+// editorLine is the row's source line as GotoLine counts them, from one.
+func (l previewLine) editorLine() int { return l.srcLine + 1 }
 
 type styledRune struct {
 	r     rune
@@ -625,7 +634,7 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 		switch {
 		case k.IsRune('i') || k.IsRune('e') || k.IsRune('a') || k.IsRune('q'):
 			if lines != nil && pv.cursor < n {
-				buf.ed.GotoLine(lines.lines[pv.cursor].srcLine)
+				buf.ed.GotoLine(lines.lines[pv.cursor].editorLine())
 			}
 			a.setPaneMode(modeEdit)
 		case k.IsRune('y'):
@@ -672,7 +681,7 @@ func (a *App) previewToggleTask(t *tab, buf *noteBuffer) {
 		return
 	}
 	cur := buf.ed.Cursor()
-	buf.ed.SetCursor(vim.Pos{Line: row.srcLine, Col: 0})
+	buf.ed.SetCursor(vim.Pos{Line: row.taskLine(), Col: 0})
 	buf.ed.ToggleCheckboxAtCursor()
 	buf.ed.SetCursor(cur)
 }

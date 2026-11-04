@@ -484,28 +484,39 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 			items = append(items, i)
 		}
 	}
-	k := -1
-	for _, row := range rows {
-		plain := xansi.Strip(row)
-		if itemMarkerRe.MatchString(plain) && k+1 < len(items) {
-			k++
+	// A row belongs to the last item marker or paragraph line it reached. Its links
+	// run up to the next line that gets a row of its own.
+	paragraphs := []int{}
+	starts := map[int]bool{}
+	for _, i := range items {
+		starts[i] = true
+	}
+	for i := b.start; i < b.end; i++ {
+		if strings.Contains(srcLines[i-b.start], guardLine) {
+			paragraphs = append(paragraphs, i)
+			starts[i] = true
 		}
-		src := b.start
-		if k >= 0 {
+	}
+	k, p, src := -1, 0, b.start
+	for _, row := range rows {
+		if itemMarkerRe.MatchString(xansi.Strip(row)) && k+1 < len(items) {
+			k++
 			src = items[k]
 		}
+		for n := strings.Count(row, guardLine); n > 0 && p < len(paragraphs); n-- {
+			src = paragraphs[p]
+			p++
+		}
+		row = strings.ReplaceAll(row, guardLine, "")
 		pl := previewLine{text: finish(row), srcLine: src}
-		if k >= 0 && (len(out) == 0 || out[len(out)-1].srcLine != src) {
-			end := b.end
-			if k+1 < len(items) {
-				end = items[k+1]
+		if k >= 0 {
+			pl.task = taskLineRe.MatchString(lines[items[k]])
+			pl.taskBack = src - items[k]
+			if len(out) == 0 || out[len(out)-1].srcLine != src {
+				for i := src; i < b.end && (i == src || !starts[i]); i++ {
+					pl.links = append(pl.links, linksOn(i)...)
+				}
 			}
-			for i := src; i < end; i++ {
-				pl.links = append(pl.links, linksOn(i)...)
-			}
-			pl.task = taskLineRe.MatchString(lines[src])
-		} else if k >= 0 {
-			pl.task = taskLineRe.MatchString(lines[src])
 		}
 		out = append(out, pl)
 	}

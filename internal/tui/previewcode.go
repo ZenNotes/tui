@@ -96,7 +96,8 @@ const (
 	guardBang         = "\uFDD5"
 	guardColon        = "\uFDD6"
 	guardItem         = "\uFDD9" // follows a marker in code, see codeItemRe
-	guardGap          = "\uFDDA" // fills a blank line, see keepItemParagraphsApart
+	guardGap          = "\uFDDA" // fills a blank line, see markItemContent
+	guardLine         = "\uFDDB" // starts an item's paragraph line, see markItemContent
 )
 
 var (
@@ -155,36 +156,67 @@ func blockSource(b mdBlock, lines []string) string {
 	}
 	text := strings.Join(rows, "\n")
 	if b.kind == "list" {
-		text = keepItemParagraphsApart(text)
+		text = markItemContent(text)
 	}
 	return escapeTableCodePipes(text)
 }
 
-// keepItemParagraphsApart stops Glamour running a list item's paragraphs into one
-// another, which it does with no space between their words. The blank lines
-// between two of them are filled, keeping every line in place, so they read as
-// one paragraph whose lines Glamour keeps, and the filler leaves a blank row.
-func keepItemParagraphsApart(text string) string {
-	if !strings.Contains(text, "\n\n") && !blankLineRe.MatchString(text) {
+// markItemContent prepares what a list item holds beyond its marker line, keeping
+// every line in place.
+//
+// Glamour runs an item's paragraphs together with no space between their words,
+// and drops the blank line before a quote. Those blank lines are filled, so the
+// first reads as one paragraph whose lines Glamour keeps, and the filler leaves a
+// blank row.
+//
+// Rows are matched to list items by their markers, which says nothing about a
+// paragraph, so each of its lines starts with guardLine for mapRows to find. A line
+// is left out where the guard would change how it reads, and its links then show
+// on the row before it: emphasis may stop opening, and a bare URL stop being one.
+func markItemContent(text string) string {
+	lines := strings.Split(text, "\n")
+	plain := true
+	for _, l := range lines {
+		if !blankRe.MatchString(l) && !listLineRe.MatchString(l) {
+			plain = false
+			break
+		}
+	}
+	if plain {
 		return text
 	}
 	src := []byte(text)
-	lines := strings.Split(text, "\n")
 	lineOf := lineLocator(src)
 	_ = ast.Walk(codeParser.Parse(gmtext.NewReader(src)), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering || n.Kind() != ast.KindListItem {
 			return ast.WalkContinue, nil
 		}
-		for c := n.FirstChild(); c != nil && c.NextSibling() != nil; c = c.NextSibling() {
-			next := c.NextSibling()
-			if c.Kind() != ast.KindParagraph || next.Kind() != ast.KindParagraph || c.Lines().Len() == 0 || next.Lines().Len() == 0 {
+		for c := n.FirstChild(); c != nil; c = c.NextSibling() {
+			if c.Kind() != ast.KindParagraph && c.Kind() != ast.KindTextBlock {
 				continue
 			}
-			from := lineOf(c.Lines().At(c.Lines().Len()-1).Start) + 1
-			to := lineOf(next.Lines().At(0).Start)
-			indent := lines[to][:len(lines[to])-len(strings.TrimLeft(lines[to], " \t"))]
-			for i := from; i < to; i++ {
-				lines[i] = indent + guardGap
+			marked := c.Lines()
+			for i := 0; i < marked.Len(); i++ {
+				l := lineOf(marked.At(i).Start)
+				body := strings.TrimLeft(lines[l], " \t")
+				if !listLineRe.MatchString(lines[l]) && guardLineFits(body) {
+					lines[l] = lines[l][:len(lines[l])-len(body)] + guardLine + body
+				}
+			}
+			next := c.NextSibling()
+			if c.Kind() != ast.KindParagraph || marked.Len() == 0 || next == nil {
+				continue
+			}
+			switch next.Kind() {
+			case ast.KindParagraph, ast.KindBlockquote:
+				to := firstLineOf(next, lineOf)
+				if to < 0 {
+					continue
+				}
+				indent := lines[to][:len(lines[to])-len(strings.TrimLeft(lines[to], " \t"))]
+				for i := lineOf(marked.At(marked.Len()-1).Start) + 1; i < to; i++ {
+					lines[i] = indent + guardGap
+				}
 			}
 		}
 		return ast.WalkContinue, nil
@@ -192,7 +224,26 @@ func keepItemParagraphsApart(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-var blankLineRe = regexp.MustCompile(`(?m)^[ \t]+$`)
+func guardLineFits(body string) bool {
+	if body == "" || strings.ContainsRune("*_~", rune(body[0])) {
+		return false
+	}
+	lower := strings.ToLower(body)
+	return !strings.HasPrefix(lower, "http") && !strings.HasPrefix(lower, "www.") && !strings.HasPrefix(lower, "mailto:")
+}
+
+// firstLineOf finds the line a block starts on, or -1.
+func firstLineOf(n ast.Node, lineOf func(int) int) int {
+	line := -1
+	_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering && c.Type() == ast.TypeBlock && c.Lines().Len() > 0 {
+			line = lineOf(c.Lines().At(0).Start)
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	return line
+}
 
 // lineLocator returns a function from a byte offset of src to its line number.
 func lineLocator(src []byte) func(int) int {

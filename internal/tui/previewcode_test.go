@@ -7,6 +7,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
+
+	"github.com/ZenNotes/tui/internal/vim"
 )
 
 // previewRows renders a note through the Glamour preview.
@@ -282,6 +284,106 @@ func TestPreviewListContentAcrossBlankLines(t *testing.T) {
 	}
 }
 
+// A paragraph under a list item is its own row: its links are followed from
+// where they are drawn, and the row leads back to its own source line.
+func TestPreviewItemParagraphRowsKeepTheirLinesAndLinks(t *testing.T) {
+	for _, c := range []struct {
+		name, src, row string
+		line           int
+		links          string
+	}{
+		{"bullet", "- item\n\n  para [[Real]] here", "para Real here", 2, "Real"},
+		{"ordered", "1. Step one\n\n    See [[Real|alias]]", "See alias", 2, "Real"},
+		{"second paragraph", "- item\n\n  first [[A]]\n\n  second [[B]]", "second B", 4, "B"},
+		{"line after a paragraph's first", "- item\n\n  first\n  more [[A]]", "more A", 3, "A"},
+		{"continuation with no blank line", "- item\n  more [[A]]", "more A", 1, "A"},
+		{"on a later item", "- a\n- b\n\n  para [[Real]]\n- c", "para Real", 3, "Real"},
+		{"after a fence", "- a\n  ```\n  x\n  ```\n\n  para [[Real]]", "para Real", 5, "Real"},
+		{"starts with its link", "- a\n\n  [[Real|alias]] first", "alias first", 2, "Real"},
+		{"starts with emphasis", "- a\n\n  **\"b\"** [[Real]]", "Real", 0, "Real"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rows := previewRows(t, "auto", c.src)
+			for _, r := range rows {
+				if !strings.Contains(ansi.Strip(r.text), c.row) {
+					continue
+				}
+				if c.name != "starts with emphasis" && r.srcLine != c.line {
+					t.Fatalf("row %q on line %d, want %d", c.row, r.srcLine, c.line)
+				}
+				got := []string{}
+				for _, l := range r.links {
+					got = append(got, l.target)
+				}
+				if c.name != "starts with emphasis" && strings.Join(got, ",") != c.links {
+					t.Fatalf("row %q has links %q, want %q", c.row, got, c.links)
+				}
+				if plain := previewPlain(t, c.src); strings.Contains(plain, `**`) {
+					t.Fatalf("emphasis broken:\n%s", plain)
+				}
+				if got := strings.Join(previewLinks(rows), ","); !strings.Contains(got, c.links) {
+					t.Fatalf("links %q lost %q", got, c.links)
+				}
+				return
+			}
+			t.Fatalf("no row %q in:\n%s", c.row, previewPlain(t, c.src))
+		})
+	}
+}
+
+// GotoLine counts from one and a row's source line from zero.
+func TestPreviewRowLeadsToItsOwnEditorLine(t *testing.T) {
+	src := "- item\n\n  para here\n\nlast"
+	rows := previewRows(t, "auto", src)
+	ed := vim.New(src, vim.Options{}, vim.Hooks{})
+	for _, want := range []struct {
+		row  string
+		text string
+	}{{"para here", "  para here"}, {"item", "- item"}, {"last", "last"}} {
+		found := false
+		for _, r := range rows {
+			if strings.Contains(ansi.Strip(r.text), want.row) {
+				ed.GotoLine(r.editorLine())
+				if got := ed.Line(ed.Cursor().Line); got != want.text {
+					t.Fatalf("row %q leads to %q", want.row, got)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("no row %q", want.row)
+		}
+	}
+}
+
+// x on a task item's paragraph still toggles the item, the row only leads to
+// its own line for everything else.
+func TestPreviewTaskParagraphRowTogglesItsItem(t *testing.T) {
+	rows := previewRows(t, "auto", "- [ ] task\n\n  note\n- [ ] other")
+	for _, r := range rows {
+		if !strings.Contains(ansi.Strip(r.text), "note") {
+			continue
+		}
+		if r.srcLine != 2 || !r.task || r.taskLine() != 0 {
+			t.Fatalf("srcLine=%d task=%v taskLine=%d", r.srcLine, r.task, r.taskLine())
+		}
+		return
+	}
+	t.Fatal("no note row")
+}
+
+// A blank line before a quote under an item stays a blank row.
+func TestPreviewItemKeepsItsBlankRowBeforeAQuote(t *testing.T) {
+	rows := []string{}
+	for _, r := range previewRows(t, "auto", "- item\n\n  > q") {
+		rows = append(rows, strings.TrimSpace(ansi.Strip(r.text)))
+	}
+	if len(rows) < 3 || rows[0] != "• item" || rows[1] != "" || !strings.Contains(strings.Join(rows, "\n"), "q") {
+		t.Fatalf("rows %q", rows)
+	}
+}
+
 // Glamour runs a list item's paragraphs together unless they are kept apart.
 func TestPreviewItemParagraphsStayApart(t *testing.T) {
 	for _, c := range []struct {
@@ -305,7 +407,7 @@ func TestPreviewItemParagraphsStayApart(t *testing.T) {
 	}
 	// A blank line inside a fence is the code's own and stays blank.
 	src := "- a\n  ```\n  x\n\n  y\n  ```"
-	if got := keepItemParagraphsApart(src); got != src {
+	if got := markItemContent(src); got != src {
 		t.Fatalf("got %q", got)
 	}
 }
