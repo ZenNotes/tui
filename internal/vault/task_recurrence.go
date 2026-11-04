@@ -46,14 +46,15 @@ var (
 	repeatIntervalRe = regexp.MustCompile(`^(\d{1,3})([dwmy])$`)
 	repeatISODateRe  = regexp.MustCompile(`^(\d{4})-(\d{2})-(\d{2})$`)
 
-	repeatFieldRe     = regexp.MustCompile(`(?i)(?:^|\s)@repeat:([\p{L}\d][\p{L}\d/_-]*)`)
-	repeatRuleTokenRe = regexp.MustCompile(`(?i)(^|\s)@repeat:[\p{L}\d][\p{L}\d/_-]*`)
-	repeatRemindRe    = regexp.MustCompile(`(?i)(^|\s)@remind:[\p{L}\d][\p{L}\d/_-]*`)
-	repeatStatusRe    = regexp.MustCompile(`(?i)(^|\s)@status:[\p{L}\d][\p{L}\d/_-]*`)
-	repeatWaitingRe   = regexp.MustCompile(`(?i)(^|\s)@waiting\b`)
-	repeatDueRe       = regexp.MustCompile(`(?i)(^|\s)due:\s*(\S+)`)
+	// JavaScript's \s, which this has to read the same way: every Unicode space.
+	repeatFieldRe     = regexp.MustCompile(`(?i)(?:^|[\s\p{Z}\x{FEFF}])@repeat:([\p{L}\d][\p{L}\d/_-]*)`)
+	repeatRuleTokenRe = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@repeat:[\p{L}\d][\p{L}\d/_-]*`)
+	repeatRemindRe    = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@remind:[\p{L}\d][\p{L}\d/_-]*`)
+	repeatStatusRe    = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@status:[\p{L}\d][\p{L}\d/_-]*`)
+	repeatWaitingRe   = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@waiting\b`)
+	repeatDueRe       = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])due:[\s\p{Z}\x{FEFF}]*([^\s\p{Z}\x{FEFF}]+)`)
 	tidyRunRe         = regexp.MustCompile(`[ \t]{2,}`)
-	tidyEndRe         = regexp.MustCompile(`\s+$`)
+	tidyEndRe         = regexp.MustCompile(`[\s\p{Z}\x{FEFF}]+$`)
 )
 
 var repeatNamed = map[string]repeatRule{
@@ -195,7 +196,9 @@ func nextRepeatDate(rule repeatRule, base, today string) string {
 		if !okBase || !okToday {
 			return repeatAddDays(base, step)
 		}
-		behind := int(todayT.Sub(baseT).Hours() / 24)
+		// From the Unix days: a Duration tops out near 292 years, and a mistyped
+		// year can be further off than that.
+		behind := int((todayT.Unix() - baseT.Unix()) / 86400)
 		k := 1
 		if behind >= 0 {
 			k = behind/step + 1

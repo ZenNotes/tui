@@ -133,9 +133,7 @@ func (sb *scopedBackend) knownAssetDirs(ctx context.Context, v *scopeView) []str
 }
 
 // realDirs says whether every segment of rel that exists is a real directory
-// under the name its parent lists. The listings skip symbolic links, so a folder
-// they do not know may be a link into a hidden one, and a write through it would
-// land there.
+// under the name its parent lists, so a write lands in the folder that was checked.
 func (sb *scopedBackend) realDirs(ctx context.Context, v *scopeView, rel string) bool {
 	if rel == "" || rel == "." {
 		return true
@@ -159,7 +157,10 @@ func (sb *scopedBackend) realDirs(ctx context.Context, v *scopeView, rel string)
 		if errors.Is(err, fs.ErrNotExist) {
 			return true
 		}
-		if err != nil || !info.IsDir() || !folderNameListed(parent, seg) {
+		if err != nil || !info.IsDir() {
+			return false
+		}
+		if _, listed := folderNameListed(parent, seg); !listed {
 			return false
 		}
 	}
@@ -185,7 +186,23 @@ func (sb *scopedBackend) assetDestination(ctx context.Context, v *scopeView, raw
 	if !v.visible(spelled) || !sb.realDirs(ctx, v, spelled) {
 		return "", v.assetRefusal()
 	}
+	if v.root != "" {
+		listed, ok := foldersAsListed(v.root, spelled)
+		if !ok || !v.visible(listed) {
+			return "", v.assetRefusal()
+		}
+		spelled = listed
+	}
 	return spelled, nil
+}
+
+// destinationRefusal is assetRefusal for a caller without the view.
+func (sb *scopedBackend) destinationRefusal(ctx context.Context) error {
+	v, err := sb.load(ctx)
+	if err != nil {
+		return err
+	}
+	return v.assetRefusal()
 }
 
 // errAssetBytesOnAServer is the refusal for handing a file's contents to a
@@ -290,9 +307,16 @@ var errAssetLinksEverywhere = errors.New("Renaming or moving attachments on a Ze
 
 // sharesPath says whether this client sees a path at all, for a tool about to
 // name one it did not get from a listing. If that cannot be told, it does not.
+// The vault's root is shared unless an allow list narrows it.
 func (sb *scopedBackend) sharesPath(ctx context.Context, rel string) bool {
 	v, err := sb.load(ctx)
-	return err == nil && v.visible(rel)
+	if err != nil {
+		return false
+	}
+	if rel == "." || rel == "" {
+		return len(v.allow) == 0
+	}
+	return v.visible(rel)
 }
 
 func (sb *scopedBackend) DuplicateAsset(ctx context.Context, rel string) (vault.AssetMeta, error) {
@@ -311,7 +335,17 @@ func (sb *scopedBackend) DuplicateAsset(ctx context.Context, rel string) (vault.
 	if !v.visible(path.Join(path.Dir(meta.Path), strings.TrimSuffix(meta.Name, ext)+" copy"+ext)) {
 		return vault.AssetMeta{}, errors.New("This assistant cannot give the file that name.")
 	}
-	return m.DuplicateAsset(ctx, meta.Path)
+	copied, err := m.DuplicateAsset(ctx, meta.Path)
+	if err != nil {
+		return vault.AssetMeta{}, err
+	}
+	// A taken name gets a number, and only the copy can say which. One that landed
+	// on a deny entry is undone rather than left where the client cannot see it.
+	if !v.visible(copied.Path) {
+		_, _ = m.DeleteAsset(ctx, copied.Path)
+		return vault.AssetMeta{}, errors.New("This assistant cannot give the file that name.")
+	}
+	return copied, nil
 }
 
 func (sb *scopedBackend) DeleteAsset(ctx context.Context, rel string) (vault.DeletedAsset, error) {
@@ -327,7 +361,8 @@ func (sb *scopedBackend) DeleteAsset(ctx context.Context, rel string) (vault.Del
 }
 
 // ListDeletedAssets shows what was deleted from where the client can see. The
-// store itself is internal; only its entries' original paths decide.
+// store itself is internal; only its entries' original paths decide, read the way
+// any other path is, since a record can say anything.
 func (sb *scopedBackend) ListDeletedAssets(ctx context.Context) ([]vault.DeletedAsset, error) {
 	v, err := sb.load(ctx)
 	if err != nil {
@@ -343,7 +378,7 @@ func (sb *scopedBackend) ListDeletedAssets(ctx context.Context) ([]vault.Deleted
 	}
 	out := []vault.DeletedAsset{}
 	for _, d := range all {
-		if _, ok := cleanRequest(d.Path); ok && v.visible(d.Path) {
+		if clean, ok := cleanRequest(d.Path); ok && !trimsDifferently(d.Path) && v.visible(clean) {
 			out = append(out, d)
 		}
 	}
@@ -370,10 +405,20 @@ func (sb *scopedBackend) RestoreDeletedAsset(ctx context.Context, d vault.Delete
 	}
 	for _, entry := range visible {
 		if entry.UndoToken == d.UndoToken {
-			if !sb.realDirs(ctx, v, path.Dir(entry.Path)) {
+			clean, _ := cleanRequest(entry.Path)
+			if !sb.realDirs(ctx, v, path.Dir(clean)) {
 				return vault.AssetMeta{}, deletedAssetNotFound(d.UndoToken)
 			}
-			return m.RestoreDeletedAsset(ctx, entry)
+			restored, err := m.RestoreDeletedAsset(ctx, entry)
+			if err != nil {
+				return vault.AssetMeta{}, err
+			}
+			// As with a copy: a number that landed on a deny entry is undone.
+			if !v.visible(restored.Path) {
+				_, _ = m.DeleteAsset(ctx, restored.Path)
+				return vault.AssetMeta{}, deletedAssetNotFound(d.UndoToken)
+			}
+			return restored, nil
 		}
 	}
 	return vault.AssetMeta{}, deletedAssetNotFound(d.UndoToken)

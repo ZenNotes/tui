@@ -39,7 +39,7 @@ func TestRenameAssetRefusesNamesThatBreakLinks(t *testing.T) {
 	})
 	cs := runScoped(t, root, nil)
 	before := readFile(t, root, "n.md")
-	for _, name := range []string{"b#c.png", "h?i.png", "50%25.png", "d|e.png", "f]g.png", "g[h.png", "j^k.png", "a:b.png", "pic.png.", "a\nb.png", "a\tb.png", "a\x7fb.png"} {
+	for _, name := range []string{"b#c.png", "h?i.png", "50%25.png", "d|e.png", "f]g.png", "g[h.png", "j^k.png", "a:b.png", "pic.png.", "a*b.png", "a\"b.png", "a<b.png", "a>b.png", "a`b.png", "a\nb.png", "a\tb.png", "a\x7fb.png"} {
 		got := mustFail(t, cs, "rename_asset", map[string]any{"path": "assets/pic.png", "name": name})
 		if !strings.Contains(got, "links to it would break") {
 			t.Errorf("%q: %s", name, got)
@@ -268,38 +268,45 @@ func TestMoveAssetCannotLandOnADeniedPath(t *testing.T) {
 	})
 }
 
-func TestDailyNoteDoesNotNameAHiddenFolder(t *testing.T) {
+func TestDailyNoteOffersNoWayToStartANoteItCannotFile(t *testing.T) {
 	root := seedFiles(t, map[string]string{
 		".zennotes/vault.json": `{"primaryNotesLocation":"root","dailyNotes":{"enabled":true,"directory":"Private Days","titlePattern":"yyyy-MM-dd"}}`,
 		"Elsewhere/Plan.md":    "# Plan\n",
 		"Private Days/old.md":  "# old\n",
 	})
-	result := func(scopeText string) map[string]any {
-		var r struct{ CreateWith map[string]any }
-		if err := json.Unmarshal([]byte(scopeText), &r); err != nil {
+	result := func(text string) (map[string]any, string) {
+		var r struct {
+			CreateWith   map[string]any
+			CannotCreate string
+		}
+		if err := json.Unmarshal([]byte(text), &r); err != nil {
 			t.Fatal(err)
 		}
-		return r.CreateWith
+		return r.CreateWith, r.CannotCreate
 	}
-	narrow := mustCall(t, runScoped(t, root, testScope(t, "read", []string{"Elsewhere"}, nil)), "daily_note", map[string]any{"date": "2026-03-05"})
-	if strings.Contains(narrow, "Private Days") {
-		t.Fatalf("a hidden folder is named: %s", narrow)
-	}
-	if _, has := result(narrow)["subpath"]; has {
-		t.Fatalf("%s", narrow)
-	}
-	denied := mustCall(t, runScoped(t, root, testScope(t, "read", nil, []string{"Private Days"})), "daily_note", map[string]any{"date": "2026-03-05"})
-	if strings.Contains(denied, "Private Days") {
-		t.Fatalf("a denied folder is named: %s", denied)
+	for name, cs := range map[string]func() string{
+		"allow elsewhere": func() string {
+			return mustCall(t, runScoped(t, root, testScope(t, "read", []string{"Elsewhere"}, nil)), "daily_note", map[string]any{"date": "2026-03-05"})
+		},
+		"deny the folder": func() string {
+			return mustCall(t, runScoped(t, root, testScope(t, "read", nil, []string{"Private Days"})), "daily_note", map[string]any{"date": "2026-03-05"})
+		},
+	} {
+		text := cs()
+		with, cannot := result(text)
+		if strings.Contains(text, "Private Days") || with != nil || !strings.Contains(cannot, "cannot be created here") {
+			t.Errorf("%s: %s", name, text)
+		}
 	}
 	full := mustCall(t, runScoped(t, root, nil), "daily_note", map[string]any{"date": "2026-03-05"})
-	if result(full)["subpath"] != "Private Days" {
+	if with, cannot := result(full); with["subpath"] != "Private Days" || cannot != "" {
 		t.Fatalf("%s", full)
 	}
 	shared := mustCall(t, runScoped(t, root, testScope(t, "read", []string{"Private Days"}, nil)), "daily_note", map[string]any{"date": "2026-03-05"})
-	if result(shared)["subpath"] != "Private Days" {
+	if with, _ := result(shared); with["subpath"] != "Private Days" {
 		t.Fatalf("a shared folder is named as usual: %s", shared)
 	}
+
 }
 
 // The check has to see the half of the pair the client cannot.
@@ -501,25 +508,58 @@ func TestListAssetsLeavesOutWhatTheAppHides(t *testing.T) {
 	}
 }
 
-// A note that lands as one once a system drops the end of its name is a note, and
-// a device name is nothing a file can be called there.
-func TestAssetNamesThatDoNotSurviveEverySystem(t *testing.T) {
+// A rename keeps the name it is given, so one that does not survive is refused.
+func TestRenameRefusesNamesThatDoNotSurviveEverySystem(t *testing.T) {
 	for name, want := range map[string]string{
 		"note.md.":       "Notes are not attachments",
 		"note.md ":       "Notes are not attachments",
 		"note.md::$DATA": "Notes are not attachments",
+		"notes.md:x.png": "Notes are not attachments",
 		"CON":            "reserved on Windows",
+		"con .png":       "reserved on Windows",
+		"CONIN$":         "reserved on Windows",
+		"conout$.txt":    "reserved on Windows",
+		"COM¹":           "reserved on Windows",
+		"lpt².png":       "reserved on Windows",
 		"nul.txt":        "reserved on Windows",
-		"lpt1.png":       "reserved on Windows",
+		"aux.tar.gz":     "reserved on Windows",
+		"x.csv.bak":      "cannot be managed as an attachment",
 	} {
-		err := checkAssetName(name)
+		err := checkAssetRename(name)
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%q: %v", name, err)
 		}
 	}
-	for _, name := range []string{"console.png", "null.txt", "lpt.png", "com0.png", "notes.mdx"} {
-		if err := checkAssetName(name); err != nil {
+	for _, name := range []string{"console.png", "null.txt", "lpt.png", "com0.png", "notes.mdx", "conin.png", "com⁴.png", "report.bak"} {
+		if err := checkAssetRename(name); err != nil {
 			t.Errorf("%q: %v", name, err)
+		}
+	}
+}
+
+// An upload cleans what a rename refuses, as the app's import does.
+func TestUploadCleansNamesThatDoNotSurviveEverySystem(t *testing.T) {
+	root := seedFiles(t, map[string]string{".zennotes/vault.json": rootVault})
+	cs := runScoped(t, root, nil)
+	for name, want := range map[string]string{
+		"aux.png":        "assets/_aux.png",
+		"con.tar.gz":     "assets/_con.tar.gz",
+		"nul.txt":        "assets/_nul.txt",
+		"CON":            "assets/_CON",
+		"notes.md:x.png": "assets/notes.md-x.png",
+		"x.png.":         "assets/x.png",
+	} {
+		var got struct{ Path string }
+		if err := json.Unmarshal([]byte(mustCall(t, cs, "upload_asset", map[string]any{"filename": name, "content_base64": "cG5n"})), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Path != want || !exists(root, want) {
+			t.Errorf("%q: %q, want %q", name, got.Path, want)
+		}
+	}
+	for name, want := range map[string]string{"x.csv.bak": "cannot be managed", "x.csv.base.json.bak": "cannot be managed", "note.md.": "Notes are not attachments"} {
+		if got := mustFail(t, cs, "upload_asset", map[string]any{"filename": name, "content_base64": "cG5n"}); !strings.Contains(got, want) {
+			t.Errorf("%q: %s", name, got)
 		}
 	}
 }
@@ -530,7 +570,7 @@ func TestMoveAssetRefusesFolderNamesThatDoNotSurviveEverySystem(t *testing.T) {
 		"assets/pic.png":       "png",
 	})
 	cs := runScoped(t, root, nil)
-	for _, dir := range []string{"Files.", "Files ", "a/b.", "a:b"} {
+	for _, dir := range []string{"Files.", "Files ", "a/b.", "a:b", " Files", "Files\n", " trash", "\u00a0trash", " .hidden", " .ZENNOTES", "\u00a0.zennotes"} {
 		if got := mustFail(t, cs, "move_asset", map[string]any{"path": "assets/pic.png", "targetDir": dir}); !strings.Contains(got, "cannot put files there") {
 			t.Errorf("%q: %s", dir, got)
 		}
@@ -542,15 +582,17 @@ func TestMoveAssetRefusesFolderNamesThatDoNotSurviveEverySystem(t *testing.T) {
 
 func TestFolderNameListedIsWhatTheParentLists(t *testing.T) {
 	root := seedFiles(t, map[string]string{"Kept/x.png": "png", "Café/y.png": "png"})
-	for name, want := range map[string]bool{"Kept": true, "kept": true, "cafe": true, "Other": false, "Kep": false} {
-		if got := folderNameListed(root, name); got != want {
-			t.Errorf("%q: %v", name, got)
+	for name, want := range map[string]string{"Kept": "Kept", "kept": "Kept", "cafe": "Café", "Other": "", "Kep": ""} {
+		if got, ok := folderNameListed(root, name); got != want || ok != (want != "") {
+			t.Errorf("%q: %q %v", name, got, ok)
 		}
 	}
-	if !foldersListed(root, "Kept/new/deeper") || !foldersListed(root, "Missing/x") {
-		t.Error("a folder that does not exist yet is fine")
+	for rel, want := range map[string]string{"Kept/new/deeper": "Kept/new/deeper", "Missing/x": "Missing/x"} {
+		if got, ok := foldersAsListed(root, rel); !ok || got != want {
+			t.Errorf("a folder that does not exist yet is fine: %q %q %v", rel, got, ok)
+		}
 	}
-	if folderNameListed(filepath.Join(root, "Missing"), "x") {
+	if _, ok := folderNameListed(filepath.Join(root, "Missing"), "x"); ok {
 		t.Error("a parent that cannot be read lists nothing")
 	}
 }
@@ -631,5 +673,364 @@ func TestAFolderLinkShowsNothingAndTakesNoWrite(t *testing.T) {
 	mustFail(t, cs, "move_asset", map[string]any{"path": "Open/pic.png", "targetDir": "Open/jn"})
 	if exists(root, "Journal/In.md") || exists(root, "Journal/Free.md") || exists(root, "Journal/pic.png") {
 		t.Fatal("something landed behind the link")
+	}
+}
+
+// A name can pass while the name the upload will use does not.
+func TestUploadChecksTheNameItWillUse(t *testing.T) {
+	root := seedFiles(t, map[string]string{".zennotes/vault.json": rootVault})
+	cs := runScoped(t, root, nil)
+	for name, want := range map[string]string{
+		"a:.md":             "Notes are not attachments",
+		"d.csv.base.json .": "cannot be managed as an attachment",
+		"x.excalidraw .":    "cannot be managed as an attachment",
+	} {
+		if got := mustFail(t, cs, "upload_asset", map[string]any{"filename": name, "content_base64": "cG5n"}); !strings.Contains(got, want) {
+			t.Errorf("%q: %s", name, got)
+		}
+	}
+	if exists(root, "assets") {
+		t.Fatal("a refused upload wrote something")
+	}
+}
+
+func TestMoveAssetWritesAnExistingFolderAsItsParentListsIt(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"assets/pic.png":       "png",
+		"Dest/Inner/keep.txt":  "x",
+		"n.md":                 "![[assets/pic.png]]\n",
+	})
+	if _, err := os.Stat(filepath.Join(root, "DEST")); err != nil {
+		t.Skip("needs a case-insensitive volume")
+	}
+	var got struct{ Path string }
+	if err := json.Unmarshal([]byte(mustCall(t, runScoped(t, root, nil), "move_asset", map[string]any{"path": "assets/pic.png", "targetDir": "DEST/inner/new"})), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "Dest/Inner/new/pic.png" {
+		t.Fatalf("%+v", got)
+	}
+	if body := readFile(t, root, "n.md"); body != "![[Dest/Inner/new/pic.png]]\n" {
+		t.Fatalf("%q", body)
+	}
+}
+
+func TestDuplicateAssetUndoesACopyOutsideTheView(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json":   rootVault,
+		"assets/cafe.png":        "png",
+		"assets/cafe copy.png":   "taken",
+		"assets/Café copy 2.png": "denied",
+	})
+	cs := runScoped(t, root, testScope(t, "write", nil, []string{"assets/Café copy 2.png"}))
+	if got := mustFail(t, cs, "duplicate_asset", map[string]any{"path": "assets/cafe.png"}); !strings.Contains(got, "cannot give the file that name") {
+		t.Fatalf("%s", got)
+	}
+	if exists(root, "assets/cafe copy 2.png") {
+		t.Fatal("the copy stayed")
+	}
+}
+
+func TestADeletedRecordIsJudgedByItsCleanedPath(t *testing.T) {
+	files := map[string]string{
+		".zennotes/vault.json": rootVault,
+		"Journal/Diary.md":     "# Diary\n",
+		"Shared/pic.png":       "png",
+	}
+	for id, recorded := range map[string]string{
+		"11111111-1111-4111-8111-111111111111": "/Journal/old.png",
+		"22222222-2222-4222-8222-222222222222": "Journal//old.png",
+		"33333333-3333-4333-8333-333333333333": " Journal/old.png",
+		"44444444-4444-4444-8444-444444444444": "Shared/kept.png",
+	} {
+		data, _ := json.Marshal(map[string]string{"path": recorded, "name": "old.png", "deletedAt": "2026-01-01T00:00:00.000Z"})
+		files[".zennotes/deleted-assets/"+id+"/.zn-deleted.json"] = string(data)
+		files[".zennotes/deleted-assets/"+id+"/old.png"] = "old"
+	}
+	root := seedFiles(t, files)
+	cs := runScoped(t, root, testScope(t, "write", nil, []string{"Journal"}))
+	text := mustCall(t, cs, "list_assets", map[string]any{"deleted": true})
+	if strings.Contains(text, "Journal") || !strings.Contains(text, "Shared/kept.png") {
+		t.Fatalf("%s", text)
+	}
+	for _, token := range []string{"11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"} {
+		if got := mustFail(t, cs, "restore_asset", map[string]any{"undoToken": token}); !strings.Contains(got, "Deleted asset not found") {
+			t.Errorf("%s: %s", token, got)
+		}
+	}
+	if exists(root, "Journal/old.png") {
+		t.Fatal("restored into a hidden folder")
+	}
+}
+
+func TestAWikilinkWithAnAnchorNamesTheNote(t *testing.T) {
+	body := "![[Report#Heading]] [[Report^block]] [[Report|alias]]\n"
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"Report.md":            "# Report\n",
+		"files/Report":         "a file of that name",
+		"n.md":                 body,
+	})
+	mustCall(t, runScoped(t, root, nil), "move_asset", map[string]any{"path": "files/Report", "targetDir": "elsewhere"})
+	if got := readFile(t, root, "n.md"); got != body {
+		t.Fatalf("a link to the note was rewritten: %q", got)
+	}
+}
+
+func TestTaskNoteEditsKeepAWindowsNotesLineEndings(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"t.md":                 "---\r\ntags: [task]\r\nstatus: open\r\n---\r\n# T\r\n\r\nbody\r\n",
+		"u.md":                 "---\r\ntags: [task]\r\nstatus: open\r\n---\r\n# U\r\n",
+	})
+	cs := runScoped(t, root, nil)
+	mustCall(t, cs, "update_task", map[string]any{"id": "t.md#task", "due": "2026-02-02"})
+	if got := readFile(t, root, "t.md"); got != "---\r\ntags: [task]\r\nstatus: open\r\ndue: 2026-02-02\r\n---\r\n# T\r\n\r\nbody\r\n" {
+		t.Fatalf("%q", got)
+	}
+	mustCall(t, cs, "toggle_task", map[string]any{"id": "u.md#task"})
+	if got := readFile(t, root, "u.md"); strings.Count(got, "\n") != strings.Count(got, "\r\n") || !strings.Contains(got, "status: done") {
+		t.Fatalf("%q", got)
+	}
+}
+
+// What a refusal says must not depend on what is on the disk behind it.
+func TestAMoveAnswersAloneDoNotDescribeHiddenPaths(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": `{"primaryNotesLocation":"root","systemFolderPaths":{"trash":"Bin"}}`,
+		"Open/pic.png":         "png",
+		"Journal/Diary.md":     "# Diary\n",
+		"Bin/old.md":           "# old\n",
+	})
+	cs := runScoped(t, root, testScope(t, "write", []string{"Open"}, nil))
+	want := "Error: This assistant can put files only inside: Open."
+	for _, dir := range []string{"Journal/Diary.md/x", "Journal/Nope.md/x", "Journal", "Nope", "Bin", "trash", "Bin/x"} {
+		got := mustFail(t, cs, "move_asset", map[string]any{"path": "Open/pic.png", "targetDir": dir})
+		if got != want && got != strings.TrimPrefix(want, "Error: ") {
+			t.Errorf("%q: %s", dir, got)
+		}
+	}
+}
+
+func TestMoveAssetKeepsARealFolderWhateverItsName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows cannot hold these names")
+	}
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json":    rootVault,
+		"assets/a.png":            "png",
+		"assets/b.png":            "png",
+		"assets/c.png":            "png",
+		"Clients/Acme Inc./x.txt": "x",
+		"v1./x.txt":               "x",
+		"Notes: 2026/x.txt":       "x",
+	})
+	cs := runScoped(t, root, nil)
+	for file, dir := range map[string]string{"a.png": "Clients/Acme Inc.", "b.png": "v1.", "c.png": "Notes: 2026"} {
+		mustCall(t, cs, "move_asset", map[string]any{"path": "assets/" + file, "targetDir": dir})
+		if !exists(root, dir+"/"+file) {
+			t.Errorf("%s did not reach %s", file, dir)
+		}
+	}
+	// The same under a scope, once the path is known to be visible.
+	scoped := runScoped(t, root, testScope(t, "write", []string{"Clients", "v1."}, nil))
+	mustCall(t, scoped, "move_asset", map[string]any{"path": "Clients/Acme Inc./a.png", "targetDir": "v1."})
+	if !exists(root, "v1./a.png") {
+		t.Fatal("a real folder was refused under a scope")
+	}
+	if got := mustFail(t, scoped, "move_asset", map[string]any{"path": "v1./a.png", "targetDir": "v1./New."}); !strings.Contains(got, "can put files only inside") {
+		t.Fatalf("a new one that will not hold everywhere: %s", got)
+	}
+}
+
+func TestLinksInAFolderWhoseNameHoldsLinkSyntax(t *testing.T) {
+	for _, folder := range []string{"Issue #5", "a?b", "a|b", "a[1]"} {
+		t.Run(folder, func(t *testing.T) {
+			if runtime.GOOS == "windows" && strings.ContainsAny(folder, "?|") {
+				t.Skip("Windows cannot hold this name")
+			}
+			root := seedFiles(t, map[string]string{
+				".zennotes/vault.json": rootVault,
+				folder + "/pic.png":    "png",
+				folder + "/n.md":       "![[pic.png]]\n",
+			})
+			mustCall(t, runScoped(t, root, testScope(t, "write", []string{folder}, nil)), "rename_asset", map[string]any{"path": folder + "/pic.png", "name": "new.png"})
+			if got := readFile(t, root, folder+"/n.md"); got != "![[new.png]]\n" {
+				t.Fatalf("under a scope a bare name stays bare here: %q", got)
+			}
+		})
+	}
+	t.Run("a move into one", func(t *testing.T) {
+		root := seedFiles(t, map[string]string{
+			".zennotes/vault.json": rootVault,
+			"assets/pic.png":       "png",
+			"assets/other.png":     "png",
+			"elsewhere/pic.png":    "same name",
+			"wiki.md":              "![[assets/pic.png]]\n",
+			"plain.md":             "[f](assets/pic.png)\n",
+			"old.md":               "![[assets/other.png]]\n",
+		})
+		cs := runScoped(t, root, nil)
+		var got struct {
+			Path            string
+			LinksNotUpdated []string
+		}
+		if err := json.Unmarshal([]byte(mustCall(t, cs, "move_asset", map[string]any{"path": "assets/pic.png", "targetDir": "Issue #5"})), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Path != "Issue #5/pic.png" {
+			t.Fatalf("%+v", got)
+		}
+		assets := []vault.AssetMeta{{Path: got.Path, Name: "pic.png"}}
+		if plain := readFile(t, root, "plain.md"); !vault.AssetsReferencedBy(plain, assets, nil, "plain.md")[got.Path] {
+			t.Fatalf("the Markdown link does not resolve: %q", plain)
+		}
+		// Another file has this name, so a bare name would not find it, and a full
+		// path would read as a heading.
+		if len(got.LinksNotUpdated) != 1 || got.LinksNotUpdated[0] != "wiki.md" || readFile(t, root, "wiki.md") != "![[assets/pic.png]]\n" {
+			t.Fatalf("%+v %q", got, readFile(t, root, "wiki.md"))
+		}
+		// With the name unique, the bare name does.
+		if err := json.Unmarshal([]byte(mustCall(t, cs, "move_asset", map[string]any{"path": "assets/other.png", "targetDir": "Issue #5"})), &got); err != nil {
+			t.Fatal(err)
+		}
+		if body := readFile(t, root, "old.md"); body != "![[other.png]]\n" {
+			t.Fatalf("%q", body)
+		}
+	})
+}
+
+func TestAFolderListedTwiceIsStillOneFolder(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"Projects/pic.png":     "png",
+		"Projects/Plan.md":     "# Plan\n",
+		"Secret/x.md":          "# x\n",
+		"Other/move.png":       "png",
+		"n.md":                 "![[Other/move.png]]\n",
+	})
+	var got struct{ Path string }
+	if err := json.Unmarshal([]byte(mustCall(t, runScoped(t, root, testScope(t, "write", nil, []string{"Secret"})), "move_asset", map[string]any{"path": "Other/move.png", "targetDir": "projects"})), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "Projects/move.png" {
+		t.Fatalf("%+v", got)
+	}
+	if body := readFile(t, root, "n.md"); body != "![[Projects/move.png]]\n" {
+		t.Fatalf("%q", body)
+	}
+}
+
+func TestRestoreAssetUndoesANumberThatLandedOnADenyEntry(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"assets/cafe.png":      "taken",
+		"assets/Café 2.png":    "denied",
+		".zennotes/deleted-assets/11111111-1111-4111-8111-111111111111/.zn-deleted.json": `{"path":"assets/cafe.png","name":"cafe.png","deletedAt":"2026-01-01T00:00:00.000Z"}`,
+		".zennotes/deleted-assets/11111111-1111-4111-8111-111111111111/cafe.png":         "old",
+	})
+	cs := runScoped(t, root, testScope(t, "write", nil, []string{"assets/Café 2.png"}))
+	if got := mustFail(t, cs, "restore_asset", map[string]any{"undoToken": "11111111-1111-4111-8111-111111111111"}); !strings.Contains(got, "Deleted asset not found") {
+		t.Fatalf("%s", got)
+	}
+	if exists(root, "assets/cafe 2.png") {
+		t.Fatal("the restored file stayed")
+	}
+}
+
+func TestADatabasePairIsFoundInAnyCase(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json":  rootVault,
+		"Lists/T.csv":           "a\n",
+		"Lists/t.csv.base.json": "{}",
+	})
+	if got := mustFail(t, runScoped(t, root, nil), "delete_asset", map[string]any{"path": "Lists/T.csv"}); !strings.Contains(got, "belongs to a ZenNotes database") {
+		t.Fatalf("%s", got)
+	}
+}
+
+// Whether a hidden note has that title must not show in what the client's note
+// ends up saying.
+func TestABareLinkDoesNotShowAHiddenNotesTitle(t *testing.T) {
+	run := func(extra map[string]string) string {
+		files := map[string]string{
+			".zennotes/vault.json": rootVault,
+			"Shared/Report":        "a file",
+			"Shared/n.md":          "![[Report]]\n",
+			"Hidden/keep.md":       "# keep\n",
+		}
+		for k, v := range extra {
+			files[k] = v
+		}
+		root := seedFiles(t, files)
+		mustCall(t, runScoped(t, root, testScope(t, "write", []string{"Shared"}, nil)), "rename_asset", map[string]any{"path": "Shared/Report", "name": "Summary"})
+		return readFile(t, root, "Shared/n.md")
+	}
+	without, with := run(nil), run(map[string]string{"Hidden/Report.md": "# Report\n"})
+	if without != with {
+		t.Fatalf("%q vs %q", without, with)
+	}
+}
+
+func TestDoneOnAFinishedTaskNoteKeepsItsDate(t *testing.T) {
+	body := "---\ntags: [task]\nstatus: done\ncompletedDate: 2020-01-02\n---\n# T\n"
+	root := seedFiles(t, map[string]string{".zennotes/vault.json": rootVault, "t.md": body})
+	mustCall(t, runScoped(t, root, nil), "update_task", map[string]any{"id": "t.md#task", "state": "done"})
+	if got := readFile(t, root, "t.md"); got != body {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestToggleKeepsAWindowsNotesLineEndings(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"plain.md":             "# T\r\n- [ ] one\r\n- [ ] two\r\n",
+		"forwarded.md":         "- [>] moved\r\n- [ ] two\r\n",
+	})
+	cs := runScoped(t, root, nil)
+	mustCall(t, cs, "toggle_task", map[string]any{"id": "plain.md#1"})
+	if got := readFile(t, root, "plain.md"); got != "# T\r\n- [ ] one\r\n- [x] two\r\n" {
+		t.Fatalf("%q", got)
+	}
+	mustCall(t, cs, "toggle_task", map[string]any{"id": "forwarded.md#0"})
+	if got := readFile(t, root, "forwarded.md"); got != "- [>] moved\r\n- [ ] two\r\n" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestAMoveThroughAFolderLinkIsRefused(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": `{"primaryNotesLocation":"root","systemFolderPaths":{"trash":"Bin"}}`,
+		"assets/pic.png":       "png",
+		"Bin/old.md":           "# old\n",
+	})
+	linkFolder(t, filepath.Join(root, "assets"), filepath.Join(root, "alias"))
+	linkFolder(t, filepath.Join(root, "Bin"), filepath.Join(root, "bin2"))
+	cs := runScoped(t, root, nil)
+	for _, dir := range []string{"alias", "bin2", "bin2/x"} {
+		if got := mustFail(t, cs, "move_asset", map[string]any{"path": "assets/pic.png", "targetDir": dir}); !strings.Contains(got, "cannot put files there") {
+			t.Errorf("%q: %s", dir, got)
+		}
+	}
+	if !exists(root, "assets/pic.png") {
+		t.Fatal("the file moved")
+	}
+}
+
+// Under an allow list a spelling that is not resolved is a folder outside it.
+func TestAVariantOfAFolderHoldingAnAssetIsStillThatFolder(t *testing.T) {
+	root := seedFiles(t, map[string]string{
+		".zennotes/vault.json": rootVault,
+		"Projects/pic.png":     "png",
+		"Projects/Plan.md":     "# Plan\n",
+		"Other/move.png":       "png",
+	})
+	var got struct{ Path string }
+	if err := json.Unmarshal([]byte(mustCall(t, runScoped(t, root, testScope(t, "write", []string{"Projects", "Other"}, nil)), "move_asset", map[string]any{"path": "Other/move.png", "targetDir": "projects"})), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "Projects/move.png" {
+		t.Fatalf("%+v", got)
 	}
 }

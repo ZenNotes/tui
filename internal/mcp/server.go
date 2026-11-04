@@ -1150,6 +1150,13 @@ func Run(ctx context.Context, opts Options) error {
 		scoped:  opts.Scope != nil && opts.Scope.Active(),
 	}
 
+	// Tool calls are served concurrently, and most writes read a note first: an
+	// append, a task edit, the link rewrite after a rename, a server's whole round
+	// trip. Whatever landed between the read and the write would be lost, so writes
+	// take turns. One turn rather than one per note, because a rename rewrites any
+	// number of notes, and on a server it does so where no lock here can reach.
+	writeTurn := make(chan struct{}, 1)
+
 	instructions := ResolveInstructions()
 	if opts.Scope != nil && opts.Scope.Active() {
 		instructions += scopeInstructions(*opts.Scope)
@@ -1196,6 +1203,14 @@ func Run(ctx context.Context, opts Options) error {
 			if req.Session != nil {
 				if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
 					agent = agentForClient(params.ClientInfo.Name)
+				}
+			}
+			if classOf(def.name) != classRead {
+				select {
+				case writeTurn <- struct{}{}:
+					defer func() { <-writeTurn }()
+				case <-ctx.Done():
+					return errorResult("Error: " + ctx.Err().Error()), nil
 				}
 			}
 			result, err := runRecording(ctx, def.name, args(a), b, agent, func() (any, error) {

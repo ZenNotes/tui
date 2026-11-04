@@ -127,6 +127,19 @@ var scopeServerDifferences = []scopeContractDifference{
 		Expect: scopeContractExpect{Error: ptr("Asset not found: assets/photo copy.png")},
 	},
 	{
+		Case: "a-rewrite-does-not-show-a-hidden-file-of-the-same-name", Call: 0, Tool: "rename_asset",
+		Why:    "a server rewrites links to a file in every note itself, as it does for a note",
+		Expect: scopeContractExpect{Error: ptr(scopeServerNoMoves)},
+		Exists: []string{"Shared/pic.png"},
+		Absent: []string{"Shared/new.png"},
+		Equals: map[string]string{"Shared/n.md": "![[pic.png]]\n"},
+	},
+	{
+		Case: "a-move-cannot-land-on-a-denied-name", Call: 0, Tool: "move_asset",
+		Why:    "the same refusal, for a move",
+		Expect: scopeContractExpect{Error: ptr(scopeServerNoMoves)},
+	},
+	{
 		Case: "writes-stay-inside-the-scope",
 		Call: 15,
 		Tool: "rename_note",

@@ -1,10 +1,14 @@
 package vault
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func assetVault(t *testing.T, files map[string]string) (*Vault, string) {
@@ -168,5 +172,122 @@ func TestSectionUnderAHeadingWithOnlySpaces(t *testing.T) {
 	}
 	if got := SectionBody(setext, s); got != "body" {
 		t.Fatalf("%q", got)
+	}
+}
+
+func TestAFailedCaseOnlyRenameGoesBackToTheOldName(t *testing.T) {
+	v, root := assetVault(t, map[string]string{"assets/pic.png": "png"})
+	dir := filepath.Join(root, "assets")
+	if !caseInsensitive(t, dir) {
+		t.Skip("needs a case-insensitive volume")
+	}
+	defer func() { renameFile = os.Rename }()
+	renameFile = func(from, to string) error {
+		if filepath.Base(to) == "PIC.png" {
+			return errors.New("refused")
+		}
+		return os.Rename(from, to)
+	}
+	if _, err := v.RenameAsset("assets/pic.png", "PIC.png"); err == nil {
+		t.Fatal("the rename should fail")
+	}
+	if got := strings.Join(names(t, dir), ","); got != "pic.png" {
+		t.Fatalf("%s", got)
+	}
+}
+
+func TestMoveAcrossVolumes(t *testing.T) {
+	crossing := func(from, to string) error {
+		return &os.LinkError{Op: "rename", Old: from, New: to, Err: syscall.EXDEV}
+	}
+	then := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+	setup := func(t *testing.T) (*Vault, string) {
+		v, root := assetVault(t, map[string]string{"assets/pic.png": "png", "dest/keep.txt": "x"})
+		if err := os.Chtimes(filepath.Join(root, "assets", "pic.png"), then, then); err != nil {
+			t.Fatal(err)
+		}
+		return v, root
+	}
+	t.Run("copies, keeps the time and removes the original", func(t *testing.T) {
+		v, root := setup(t)
+		defer func() { renameFile = os.Rename }()
+		renameFile = crossing
+		meta, err := v.MoveAsset("assets/pic.png", "dest")
+		if err != nil || meta.Path != "dest/pic.png" {
+			t.Fatalf("%+v %v", meta, err)
+		}
+		info, err := os.Stat(filepath.Join(root, "dest", "pic.png"))
+		if err != nil || !info.ModTime().Equal(then) {
+			t.Fatalf("%v %v", info, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "assets", "pic.png")); err == nil {
+			t.Fatal("the original stayed")
+		}
+	})
+	t.Run("a copy that fails leaves nothing behind", func(t *testing.T) {
+		v, root := setup(t)
+		defer func() { renameFile, copyFileData = os.Rename, io.Copy }()
+		renameFile = crossing
+		copyFileData = func(dst io.Writer, _ io.Reader) (int64, error) {
+			_, _ = dst.Write([]byte("par"))
+			return 3, errors.New("disk full")
+		}
+		if _, err := v.MoveAsset("assets/pic.png", "dest"); err == nil {
+			t.Fatal("the move should fail")
+		}
+		if _, err := os.Stat(filepath.Join(root, "dest", "pic.png")); err == nil {
+			t.Fatal("a partial copy stayed")
+		}
+		if data, _ := os.ReadFile(filepath.Join(root, "assets", "pic.png")); string(data) != "png" {
+			t.Fatalf("%q", data)
+		}
+	})
+	t.Run("another failure is not a copy", func(t *testing.T) {
+		v, root := setup(t)
+		defer func() { renameFile = os.Rename }()
+		renameFile = func(string, string) error { return errors.New("refused") }
+		if _, err := v.MoveAsset("assets/pic.png", "dest"); err == nil {
+			t.Fatal("the move should fail")
+		}
+		if _, err := os.Stat(filepath.Join(root, "dest", "pic.png")); err == nil {
+			t.Fatal("copied anyway")
+		}
+	})
+}
+
+func TestRenameOntoAHardLinkInAnotherSpellingIsACollision(t *testing.T) {
+	v, root := assetVault(t, map[string]string{"assets/a.png": "png"})
+	dir := filepath.Join(root, "assets")
+	if !caseInsensitive(t, dir) {
+		t.Skip("needs a case-insensitive volume")
+	}
+	if err := os.Link(filepath.Join(dir, "a.png"), filepath.Join(dir, "b.png")); err != nil {
+		t.Skip(err)
+	}
+	_, err := v.RenameAsset("assets/a.png", "B.PNG")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("%v", err)
+	}
+	if got := strings.Join(names(t, dir), ","); got != "a.png,b.png" {
+		t.Fatalf("%s", got)
+	}
+}
+
+func TestCleanAssetFileName(t *testing.T) {
+	for raw, want := range map[string]string{
+		"aux.png":     "_aux.png",
+		"CON":         "_CON",
+		"con .png":    "_con .png",
+		"CONIN$":      "_CONIN$",
+		"COM¹.txt":    "_COM¹.txt",
+		"console.png": "console.png",
+		"x.png.":      "x.png",
+		"x.png . ":    "x.png",
+		"b#c.png":     "b-c.png",
+		"...":         "",
+	} {
+		if got := CleanAssetFileName(raw); got != want {
+			t.Errorf("%q: %q, want %q", raw, got, want)
+		}
 	}
 }

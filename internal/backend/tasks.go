@@ -223,7 +223,10 @@ func updateFileTask(body string, task vault.Task, in UpdateTaskInput) (string, e
 		case "open":
 			body = vault.SetTaskFileStatus(body, false, now)
 		case "done":
-			body = vault.SetTaskFileStatus(body, true, now)
+			// Already finished keeps the day it was finished.
+			if !task.Checked {
+				body = vault.SetTaskFileStatus(body, true, now)
+			}
 		case "in-progress":
 			body = vault.SetTaskFileInProgress(body, true)
 		case "cancelled":

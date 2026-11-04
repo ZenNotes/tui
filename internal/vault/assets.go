@@ -7,7 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
+	"syscall"
 )
 
 const internalVaultDir = ".zennotes"
@@ -105,9 +108,9 @@ func (v *Vault) RenameAsset(rel, nextName string) (AssetMeta, error) {
 		dstInfo, statErr := os.Lstat(destAbs)
 		switch {
 		case statErr == nil:
-			// Allowed only when it is literally this file under another spelling
-			// (a case-only rename on a case-insensitive volume). A hard link is the
-			// same file too, but it has an entry of its own to lose.
+			// Allowed only when it is literally this file in another case, on a
+			// case-insensitive volume. A hard link is the same file too, but it has an
+			// entry of its own to lose.
 			srcInfo, srcErr := os.Lstat(srcAbs)
 			if srcErr != nil {
 				return AssetMeta{}, srcErr
@@ -116,18 +119,22 @@ func (v *Vault) RenameAsset(rel, nextName string) (AssetMeta, error) {
 			if err != nil {
 				return AssetMeta{}, err
 			}
-			if !os.SameFile(dstInfo, srcInfo) || (entries[filepath.Base(srcAbs)] && entries[cleanName]) {
+			base := filepath.Base(srcAbs)
+			if !os.SameFile(dstInfo, srcInfo) || !strings.EqualFold(base, cleanName) || (entries[base] && entries[cleanName]) {
 				return AssetMeta{}, fmt.Errorf("an asset named %q already exists in this folder", cleanName)
 			}
 			tmp, err := uniquePath(dir, filepath.Base(srcAbs)+".zenrename", ".tmp")
 			if err != nil {
 				return AssetMeta{}, err
 			}
-			if err := os.Rename(srcAbs, tmp); err != nil {
+			if err := renameFile(srcAbs, tmp); err != nil {
 				return AssetMeta{}, err
 			}
-			if err := os.Rename(tmp, destAbs); err != nil {
-				_ = os.Rename(tmp, srcAbs)
+			if err := renameFile(tmp, destAbs); err != nil {
+				// Back to the old name, or the file is left under the temporary one.
+				if undo := renameFile(tmp, srcAbs); undo != nil {
+					return AssetMeta{}, errors.Join(err, undo)
+				}
 				return AssetMeta{}, err
 			}
 		case !errors.Is(statErr, os.ErrNotExist):
@@ -203,10 +210,65 @@ func (v *Vault) moveAsset(rel, targetDir string, accept func(path string) bool) 
 	if err := os.MkdirAll(destDir, v.dirMode); err != nil {
 		return AssetMeta{}, err
 	}
-	if err := os.Rename(srcAbs, destAbs); err != nil {
+	if err := moveFile(srcAbs, destAbs); err != nil {
 		return AssetMeta{}, err
 	}
 	return v.assetMetaForAbs(destAbs)
+}
+
+// renameFile and copyFileData are variables so a test can make them fail.
+var (
+	renameFile   = os.Rename
+	copyFileData = io.Copy
+)
+
+const windowsNotSameDevice syscall.Errno = 17
+
+func crossesVolumes(err error) bool {
+	if errors.Is(err, syscall.EXDEV) {
+		return true
+	}
+	var errno syscall.Errno
+	return runtime.GOOS == "windows" && errors.As(err, &errno) && errno == windowsNotSameDevice
+}
+
+// moveFile renames, or copies and removes when dest is on another volume, as a
+// folder mounted inside the vault is. A copy keeps the file's mode and time, and
+// a copy that fails or cannot replace the original leaves nothing behind.
+func moveFile(src, dest string) error {
+	err := renameFile(src, dest)
+	if err == nil || !crossesVolumes(err) {
+		return err
+	}
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		_ = in.Close()
+		return err
+	}
+	_, err = copyFileData(out, in)
+	// Both closed first: Windows will not remove a file that is still open.
+	_ = in.Close()
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Chtimes(dest, info.ModTime(), info.ModTime())
+	}
+	if err == nil {
+		err = os.Remove(src)
+	}
+	if err != nil {
+		_ = os.Remove(dest)
+	}
+	return err
 }
 
 // MoveAssetRewritingLinksIn is MoveAsset plus the link rewrite, in the notes
@@ -404,6 +466,16 @@ func makeAssetMarkdown(vaultRelPath, kind, name string) string {
 
 var forbiddenFilenameChars = []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
 
+// CleanAssetFileName is the name an import really uses for name, "" when it
+// would fall back on a default.
+func CleanAssetFileName(name string) string { return sanitizeFileName(name) }
+
+// reservedFileNameRe is a device name Windows keeps, with or without an extension.
+var reservedFileNameRe = regexp.MustCompile(`(?i)^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³]) *(?:\.|$)`)
+
+// IsReservedFileName says whether Windows keeps this name for a device.
+func IsReservedFileName(name string) bool { return reservedFileNameRe.MatchString(name) }
+
 func sanitizeFileName(name string) string {
 	leaf := filepath.Base(name)
 	safe := strings.Map(func(r rune) rune {
@@ -412,9 +484,9 @@ func sanitizeFileName(name string) string {
 		}
 		return r
 	}, leaf)
-	safe = strings.Join(strings.Fields(safe), " ")
-	if safe == "." || safe == ".." {
-		return ""
+	safe = strings.TrimRight(strings.Join(strings.Fields(safe), " "), ". ")
+	if IsReservedFileName(safe) {
+		return "_" + safe
 	}
 	return safe
 }

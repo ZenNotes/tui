@@ -108,3 +108,20 @@ func TestToggleTaskRepeatingSaysWhereTheTaskWent(t *testing.T) {
 		t.Fatalf("%q %d %v", again, index, ok)
 	}
 }
+
+// A Duration tops out near 292 years, and a mistyped year can be further off.
+func TestNextRepeatDateFromAFarOffYear(t *testing.T) {
+	rule, _ := parseRepeatRule("daily")
+	if got := nextRepeatDate(rule, "0226-01-01", "2026-11-04"); got != "2026-11-05" {
+		t.Fatalf("%s", got)
+	}
+}
+
+// The port has to read spaces the way the original does: all of Unicode's.
+func TestRecurrenceReadsUnicodeSpaces(t *testing.T) {
+	const nbsp = "\u00a0"
+	got, ok := CompleteRecurringTaskAtIndex("- [ ] water"+nbsp+"@repeat:daily"+nbsp+"due:2026-11-01"+nbsp, 0, DialectApp, RecurringOptions{Today: "2026-11-01"})
+	if !ok || !strings.Contains(got.Body, "due:2026-11-02") || !strings.HasSuffix(got.Body, "due:2026-11-01") || strings.Count(got.Body, "@repeat") != 1 {
+		t.Fatalf("%q %v", got.Body, ok)
+	}
+}

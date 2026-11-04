@@ -65,7 +65,7 @@ var helpSections = []helpSection{
 	}},
 	{"TASKS", []helpRow{
 		{"task list", "Open checkbox tasks across all notes but the template folder", "--unchecked  --all  --tag <t>  --include-excluded  --json"},
-		{"task toggle <id>", "Flip a task checkbox by stable id", ""},
+		{"task toggle <id>", "Flip a task checkbox by its id", ""},
 		{"task watch", "Print task status changes as they happen. A server that cannot push them is asked every --interval seconds (default 5)", "--interval <s>  --include-excluded  --json"},
 	}},
 	{"COMMENTS", []helpRow{

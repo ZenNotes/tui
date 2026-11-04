@@ -449,6 +449,15 @@ var fmKeyRe = regexp.MustCompile(`^\s*([A-Za-z0-9_][\w-]*)\s*:`)
 // block when the note has none. Keys match case-insensitively but are
 // written with the casing given.
 func UpdateFrontmatterFields(body string, updates []FrontmatterUpdate) string {
+	next := updateFrontmatterFields(body, updates)
+	// A Windows note stays one. A note mixing endings comes out with plain newlines.
+	if crlf := strings.Count(body, "\r\n"); crlf > 0 && crlf == strings.Count(body, "\n") {
+		return strings.ReplaceAll(strings.ReplaceAll(next, "\r\n", "\n"), "\n", "\r\n")
+	}
+	return next
+}
+
+func updateFrontmatterFields(body string, updates []FrontmatterUpdate) string {
 	if len(updates) == 0 {
 		return body
 	}

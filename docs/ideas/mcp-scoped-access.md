@@ -700,7 +700,7 @@ The Go server gained eleven tools, 45 in all. The desktop's server has not mirro
 | `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. The final path must be visible too, numbered name included, since a deny entry can name a file inside a shared folder. A folder that exists must be a name its parent lists. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
 | `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. `duplicate_asset` makes a readable copy, so a path-restricted client on a server is refused it, as with `read_asset`. |
 | `restore_asset` | write | Only an entry `list_assets {deleted: true}` would show, else `Deleted asset not found: <token>`. |
-| `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name, and no `subpath` when the note's folder is hidden from it. |
+| `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name, and `cannotCreate` in place of `createWith` when the note's folder is hidden from it. |
 | `update_task`, `edit_section` | write | Composed from `ReadNote` and `WriteNote`, so the note must be visible; recorded for agent edit review. |
 
 Every asset tool finds its file in the asset listing even with full access, so nothing but an
@@ -709,11 +709,11 @@ changes a loose CSV database or its schema file. That check reads the whole list
 scope can share the CSV and hide its schema file. `list_assets` leaves out a schema file and the
 `.csv.bak` backups, as the app does.
 
-A rename refuses a name holding `# ? | [ ] ^ % :` or a control character, or ending in a dot: each
+A rename refuses a name holding `# ? | [ ] ^ % : * " < >`, a backtick or a control character, or ending in a dot: each
 is link syntax or does not survive on every system, so every link to the file would stop resolving
 while the rename reported success. An upload's name
 is cleaned instead, as the app's import does. A note a rewrite could not read or write comes back
-in `linksNotUpdated`, on a local vault. A server rewrites links itself and does not say.
+in `linksNotUpdated`, on a local vault, since a note that cannot be read may still use the old name. A server rewrites links itself and does not say.
 
 `update_task` and `toggle_task` finish a recurring task the way the app does, through
 `internal/vault/task_recurrence.go`, a port of `task-recurrence.ts` that runs the same case table.
@@ -735,15 +735,16 @@ brackets on a local vault, or it would stop being a link. `asset_link_rename.go`
 znserver's and the desktop's copies here until they get the same fix, so on a server these links
 still break.
 
-A rewrite under a path scope writes a link's full path where a bare name would do, since whether
-a bare name is still unique depends on files the client cannot see. A bare link whose name a
-hidden file shares already resolves to nothing, in the renderer as here, so it is left as it is.
+A rewrite under a path scope writes a link's full path where a bare name would do, since whether a
+bare name is still unique depends on files the client cannot see. A wikilink cannot hold a path
+with `# ? | [ ] ^` in it, so there it keeps the bare name, or stays as it was and the note comes back
+in `linksNotUpdated`.
 
-Leaks, in the terms of section 6: a rename onto a hidden file's exact name answers "already
-exists", and a file that lands on a hidden file's name gets a number (`secret 2.png` from
-`upload_asset`, `move_asset`, `duplicate_asset` or `restore_asset`). Both are the same one bit as
-the name collisions above, for a guessed name in a folder the client can write to. There is no
-cheap complete fix: picking a number around hidden files still shows which numbers were skipped.
-A bare link left alone, as above, gives one bit about a hidden file's basename. A numbered name
-from `duplicate_asset` or `restore_asset` can also land on a deny entry, which leaves a file the
-client cannot see. Otherwise none.
+Tool calls are served concurrently and most writes read a note first, so writes take turns: one
+turn per server, not per note, because a rename rewrites any number of notes and on a server does
+so where no lock in zn can reach. This holds within one `zn mcp` process. Two processes on one
+vault, or the app editing while an assistant does, can still overwrite each other.
+
+Leaks, in the terms of section 6: a write can show that a name is already taken in a folder the
+client can write to, the same one bit as the name collisions above. Keep private files in a folder
+of their own, and hide the folder.

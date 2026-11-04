@@ -263,6 +263,10 @@ func assetRetarget(reference string, resolution assetReferenceResolution, noteDi
 			out = strings.ReplaceAll(next, "%", "%25")
 		}
 	}
+	// In a folder's name these would read as the start of a fragment or a query.
+	if !wikilink {
+		out = strings.NewReplacer("#", "%23", "?", "%3F").Replace(out)
+	}
 	out += suffix
 	// A Markdown destination with a space or a parenthesis only stays a link in
 	// angle brackets, and a rename or a numbered name can bring either in. Also
@@ -284,12 +288,24 @@ func assetRetarget(reference string, resolution assetReferenceResolution, noteDi
 // caller that may not see all of assets: whether a bare name is still unique
 // depends on files it has no business learning about.
 func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteMeta, notePath, oldPath, newPath string, fullPath bool) (string, int) {
+	next, changed, _ := rewriteAssetLinks(body, assets, notes, notePath, oldPath, newPath, fullPath)
+	return next, changed
+}
+
+// wikilinkSyntax is what a wikilink target reads as something other than a path.
+const wikilinkSyntax = "#?|[]^"
+
+// rewriteAssetLinks also says whether a wikilink to the file had to stay as it
+// was, because its target cannot hold the new path: `![[Issue #5/pic.png]]`
+// names a heading in a note. A bare name is used where it will do.
+func rewriteAssetLinks(body string, assets []AssetMeta, notes []NoteMeta, notePath, oldPath, newPath string, fullPath bool) (string, int, bool) {
 	if newPath == "" || oldPath == newPath {
-		return body, 0
+		return body, 0, false
 	}
 	if !strings.Contains(body, "[[") && !strings.Contains(body, "](") {
-		return body, 0
+		return body, 0, false
 	}
+	stranded := false
 	noteDir := ""
 	if i := strings.LastIndexByte(notePath, '/'); i >= 0 {
 		noteDir = notePath[:i]
@@ -340,7 +356,15 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteM
 		if _, isNote := ResolveWikilink(notes, target); isNote {
 			continue
 		}
-		next := embed + "[[" + assetRetarget(target, r, noteDir, newPath, bareStillUnique, true) + rest + "]]"
+		bare := bareStillUnique
+		if strings.ContainsAny(newPath, wikilinkSyntax) {
+			if strings.ContainsAny(lastPathSegment(newPath), wikilinkSyntax) || (!fullPath && sameBase != 1) {
+				stranded = true
+				continue
+			}
+			r.reading, bare = assetReadingBasename, true
+		}
+		next := embed + "[[" + assetRetarget(target, r, noteDir, newPath, bare, true) + rest + "]]"
 		if next == body[m[0]:m[1]] {
 			continue // a bare name that still resolves reads exactly as before
 		}
@@ -366,7 +390,7 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteM
 		edits = append(edits, edit{m[0], m[1], next})
 	}
 	if len(edits) == 0 {
-		return body, 0
+		return body, 0, stranded
 	}
 	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
 	var sb strings.Builder
@@ -381,7 +405,7 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteM
 		changed++
 	}
 	sb.WriteString(body[last:])
-	return sb.String(), changed
+	return sb.String(), changed, stranded
 }
 
 // RewriteAssetReferencesInBody is rewriteAssetReferencesInBody for a caller that
@@ -433,9 +457,20 @@ func AssetsReferencedBy(body string, assets []AssetMeta, notes []NoteMeta, noteP
 // moved asset, skipping the trash and whatever rewrite turns down (nil: every
 // note). This vault's listing carries no attachment flag, so it reads each note
 // the filter allows; only the ones whose text changes are written. It returns the
-// notes it could not read or write, whose links may still use the old name.
+// notes it could not read or write, or whose wikilinks cannot hold the new path,
+// which may still use the old name. A filter also limits which notes a wikilink
+// can be read as naming.
 func (v *Vault) rewriteAssetReferences(notesBefore []NoteMeta, assetsBefore []AssetMeta, oldRel, newRel string, rewrite func(path string) bool) []string {
 	var failed []string
+	nameable := notesBefore
+	if rewrite != nil {
+		nameable = make([]NoteMeta, 0, len(notesBefore))
+		for _, n := range notesBefore {
+			if rewrite(n.Path) {
+				nameable = append(nameable, n)
+			}
+		}
+	}
 	for _, n := range notesBefore {
 		if n.Folder == FolderTrash || (rewrite != nil && !rewrite(n.Path)) || !strings.EqualFold(path.Ext(n.Path), ".md") {
 			continue
@@ -445,11 +480,15 @@ func (v *Vault) rewriteAssetReferences(notesBefore []NoteMeta, assetsBefore []As
 			failed = append(failed, n.Path)
 			continue
 		}
-		body, changed := rewriteAssetReferencesInBody(content.Body, assetsBefore, notesBefore, n.Path, oldRel, newRel, rewrite != nil)
+		body, changed, stranded := rewriteAssetLinks(content.Body, assetsBefore, nameable, n.Path, oldRel, newRel, rewrite != nil)
 		if changed > 0 {
 			if _, err := v.WriteNote(n.Path, body); err != nil {
 				failed = append(failed, n.Path)
+				continue
 			}
+		}
+		if stranded {
+			failed = append(failed, n.Path)
 		}
 	}
 	return failed

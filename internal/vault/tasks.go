@@ -486,24 +486,26 @@ func taskLineNumbersIn(lines []string, dialect TaskDialect) []int {
 // forwarded and cancelled record markers are left alone. ok is false when the
 // body holds no task at that index.
 func ToggleTaskInBody(body string, targetIndex int, dialect TaskDialect) (next string, ok bool) {
-	normalized := strings.ReplaceAll(body, "\r\n", "\n")
-	lines := strings.Split(normalized, "\n")
-	numbers := taskLineNumbersIn(lines, dialect)
+	// Split on the bare newline, so every line keeps its own ending.
+	lines := strings.Split(body, "\n")
+	bare := repeatBareLines(lines)
+	numbers := taskLineNumbersIn(bare, dialect)
 	if targetIndex < 0 || targetIndex >= len(numbers) {
 		return body, false
 	}
 	lineNumber := numbers[targetIndex]
-	m := dialect.lineRe().FindStringSubmatch(lines[lineNumber])
+	m := dialect.lineRe().FindStringSubmatch(bare[lineNumber])
 	if m == nil {
 		return body, false
 	}
+	ending := lines[lineNumber][len(bare[lineNumber]):]
 	switch m[2] {
 	case ">", "-":
-		return normalized, true
+		return body, true
 	case "x", "X":
-		lines[lineNumber] = m[1] + " " + m[3]
+		lines[lineNumber] = m[1] + " " + m[3] + ending
 	default:
-		lines[lineNumber] = m[1] + "x" + m[3]
+		lines[lineNumber] = m[1] + "x" + m[3] + ending
 	}
 	return strings.Join(lines, "\n"), true
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -133,7 +134,7 @@ func workTools() []toolDef {
 		},
 		{
 			name:        "daily_note",
-			description: "Find the daily note for a date (or the weekly or monthly note holding it) under this vault's own folder and naming settings, which you cannot guess. Changes nothing. If `exists`, use its `path`. If not, pass `createWith` to create_note as it is, which starts the note from the vault's template, and use the `path` create_note returns. `enabled: false` means the user has this kind of note turned off, so ask before creating one.",
+			description: "Find the daily note for a date (or the weekly or monthly note holding it) under this vault's own folder and naming settings, which you cannot guess. Changes nothing. If `exists`, use its `path`. If not, pass `createWith` to create_note as it is, which starts the note from the vault's template, and use the `path` create_note returns. `cannotCreate` means this assistant may not create it. `enabled: false` means the user has this kind of note turned off, so ask before creating one.",
 			schema: `{"type":"object","properties":{
 "kind":{"type":"string","enum":["daily","weekly","monthly"],"description":"Default: daily."},
 "date":{"type":"string","description":"today, yesterday, tomorrow or YYYY-MM-DD. Default: today."}}}`,
@@ -208,16 +209,20 @@ func workTools() []toolDef {
 				if found != nil {
 					return append(result, orderedResult{{"exists", true}, {"path", found.Path}, {"note", *found}}...), nil
 				}
-				createWith := orderedResult{{"folder", string(vault.FolderInbox)}}
-				// A folder this client cannot see stays unnamed, here as anywhere.
-				if s, scoped := b.(*scopedBackend); !scoped || s.sharesPath(ctx, rel) {
-					createWith = append(createWith, orderedResult{{"subpath", loc.Subpath}}...)
+				// A folder this client cannot see stays unnamed, and starting the note
+				// anywhere else would only misfile it.
+				if s, scoped := b.(*scopedBackend); scoped && (!s.sharesPath(ctx, path.Dir(rel)) || !s.sharesPath(ctx, rel)) {
+					return append(result, orderedResult{{"exists", false}, {"cannotCreate", "This note's folder is not shared with this assistant, so it cannot be created here."}}...), nil
 				}
-				createWith = append(createWith, orderedResult{
-					{"title", loc.Title},
-					{"body", periodicBody(ctx, b, kind, settings, loc.Title, date)},
-				}...)
-				return append(result, orderedResult{{"exists", false}, {"createWith", createWith}}...), nil
+				return append(result, orderedResult{
+					{"exists", false},
+					{"createWith", orderedResult{
+						{"folder", string(vault.FolderInbox)},
+						{"subpath", loc.Subpath},
+						{"title", loc.Title},
+						{"body", periodicBody(ctx, b, kind, settings, loc.Title, date)},
+					}},
+				}...), nil
 			},
 		},
 		{
@@ -263,7 +268,7 @@ func workTools() []toolDef {
 		},
 		{
 			name:        "edit_section",
-			description: "Edit the part of a note under one heading: `append` (the usual choice, such as a new item under Action Items; it goes above any subheading), `prepend`, or `replace`, which rewrites everything under the heading, subheadings included. The heading and the rest of the note keep their bytes. Fails with the note's headings if there is no such heading.",
+			description: "Edit the part of a note under one heading: `append` (the usual choice, such as a new item under Action Items; it goes above any subheading), `prepend`, or `replace`, which rewrites everything under the heading, subheadings included. The heading and the rest of the note keep their text. Fails with the note's headings if there is no such heading.",
 			schema: `{"type":"object","properties":{
 "path":{"type":"string"},
 "heading":{"type":"string","description":"Heading text, any case, without the #s."},

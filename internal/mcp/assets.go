@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -109,8 +108,9 @@ func findAsset(ctx context.Context, b Backend, raw string) (vault.AssetMeta, []v
 func refuseDatabaseFile(meta vault.AssetMeta, all []vault.AssetMeta) error {
 	refused := database.IsSidecarPath(meta.Path)
 	if !refused && database.IsLooseCSVPath(meta.Path) {
+		sidecar := search.Fold(meta.Path + database.SidecarSuffix)
 		for _, a := range all {
-			if a.Path == meta.Path+database.SidecarSuffix {
+			if search.Fold(a.Path) == sidecar {
 				refused = true
 				break
 			}
@@ -122,19 +122,13 @@ func refuseDatabaseFile(meta vault.AssetMeta, all []vault.AssetMeta) error {
 	return nil
 }
 
-// windowsReservedName is a device name Windows keeps, with or without an
-// extension.
-var windowsReservedName = regexp.MustCompile(`(?i)^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)`)
-
 // checkAssetName refuses a name the asset listing would not show afterwards,
-// since a file the listing cannot see is one no tool can reach again.
+// since a file the listing cannot see is one no tool can reach again. Dots and
+// spaces at the end of a name do not count.
 func checkAssetName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	lower := strings.ToLower(trimmed)
-	// Not every system keeps a trailing dot or what follows a colon, so a name
-	// that reads as a note after losing them counts as one.
-	stem, _, _ := strings.Cut(lower, ":")
-	stem = strings.TrimRight(stem, ". ")
+	bare := strings.TrimRight(lower, ". ")
 	switch {
 	case trimmed == "" || trimmed == "." || trimmed == "..":
 		return errors.New("A file name is required.")
@@ -142,92 +136,143 @@ func checkAssetName(name string) error {
 		return errors.New("Use only a file name, with no folder in it.")
 	case strings.HasPrefix(trimmed, "."):
 		return errors.New("A file name cannot start with a dot.")
-	case strings.HasSuffix(stem, ".md"):
+	case strings.HasSuffix(bare, ".md"):
 		return errors.New("Notes are not attachments: use create_note or rename_note.")
-	case windowsReservedName.MatchString(trimmed):
-		return errors.New("That name is reserved on Windows, so choose another.")
-	case strings.HasSuffix(lower, ".excalidraw"), vault.IsAtomicWriteTempPath(trimmed), database.IsSidecarPath(trimmed):
+	case strings.HasSuffix(bare, ".excalidraw"), vault.IsAtomicWriteTempPath(trimmed), database.IsLooseInternalPath(bare):
 		return errors.New("That kind of file cannot be managed as an attachment.")
 	}
 	return nil
 }
 
+// checkUploadName also asks about the name the upload will really use, the one
+// left after cleaning. It returns that name.
+func checkUploadName(name string) (string, error) {
+	if err := checkAssetName(name); err != nil {
+		return "", err
+	}
+	cleaned := vault.CleanAssetFileName(name)
+	if cleaned == "" {
+		return strings.TrimSpace(name), nil
+	}
+	return cleaned, checkAssetName(cleaned)
+}
+
 // checkAssetRename adds what a rename must refuse and an upload need not, since
 // an upload's name is cleaned the way the app's import cleans it. Most of these
 // are read as link syntax (`#` a heading, `?` a query, `|` an alias, `]` the end
-// of a wikilink, `^` a block, `%` an escape), and a colon or a trailing dot does
-// not survive on every system. Either way every link to the file would stop
-// resolving while the rename reported success.
+// of a wikilink, `^` a block, `%` an escape), and the rest do not survive on every
+// system. Either way every link to the file would stop resolving while the rename
+// reported success.
 func checkAssetRename(name string) error {
 	if err := checkAssetName(name); err != nil {
 		return err
 	}
 	trimmed := strings.TrimSpace(name)
-	if strings.ContainsAny(trimmed, "#?|[]^%:") || strings.IndexFunc(trimmed, unicode.IsControl) >= 0 || strings.HasSuffix(trimmed, ".") {
-		return errors.New("A file name cannot contain # ? | [ ] ^ % : or a control character, or end with a dot, since links to it would break.")
+	stem, _, _ := strings.Cut(strings.ToLower(trimmed), ":")
+	if strings.HasSuffix(strings.TrimRight(stem, ". "), ".md") {
+		return errors.New("Notes are not attachments: use create_note or rename_note.")
+	}
+	if vault.IsReservedFileName(trimmed) {
+		return errors.New("That name is reserved on Windows, so choose another.")
+	}
+	if strings.ContainsAny(trimmed, "#?|[]^%:*\"<>`") || strings.IndexFunc(trimmed, unicode.IsControl) >= 0 || strings.HasSuffix(trimmed, ".") {
+		return errors.New("A file name cannot contain # ? | [ ] ^ % : * \" < > ` or a control character, or end with a dot, since links to it would break.")
 	}
 	return nil
 }
 
 // checkAssetTargetDir refuses a destination whatever the scope: anything that
 // is not a plain vault-relative folder, a database's insides, and the trash,
-// whose contents empty_trash and the app destroy.
+// whose contents empty_trash and the app destroy. Under a scope nothing here looks
+// at the disk, and the trash answers as any other folder the client may not use,
+// since what happens to be there is for assetDestination to judge once the path is
+// known to be visible.
 func checkAssetTargetDir(ctx context.Context, b Backend, raw string) (string, error) {
 	refused := errors.New("This assistant cannot put files there.")
 	clean, ok := cleanRequest(raw)
-	if !ok {
+	// The move trims what it is given, so this has to be what it will use.
+	if !ok || trimsDifferently(raw) {
 		return "", refused
 	}
 	for _, seg := range strings.Split(clean, "/") {
-		// A name ending in a dot or a space, or holding a colon, does not mean the
-		// same folder on every system.
-		if strings.HasSuffix(strings.ToLower(seg), database.FormDirSuffix) || strings.HasSuffix(seg, ".") || strings.HasSuffix(seg, " ") || strings.Contains(seg, ":") {
+		if strings.HasSuffix(strings.ToLower(seg), database.FormDirSuffix) {
 			return "", refused
 		}
-	}
-	if b.Kind() == backend.KindLocal && !foldersListed(b.Root(), clean) {
-		return "", refused
 	}
 	settings, err := b.VaultSettings(ctx)
 	if err != nil {
 		return "", err
 	}
+	scoped, isScoped := b.(*scopedBackend)
 	if insideFolded(clean, vault.ResolveFolderPath(vault.FolderTrash, settings.SystemFolderPaths)) {
+		if isScoped {
+			return "", scoped.destinationRefusal(ctx)
+		}
 		return "", refused
+	}
+	if !isScoped && b.Kind() == backend.KindLocal {
+		if clean, ok = foldersAsListed(b.Root(), clean); !ok {
+			return "", refused
+		}
 	}
 	return clean, nil
 }
 
-// foldersListed says whether each segment of rel that exists is a name its parent
-// lists. A filesystem can answer to more spellings than the one it lists, and a
-// path checked under another spelling is not the folder it lands in.
-func foldersListed(root, rel string) bool {
-	walk := root
-	for _, seg := range strings.Split(rel, "/") {
-		parent := walk
-		walk = filepath.Join(walk, seg)
-		if _, err := os.Lstat(walk); errors.Is(err, fs.ErrNotExist) {
-			return true
-		}
-		if !folderNameListed(parent, seg) {
-			return false
-		}
-	}
-	return true
+// holdsEverywhere says whether a folder about to be made means the same folder on
+// every system: a name ending in a dot or a space, or holding a colon, does not.
+func holdsEverywhere(seg string) bool {
+	return !strings.HasSuffix(seg, ".") && !strings.HasSuffix(seg, " ") && !strings.Contains(seg, ":")
 }
 
-func folderNameListed(parent, name string) bool {
+// foldersAsListed writes each segment of rel that exists the way its parent lists
+// it. It refuses a segment that is not a real folder under a name its parent lists,
+// and a new one that would not hold on every system.
+func foldersAsListed(root, rel string) (string, bool) {
+	walk := root
+	out := ""
+	segments := strings.Split(rel, "/")
+	for i, seg := range segments {
+		next := filepath.Join(walk, seg)
+		info, err := os.Lstat(next)
+		if errors.Is(err, fs.ErrNotExist) {
+			for _, fresh := range segments[i:] {
+				if !holdsEverywhere(fresh) {
+					return "", false
+				}
+			}
+			return joinRel(out, strings.Join(segments[i:], "/")), true
+		}
+		if err != nil || !info.IsDir() {
+			return "", false
+		}
+		listed, ok := folderNameListed(walk, seg)
+		if !ok {
+			return "", false
+		}
+		out = joinRel(out, listed)
+		walk = filepath.Join(walk, listed)
+	}
+	return out, true
+}
+
+// folderNameListed finds name among what parent lists: exact, else equal after
+// case and accent folding.
+func folderNameListed(parent, name string) (string, bool) {
 	entries, err := os.ReadDir(parent)
 	if err != nil {
-		return false
+		return "", false
 	}
 	folded := search.Fold(name)
+	match, found := "", false
 	for _, e := range entries {
-		if search.Fold(e.Name()) == folded {
-			return true
+		if e.Name() == name {
+			return name, true
+		}
+		if !found && search.Fold(e.Name()) == folded {
+			match, found = e.Name(), true
 		}
 	}
-	return false
+	return match, found
 }
 
 // decodeAssetBase64 reads what a client plausibly sends: standard or URL-safe,
@@ -384,7 +429,8 @@ func assetTools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
-				if err := checkAssetName(name); err != nil {
+				cleaned, err := checkUploadName(name)
+				if err != nil {
 					return nil, err
 				}
 				m, err := assetManager(b)
@@ -395,12 +441,12 @@ func assetTools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
-				return m.ImportAsset(ctx, "", strings.TrimSpace(name), bytes.NewReader(data))
+				return m.ImportAsset(ctx, "", cleaned, bytes.NewReader(data))
 			},
 		},
 		{
 			name:        "rename_asset",
-			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name; `linksNotUpdated` lists any it could not change, so fix those by hand. Names holding # ? | [ ] ^ or % are refused, since links could not reach the file.",
+			description: "Rename an attachment in place. Notes that embed or link it are updated to the new name; `linksNotUpdated` lists any it could not read or write, which may still use the old name, so fix those by hand. Names holding # ? | [ ] ^ or % are refused, since links could not reach the file.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"name":{"type":"string","description":"New file name with its extension, no folder."}},"required":["path","name"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")
@@ -426,7 +472,7 @@ func assetTools() []toolDef {
 		},
 		{
 			name:        "move_asset",
-			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated; `linksNotUpdated` lists any it could not change. A taken name gets a number, so use the returned `path`.",
+			description: "Move an attachment to another folder, creating it if needed. Notes that embed or link it are updated; `linksNotUpdated` lists any it could not read or write, which may still use the old name. A taken name gets a number, so use the returned `path`.",
 			schema:      `{"type":"object","properties":{"path":{"type":"string"},"targetDir":{"type":"string","description":"Vault-relative folder, such as assets/plots."}},"required":["path","targetDir"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				rel, err := a.requireString("path")

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -578,5 +579,35 @@ func e2eAbsentNot(t *testing.T, root, rel string) {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
 		t.Fatalf("%s should still be there: %v", rel, err)
+	}
+}
+
+// Parallel writes through the built binary: a local vault's edits and a server's
+// round trips both wait their turn.
+func TestStdioParallelWritesLoseNothing(t *testing.T) {
+	bin := buildZN(t)
+	for _, start := range e2eBackends(t) {
+		b := start(t)
+		t.Run(b.name, func(t *testing.T) {
+			cs := connectStdio(t, bin, b)
+			var wg sync.WaitGroup
+			for i := 0; i < 16; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					res, err := cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "append_to_note", Arguments: map[string]any{"path": "Projects/Plan.md", "text": fmt.Sprintf("marker-%d", i)}})
+					if err != nil || res.IsError {
+						t.Errorf("%v %v", res, err)
+					}
+				}()
+			}
+			wg.Wait()
+			plan := e2eDisk(t, b.root, "Projects/Plan.md")
+			for i := 0; i < 16; i++ {
+				if !strings.Contains(plan, fmt.Sprintf("marker-%d\n", i)) {
+					t.Fatalf("marker-%d was lost:\n%s", i, plan)
+				}
+			}
+		})
 	}
 }

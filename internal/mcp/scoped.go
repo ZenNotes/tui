@@ -360,7 +360,8 @@ func spell(p string, known []string) (string, bool) {
 		if k == p {
 			return k, true
 		}
-		if search.Fold(k) == folded {
+		// The lists can name one path twice, which is still one path.
+		if search.Fold(k) == folded && k != match {
 			match = k
 			count++
 		}
