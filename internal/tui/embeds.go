@@ -162,11 +162,12 @@ func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath str
 	switch b.kind {
 	case "fence":
 		lang := fenceLang(lines[b.start])
-		if lang == "mermaid" && b.end-b.start > 2 {
-			return a.mermaidLines(strings.Join(lines[b.start+1:b.end-1], "\n"), b.start, width), true
+		body := fenceBody(b, lines)
+		if lang == "mermaid" && strings.TrimSpace(body) != "" {
+			return a.mermaidLines(body, b.start, width), true
 		}
-		if lang == "tikz" && a.prefs.TerminalMath == "latex" && b.end-b.start > 2 {
-			return a.tikzLines(strings.Join(lines[b.start+1:b.end-1], "\n"), b.start, width)
+		if lang == "tikz" && a.prefs.TerminalMath == "latex" && strings.TrimSpace(body) != "" {
+			return a.tikzLines(body, b.start, width)
 		}
 		return nil, false
 	case "math", "tex":
@@ -194,6 +195,16 @@ func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath str
 		}
 	}
 	return nil, false
+}
+
+// fenceBody is what a fence holds. A note may end before the fence closes, and
+// then its last line is part of the body.
+func fenceBody(b mdBlock, lines []string) string {
+	end := b.end
+	if end-b.start > 1 && fenceRe.MatchString(lines[end-1]) {
+		end--
+	}
+	return strings.Join(lines[b.start+1:end], "\n")
 }
 
 func fenceLang(open string) string {
@@ -387,6 +398,7 @@ func contentKey(prefix, text string) string {
 // terminal shows pictures, renders it as an image in the background; the
 // pure-Go text rendering is shown meanwhile and everywhere else.
 func (a *App) mermaidLines(src string, srcLine, width int) []previewLine {
+	src = strings.ReplaceAll(src, "\r", "") // an embedded note keeps its line endings
 	key := contentKey("mermaid", src)
 	if a.imageMode() == imagesKitty {
 		if img := a.externalImage(key, width-2, "mermaid", src); img != nil && img.err == nil {
@@ -447,8 +459,8 @@ func (a *App) mathLines(body string, srcLine, width int) []previewLine {
 			return a.pictureLines(a.fitted(key, img, width-2), srcLine, width, "math")
 		}
 	}
-	for _, l := range strings.Split(inner, "\n") {
-		out = append(out, previewLine{text: " " + th.BorderFocus.Render("▎") + " " + th.Code.Render(truncateCells(l, width-4)), srcLine: srcLine})
+	for _, row := range wrapCommentText(inner, width-4) {
+		out = append(out, previewLine{text: " " + th.BorderFocus.Render("▎") + " " + th.Code.Render(row), srcLine: srcLine})
 	}
 	return out
 }

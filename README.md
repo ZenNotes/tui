@@ -657,8 +657,11 @@ sheet of your own, or `zen` for the built-in renderer).
 - **`![[Note]]`** renders the note inline.
 - **Mermaid** blocks draw as text, or as pictures when `mmdc` is installed.
   The text always fits the pane: a left-to-right flowchart runs down the page
-  when it is too wide for a row, and labels wrap. A diagram zn cannot draw in
-  full as text shows its source, with a note saying so.
+  when it is too wide for a row, and labels wrap. A sequence diagram draws
+  when it has only participants and plain `->>` or `-->>` messages that fit.
+  Other sequence diagrams, every class and ER diagram, and any diagram zn
+  cannot draw in full as text show their source, with a note saying so. The
+  `zen` style shows every Mermaid block as code.
 - **`[terminal] math`** picks the engine for display math: `typst`, the
   default, renders `$$` blocks when `typst` is installed; `latex` uses TeX on
   your computer (next section).

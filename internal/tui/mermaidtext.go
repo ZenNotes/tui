@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/mattn/go-runewidth"
 	"github.com/yashikota/mermaigo/pkg/mermaid"
+	"github.com/yashikota/mermaigo/pkg/mermaid/ascii"
 	"github.com/yashikota/mermaigo/pkg/mermaid/parser"
 	"github.com/yashikota/mermaigo/pkg/mermaid/types"
 )
@@ -23,8 +25,12 @@ import (
 // boxes when a left-to-right diagram fits, otherwise a column. An edge to the
 // box drawn next is an arrow between them, and any other edge is listed under
 // its source by the name of its target, so every node and edge can be read at
-// any width. Sequence, class and ER diagrams still come from the library, and
-// show their source when they do not fit.
+// any width.
+//
+// The library's sequence drawing is kept only when it shows everything in the
+// source, and when it fits. Its class and ER drawings never do: relationships,
+// their types and labels, method arguments and comments are lost, and the order
+// changes from one parse to the next, so those diagrams show their source.
 //
 // When the parser cannot have read a whole statement, the block shows its
 // source and says so, since a tidy drawing with an edge missing misleads.
@@ -35,22 +41,23 @@ type mermaidText struct {
 	flow    *flowchart // drawn here, at any width
 	rows    []string   // the library's drawing, at its own width
 	err     string     // why it could not be parsed
-	partial bool       // the parser skipped part of the source
+	partial bool       // a drawing would lose part of the source
 }
 
 func parseMermaidText(src string) *mermaidText {
-	if mermaid.DetectDiagramType(src) != mermaid.DiagramTypeFlowchart {
-		rendered, err := mermaid.RenderText(src, &mermaid.TextRenderOptions{})
-		if err != nil {
-			return &mermaidText{err: err.Error()}
-		}
-		return &mermaidText{rows: strings.Split(strings.TrimRight(rendered, "\n"), "\n")}
+	switch mermaid.DetectDiagramType(src) {
+	case mermaid.DiagramTypeSequence:
+		rows := sequenceRows(src)
+		return &mermaidText{rows: rows, partial: rows == nil}
+	case mermaid.DiagramTypeClass, mermaid.DiagramTypeER:
+		return &mermaidText{partial: true}
 	}
 	flow, partial, err := parseFlowchart(src)
 	if err != nil {
 		return &mermaidText{err: err.Error()}
 	}
-	return &mermaidText{flow: flow, partial: partial}
+	// A diagram with no node yet, as while one is being typed, has nothing to draw.
+	return &mermaidText{flow: flow, partial: partial || len(flow.order) == 0}
 }
 
 // mermaidTextLines lays a parsed diagram out for a pane width.
@@ -90,6 +97,122 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 		out = append(out, previewLine{text: " " + th.Base.Render(row), srcLine: srcLine})
 	}
 	return out
+}
+
+// --- sequence diagrams ---
+
+// mermaidSequenceMaxCells caps the library's drawing, which allocates a grid of
+// its width times its height before anything else happens.
+const mermaidSequenceMaxCells = 1 << 20
+
+var (
+	mermaidParticipantRe = regexp.MustCompile(`^participant\s+(\S+)(?:\s+as\s+.+)?$`)
+	// Only the arrows the drawing tells apart: it gives every other kind the
+	// same head, and it has no place for activation marks.
+	mermaidMessageRe = regexp.MustCompile(`^([^\s<]+?)\s*--?>>\s*([^\s+-]\S*?)\s*:\s*(.+)$`)
+	// A name holding an arrow is more likely a misread statement than a name.
+	mermaidArrowInNameRe = regexp.MustCompile(`->|-$`)
+)
+
+// sequenceRows is the library's drawing of a sequence diagram, or nil when that
+// would lose anything. Only participants and plain messages are drawn, so a
+// note, a block or any statement not known here brings up the source.
+func sequenceRows(src string) []string {
+	statements := []string{}
+	for _, line := range strings.Split(src, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "%%") {
+			continue
+		}
+		for _, s := range strings.Split(line, ";") {
+			if s = strings.TrimSpace(s); s != "" && !strings.HasPrefix(s, "%%") {
+				statements = append(statements, s)
+			}
+		}
+	}
+	messages := [][]string{}
+	seen := map[string]bool{}
+	for _, s := range statements[1:] {
+		if m := mermaidMessageRe.FindStringSubmatch(s); m != nil {
+			if mermaidArrowInNameRe.MatchString(m[1]) || mermaidArrowInNameRe.MatchString(m[2]) {
+				return nil
+			}
+			seen[m[1]], seen[m[2]] = true, true
+			messages = append(messages, m[1:])
+		} else if m := mermaidParticipantRe.FindStringSubmatch(s); m != nil && !seen[m[1]] {
+			// The parser keeps a name's first label and ignores any later one.
+			seen[m[1]] = true
+		} else {
+			return nil
+		}
+	}
+
+	// The parser skips a name like parser->>db, reading it as a par block.
+	diagram := parser.ParseSequenceDiagram(statements)
+	if len(diagram.Messages) != len(messages) {
+		return nil
+	}
+	for i, m := range diagram.Messages {
+		if m.From != messages[i][0] || m.To != messages[i][1] || m.Label != messages[i][2] {
+			return nil
+		}
+		if !sequenceLabelDrawable(m.Label) || strings.Contains(strings.ToLower(m.Label), "<br") {
+			return nil
+		}
+	}
+	width, height := 1, 7
+	for _, actor := range diagram.Actors {
+		if !sequenceLabelDrawable(actor.Label) {
+			return nil
+		}
+		width += max(len(actor.Label)+4, 9) + 10
+	}
+	longest := 0
+	for _, m := range diagram.Messages {
+		longest = max(longest, len(m.Label))
+		height += 4
+	}
+	if (width+longest+11)*height > mermaidSequenceMaxCells {
+		return nil
+	}
+
+	// The drawing stops at its own right edge and spaces out a label with
+	// non-ASCII letters, so each label must be there whole, on its own row.
+	rendered := ascii.RenderSequenceAscii(diagram, nil)
+	rows := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	if len(rows) < 3 {
+		return nil
+	}
+	boxes := rows[1]
+	for _, actor := range diagram.Actors {
+		i := strings.Index(boxes, actor.Label)
+		if i < 0 {
+			return nil
+		}
+		boxes = boxes[i+len(actor.Label):]
+	}
+	at := 3 // below the participants' boxes
+	for _, m := range diagram.Messages {
+		for at < len(rows) && !strings.Contains(rows[at], m.Label) {
+			at++
+		}
+		if at == len(rows) {
+			return nil
+		}
+		at++
+	}
+	return rows
+}
+
+// sequenceLabelDrawable says each rune of a label takes one cell. The library's
+// grid holds one rune per cell, so a wide letter, a combining mark, a tab or a
+// control character moves everything after it on the row.
+func sequenceLabelDrawable(label string) bool {
+	for _, r := range label {
+		if runewidth.RuneWidth(r) != 1 {
+			return false
+		}
+	}
+	return true
 }
 
 // --- reading the source ---
