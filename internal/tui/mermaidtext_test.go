@@ -389,3 +389,288 @@ func TestEscapedAliasPipeFollowsTheNote(t *testing.T) {
 		t.Fatalf("links = %+v", links)
 	}
 }
+
+// --- review findings on the first version ---
+
+func mermaidText40(src string) string {
+	return joinPreview(mermaidTestApp().mermaidLines(src, 0, 40))
+}
+
+// assertDrawn checks a diagram is drawn with these texts, not its source.
+func assertDrawn(t *testing.T, src string, wants ...string) {
+	t.Helper()
+	all := mermaidText40(src)
+	if strings.Contains(all, "its source") || strings.Contains(all, "mermaid:") {
+		t.Fatalf("%q shows its source, want a drawing:\n%s", src, all)
+	}
+	flat := squeezed(all)
+	for _, want := range wants {
+		if !strings.Contains(flat, squeezed(want)) {
+			t.Fatalf("%q loses %q:\n%s", src, want, all)
+		}
+	}
+}
+
+// assertSource checks a diagram shows its source with the note.
+func assertSource(t *testing.T, src string) {
+	t.Helper()
+	all := mermaidText40(src)
+	if !strings.Contains(all, "its source") {
+		t.Fatalf("%q has no note that its source is shown:\n%s", src, all)
+	}
+	if !strings.Contains(squeezed(all), squeezed(src)) {
+		t.Fatalf("%q does not show all of its source:\n%s", src, all)
+	}
+}
+
+// F1: a label may hold the runes zn could use for its own masks.
+func TestMermaidPrivateUseLabelsAreOnlyText(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A[\uE00099\uE001] --> B", "\uE00099\uE001", "B")
+	assertDrawn(t, "graph TD\n  A[\"secret\"] --> B[\uE0000\uE001]", "secret", "\uE0000\uE001")
+	assertDrawn(t, "graph TD\n  A[\"x\"] --> B[\uE00099999999999999999999999\uE001]", "x", "\uE00099999999999999999999999\uE001")
+	assertDrawn(t, "graph TD\n  A[\"x\"] --> B[\U000F00000\U000F0001]", "x", "\U000F00000\U000F0001")
+}
+
+// F2: an ID may begin with a word that also starts a statement.
+func TestMermaidIDsStartingWithKeywords(t *testing.T) {
+	assertDrawn(t, "graph TD\n  title-bar[Title bar] --> content[Content]", "Title bar", "Content")
+	assertDrawn(t, "graph TD\n  click --> save[Save]", "click", "Save")
+	assertDrawn(t, "graph TD\n  click-handler[On click] --> save[Save]", "On click", "Save")
+	assertDrawn(t, "graph TD\n  title[Report title] --> body[Body]\n  body --> foot[Foot]", "Report title", "Body", "Foot")
+	// The statements themselves still draw nothing.
+	all := mermaidText40("graph TD\n  title My chart\n  A --> B\n  click A \"https://example.com\"\n  linkStyle 0 stroke:#f00\n  style A fill:#fff\n  classDef a,b fill:#fff\n  class A,B one two\n  direction LR")
+	for _, bad := range []string{"title", "click", "linkStyle", "style", "classDef", "class", "direction", "source"} {
+		if strings.Contains(all, bad) {
+			t.Fatalf("%q is drawn:\n%s", bad, all)
+		}
+	}
+}
+
+// F3: an edge ending in a circle or a cross is not an edge label.
+func TestMermaidCircleAndCrossEdgesAreNotLabels(t *testing.T) {
+	assertSource(t, "graph TD\n  A --o B --> C")
+	assertSource(t, "graph TD\n  A --x B --> C")
+	assertSource(t, "graph TD\n  A ==x B ==> C")
+	// The parser reads these as an edge to a node named x or o, and B is lost.
+	assertSource(t, "graph TD\n  A ---x B")
+	assertSource(t, "graph TD\n  A -.-x B")
+	assertSource(t, "graph TD\n  A ---o B")
+	// A one-letter label is still a label.
+	assertDrawn(t, "graph TD\n  A -- x --> B", "x", "B")
+}
+
+// F4: words that start a statement do not excuse a statement from the check.
+func TestMermaidStatementWordsDoNotSkipTheCheck(t *testing.T) {
+	for _, src := range []string{
+		"graph TD\n  endpoint[API] --x client[Client]",
+		"graph TD\n  classify --x done",
+		"graph TD\n  styles ~~~ done",
+		"graph TD\n  direction_a --o B",
+		"graph TD\n  subgraphs --x B",
+		"graph TD\n  ender --> B --x C",
+		"graph TD\n  style --- B",
+		"graph TD\n  subgraph --> B",
+	} {
+		assertSource(t, src)
+	}
+}
+
+// Words the parser skips over are not read either.
+func TestMermaidTrailingWordsShowSource(t *testing.T) {
+	assertSource(t, "graph TD\n  A[One] some junk here")
+	assertSource(t, "graph TD\n  B --> C extra words")
+}
+
+// Every node shape and class shorthand counts as read.
+func TestMermaidEveryShapeIsRead(t *testing.T) {
+	assertDrawn(t, `graph TD
+  A(round) --> B((circle)) --> C{diamond} --> D{{hex}} --> E[(db)] --> F([stad]) --> G[[sub]] --> H>flag] --> I[/tr\] --> J[\rt/] --> K(((dbl)))
+  K:::warm --> L[Done]:::cool`, "round", "circle", "diamond", "hex", "db", "stad", "sub", "flag", "tr", "rt", "dbl", "Done")
+	assertDrawn(t, "graph TD\n  A & B --> C & D\n  a-b --> c-d", "A", "B", "C", "D", "a-b", "c-d")
+}
+
+// F5: a quote mark in a label is not always the start of a quoted label.
+func TestMermaidQuotesPairInsideAStatement(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A[5\" disk] --> B[3.5\" disk]\n  B --> C[End]", `5" disk`, `3.5" disk`, "End")
+	assertSource(t, "graph TD\n  A[\"x; B --> C; D[\"y\"]")
+	assertSource(t, "graph TD\n  A[\"x; B --> C; D[\"y\"] --> E")
+	assertSource(t, "graph TD\n  A[\"line1\n  line2\"] --> B")
+	assertDrawn(t, "graph TD\n  A[\"a;b\"] --> B[\"c;d\"]; B --> C", "a;b", "c;d", "C")
+}
+
+// F7: arrows inside a label are text.
+func TestMermaidArrowsInLabelsStayText(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A[foo ---> bar] --> B", "foo ---> bar", "B")
+	assertDrawn(t, "graph TD\n  A[a -- b --> c] --> D", "a -- b --> c", "D")
+	all := mermaidText40("graph TD\n  A -->|x -- y --> z| B")
+	if !strings.Contains(all, "x -- y --> z") || strings.Contains(all, "source") {
+		t.Fatalf("the edge label changed:\n%s", all)
+	}
+	if strings.Count(all, "┌") != 2 {
+		t.Fatalf("draws a node the diagram does not have:\n%s", all)
+	}
+}
+
+// F8: quote marks inside a label show.
+func TestMermaidQuotesInsideLabelsShow(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A[say \"hi\" now] --> B", `say "hi" now`, "B")
+	assertDrawn(t, "graph TD\n  A[\"say \\\"hi\\\" now\"] --> B", `say "hi" now`, "B")
+	assertDrawn(t, "graph TD\n  A[\"say #quot;hi#quot;\"] --> B", `say "hi"`, "B")
+	assertDrawn(t, "graph TD\n  A -->|\"a\" or \"b\"| B", `"a" or "b"`, "B")
+	assertDrawn(t, "stateDiagram-v2\n  A --> B : say \"hi\"\n  B : the \"big\" one", `say "hi"`, `the "big" one`)
+	if all := mermaidText40(`graph TD
+  A["say \"hi\" now"] --> B`); strings.Contains(all, `\`) {
+		t.Fatalf("keeps a backslash:\n%s", all)
+	}
+}
+
+// A state's label may hold what looks like an arrow or an ampersand.
+func TestMermaidStateLabelsAreFree(t *testing.T) {
+	assertDrawn(t, "stateDiagram-v2\n  A --> B : R&D\n  B --> C", "R&D", "C")
+	assertDrawn(t, "stateDiagram-v2\n  A --> B : wait -- then go", "wait -- then go")
+}
+
+// F10: comments and wrappers that are not part of the diagram.
+func TestMermaidCommentsAndWrappers(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A --> B; %% done", "A", "B")
+	assertDrawn(t, "graph TD\n  A --> B %% to b", "A", "B")
+	assertDrawn(t, "graph TD\n  A[100%% done] --> B", "100%% done", "B")
+	assertDrawn(t, "---\ntitle: Hello\n---\nflowchart LR\n  A --> B", "A", "B")
+	assertDrawn(t, "\ufeffgraph TD\n  A --> B", "A", "B")
+	assertDrawn(t, "flowchart-elk TD\n  A --> B", "A", "B")
+	assertDrawn(t, "%%{init: {\"theme\":\"dark\"}}%%\nflowchart LR\n  A --> B", "A", "B")
+}
+
+// F11: a width that two measures disagree on does not cut the label.
+func TestMermaidLoneRegionalIndicatorKeepsLabel(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A[\"🇺 love\"] --> B", "love", "B")
+	assertDrawn(t, "graph LR\n  A[\"🇺 love\"] --> B", "love", "B")
+	if all := zenTable("| 🇺 flag text | b |\n|---|---|\n| a | c |", 60); !strings.Contains(all, "flag text") {
+		t.Fatalf("zen cell cut off:\n%s", all)
+	}
+}
+
+// F12: layout finds a node's edges without walking all of them.
+func TestMermaidEdgesAreIndexedBySource(t *testing.T) {
+	flow, partial, err := parseFlowchart("graph TD\n  A --> B\n  A --> C\n  B --> C")
+	if err != nil || partial {
+		t.Fatalf("parse: partial=%v err=%v", partial, err)
+	}
+	if len(flow.bySource["A"]) != 2 || len(flow.bySource["B"]) != 1 || len(flow.bySource["C"]) != 0 {
+		t.Fatalf("index = %+v", flow.bySource)
+	}
+}
+
+// F13: a listed edge always says which node it goes to.
+func TestMermaidListedEdgesNameTheirTarget(t *testing.T) {
+	blank := mermaidText40("graph TD\n  A[\"   \"] --> B[\"<br/>\"]\n  B --> A")
+	if !strings.Contains(blank, "▶ A") {
+		t.Fatalf("an edge to an empty label names nothing:\n%s", blank)
+	}
+	same := mermaidText40("graph TD\n  A[Start] --> B[Retry]\n  B --> C[Done]\n  A --> D[Other]\n  D --> E[Retry]\n  C --> E")
+	if !strings.Contains(same, "Retry [B]") || !strings.Contains(same, "Retry [E]") {
+		t.Fatalf("two nodes with one label cannot be told apart:\n%s", same)
+	}
+	// Every start and end of a state diagram means the same thing.
+	states := mermaidText40("stateDiagram-v2\n  [*] --> A\n  A --> [*]\n  [*] --> B\n  B --> [*]")
+	if strings.Contains(states, "_") {
+		t.Fatalf("shows an internal name:\n%s", states)
+	}
+}
+
+// F9: an opening [[ with no link after it is not a link.
+func TestZenTableUnterminatedLinkKeepsColumns(t *testing.T) {
+	for _, row := range []string{"| x[[1] | y | z |", "| x[[1] | y | z ]] |", "| ]] | [[x|y]] | z |"} {
+		cells := previewTableCells(row)
+		if len(cells) != 3 {
+			t.Fatalf("%q splits into %q", row, cells)
+		}
+	}
+}
+
+// F6: brackets and hard spaces a note holds itself are text.
+func TestGlamourKeepsLiteralTokenRunes(t *testing.T) {
+	for _, md := range []string{
+		"The set ⟦ is open and ⟧ closes.",
+		"Semantic ⟦x⟧ brackets next to [[Note|a link]].",
+		"- item ⟦ open\n- item ⟧ close",
+		"```\nlet a = ⟦1, 2⟧;\n```",
+	} {
+		all := joinPreview(glamourTestLines(t, md, 60))
+		if !strings.Contains(all, "⟦") || !strings.Contains(all, "⟧") {
+			t.Fatalf("%q loses a bracket:\n%s", md, all)
+		}
+	}
+	code := joinPreview(glamourTestLines(t, "```\nfoo\u00a0bar\n```", 60))
+	if !strings.Contains(code, "foo\u00a0bar") {
+		t.Fatalf("code loses a hard space: %q", code)
+	}
+	table := glamourTestLines(t, "| a | b |\n|---|---|\n| ⟦x | y⟧ |\n| plain | text |", 40)
+	all := joinPreview(table)
+	if !strings.Contains(all, "⟦x") || !strings.Contains(all, "y⟧") {
+		t.Fatalf("a table loses a bracket:\n%s", all)
+	}
+	want := -1
+	for _, l := range table {
+		plain := stripAnsi(l.text)
+		i := strings.IndexAny(plain, "│┼")
+		if col := cellWidth(plain[:max(i, 0)]); want >= 0 && col != want {
+			t.Fatalf("column rule at %d, want %d, in %q", col, want, plain)
+		} else {
+			want = col
+		}
+	}
+}
+
+// F14: a cell keeps its rule in line without gaps after each link.
+func TestGlamourTableLinkHasNoExtraSpaces(t *testing.T) {
+	all := joinPreview(glamourTestLines(t, "| A | B |\n|---|---|\n| [[x|one]] and [[y|two]] | [[z]] |\n| plain text that is long | b |", 60))
+	if !strings.Contains(all, "one and two") {
+		t.Fatalf("gaps after the links:\n%s", all)
+	}
+}
+
+// F15: a zen cell that fits keeps its spacing.
+func TestZenCellKeepsRunsOfSpaces(t *testing.T) {
+	if all := zenTable("| a    b | c |\n|---|---|\n| 1 | 2 |", 60); !strings.Contains(all, "a    b") {
+		t.Fatalf("spaces collapsed:\n%s", all)
+	}
+}
+
+// No spaces around an arrow is the most common way to write one.
+func TestMermaidArrowsWithoutSpaces(t *testing.T) {
+	all := mermaidText40("graph TD\n  A-->B[Second]\n  B-->C[Third]")
+	if strings.Contains(all, "source") || strings.Count(all, "┌") != 3 {
+		t.Fatalf("not three boxes:\n%s", all)
+	}
+	for _, want := range []string{"│ A ", "Second", "Third"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("missing %q:\n%s", want, all)
+		}
+	}
+	assertDrawn(t, "graph TD\n  A-->|yes|B[Second]", "yes", "Second")
+	assertDrawn(t, "graph TD\n  A[First]-->B[Second]", "First", "Second")
+	assertDrawn(t, "graph TD\n  A--yes-->B[Second]", "yes", "Second")
+	assertDrawn(t, "graph TD\n  A==>B[Second]\n  B-.->C[Third]\n  C---D", "Second", "Third", "D")
+	assertDrawn(t, "graph TD\n  a-b-->c-d", "a-b", "c-d")
+}
+
+func TestMermaidMoreEdgeSpellings(t *testing.T) {
+	assertDrawn(t, "graph TD\n  A --> |yes| B", "yes", "B")
+	assertDrawn(t, "graph TD\n  A -- well-known --> B", "well-known", "B")
+	assertSource(t, "graph TD\n  A --- B ---- C ~~~ D")
+}
+
+// What the graph cannot hold shows the source rather than going missing.
+func TestMermaidLostStructureShowsSource(t *testing.T) {
+	assertSource(t, "stateDiagram-v2\n  A : first\n  A : second\n  A --> B")
+	assertSource(t, "graph TD\n  A[One] --> B\n  A[Two] --> C")
+	assertSource(t, "graph TD\n  subgraph one [Group]\n  A --> B")
+	assertSource(t, "stateDiagram-v2\n  state B {\n  X --> Y")
+	assertDrawn(t, "graph TD\n  A[One] --> B\n  A[One] --> C\n  end", "One", "B", "C")
+}
+
+func TestMermaidDeepGroupsFitThePane(t *testing.T) {
+	src := "graph TD\n" + strings.Repeat("  subgraph s [Deep name here]\n", 60) + "  A\n" + strings.Repeat("  end\n", 60)
+	assertFits(t, mermaidTestApp().mermaidLines(src, 0, 40), 40)
+}

@@ -459,7 +459,7 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 					text = wrapped[c][y]
 				}
 				b.WriteString(th.Muted.Render("│ "))
-				b.WriteString(style.Render(padRight(text, widths[c])))
+				b.WriteString(style.Render(padCells(text, widths[c])))
 				b.WriteString(" ")
 			}
 			b.WriteString(th.Muted.Render("│"))
@@ -486,21 +486,25 @@ func previewTableCells(line string) []string {
 	if !strings.HasSuffix(line, `\|`) {
 		line = strings.TrimSuffix(line, "|")
 	}
+	links := wikilinkAtRe.FindAllStringIndex(line, -1)
+	inLink := func(i int) bool {
+		for _, l := range links {
+			if l[0] <= i && i < l[1] {
+				return true
+			}
+		}
+		return false
+	}
 	cells := []string{}
 	var cell strings.Builder
-	inLink := false
 	for i := 0; i < len(line); i++ {
 		switch {
-		case strings.HasPrefix(line[i:], "[["):
-			inLink = true
-		case strings.HasPrefix(line[i:], "]]"):
-			inLink = false
-		}
-		switch {
-		case !inLink && strings.HasPrefix(line[i:], `\|`):
+		case inLink(i):
+			cell.WriteByte(line[i])
+		case strings.HasPrefix(line[i:], `\|`):
 			cell.WriteByte('|')
 			i++
-		case !inLink && line[i] == '|':
+		case line[i] == '|':
 			cells = append(cells, strings.TrimSpace(cell.String()))
 			cell.Reset()
 		default:
