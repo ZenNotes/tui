@@ -85,7 +85,8 @@ switch applies the same paths to the new vault; a `--deny-path` the new vault do
 not have shares nothing there. The desktop's bundled MCP server (`out/main/mcp.js`
 and the desktop's own `zn mcp`) takes the same flags with the same rules, from
 `packages/shared-domain/src/mcp-scope.ts` in ZenNotes/zennotes, and both engines
-answer the shared fixture `internal/mcp/testdata/mcp-scope.json` the same way, so a
+answer the shared fixture `internal/mcp/testdata/mcp-scope.json` the same way on
+the tools they share (`zn mcp` has eleven the desktop's does not yet), so a
 client is scoped whichever runtime Settings → MCP installed for it. Settings → MCP
 shows a client with hand-added flags as needing an update; updating it there drops
 them.

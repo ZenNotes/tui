@@ -44,7 +44,7 @@ vault too.
   views, templates, daily notes, a command palette, and a Vim engine at the
   core of everything. Prefer a plain editor? Turn Vim off. Files, comments,
   bulk actions, editable settings, themes, and per-vault sessions are included.
-- **`zn mcp`.** The same tools the desktop's MCP server offers, for Claude
+- **`zn mcp`.** The desktop MCP server's tools and more, for Claude
   Code, Codex and any MCP client, on the whole vault or only the folders you
   share, read-only if you like.
 - **Local and self-hosted workspaces.** Keep several vaults and server
@@ -1043,8 +1043,26 @@ For other clients, register the command `zn` with the argument `mcp`:
 { "mcpServers": { "zennotes": { "command": "zn", "args": ["mcp"] } } }
 ```
 
-The tools match the desktop's MCP server one for one: notes, folders,
-search, tasks, assets, comments, archive and trash.
+The tools cover notes, folders, search, tasks, attachments, comments, archive
+and trash. They include everything the desktop's MCP server offers, plus these,
+which it does not have yet:
+
+| Tool | What it does |
+| --- | --- |
+| `upload_asset` | Adds a file from base64, up to 16 MiB, to the `assets` folder, never overwriting, and returns the embed to paste into a note. |
+| `read_asset` | Returns an attachment, up to 5 MiB: an image a model can see, text as text, anything else as an embedded file. |
+| `rename_asset`, `move_asset` | Rename or move an attachment and update the notes that link to it. |
+| `duplicate_asset` | Copies an attachment next to itself. |
+| `delete_asset`, `restore_asset` | Soft delete to the app's Trash, and undo by token. `list_assets` with `deleted: true` shows what can come back. Permanent deletion stays in the app. |
+| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. |
+| `daily_note` | Finds the daily, weekly or monthly note for a date under the vault's own settings, and says how to start it if it does not exist. |
+| `note_sections` | Lists a note's headings, or reads the part under one. |
+| `edit_section` | Appends to, prepends to or replaces the part of a note under one heading. |
+
+Files have to reach `upload_asset` as base64 in the tool call, so a model that
+writes it out itself only manages small ones. There is deliberately no argument
+that reads a path on this machine: that would let an assistant with no file
+access of its own pull any of your files into the vault.
 
 The vault is resolved again before every tool call, so the server follows
 the desktop app (or `zn use`) the way a fresh `zn` does. A switch never
@@ -1111,6 +1129,13 @@ What the client gets:
 - Renaming a note rewrites `[[links]]` only in notes the client can see. On a
   ZenNotes server, which rewrites links in every note itself, a scoped client
   cannot rename notes.
+- Attachments follow the same paths: a file is visible when its path is, and
+  a hidden one answers `Asset not found: <path>`, like a missing one. Name them
+  in the flags as they appear in `list_assets` (`--allow-path assets`,
+  `--deny-path assets/private`). `upload_asset` writes only to `assets`, so it
+  needs that folder shared. Renaming or moving a file follows the note rule
+  above: only visible notes are rewritten, and on a server a scoped client
+  cannot do it.
 - A folder is renamed or deleted as a whole only when nothing inside it is
   hidden.
 - A `--deny-path` that matches nothing in the vault (renamed outside ZenNotes,
@@ -1119,9 +1144,9 @@ What the client gets:
   clients keep in their logs, names the entry.
 
 The desktop app's bundled MCP server takes the same flags and gives the same
-answers (the shared fixture `internal/mcp/testdata/mcp-scope.json` holds both to
-it), with one difference: it never rewrites inbound links on a rename, scoped or
-not, so a rename through it leaves every other note as it was.
+answers on the tools it has, with one difference: it never rewrites inbound
+links on a rename, scoped or not, so a rename through it leaves every other note
+as it was.
 
 The scope governs the ZenNotes tools only. An assistant that can also run
 commands or read files (Claude Code, Codex, OpenCode) can still read the vault

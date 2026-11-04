@@ -36,6 +36,10 @@ type scopedBackend struct {
 	once sync.Once
 	view *scopeView
 	err  error
+
+	assetsOnce sync.Once
+	assets     []vault.AssetMeta
+	assetsErr  error
 }
 
 func newScopedBackend(inner Backend, scope Scope) *scopedBackend {
@@ -136,10 +140,39 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	}
 	known = append(known, v.dirs...)
 
+	// An entry may name an attachment or the folder holding one. The listings
+	// above do not show those, so the assets are read only for an entry they
+	// did not find.
+	var assetsKnown []string
+	knownAssets := func() ([]string, error) {
+		if assetsKnown != nil {
+			return assetsKnown, nil
+		}
+		assets, err := sb.inner.ListAssets(ctx)
+		if err != nil {
+			return nil, err
+		}
+		assetsKnown = vault.AttachmentDirs()
+		for _, a := range assets {
+			assetsKnown = append(assetsKnown, a.Path)
+			for dir := path.Dir(a.Path); dir != "." && dir != "/"; dir = path.Dir(dir) {
+				assetsKnown = append(assetsKnown, dir)
+			}
+		}
+		return assetsKnown, nil
+	}
+
 	// Entries take the vault's own spelling, so `--allow-path /projects`
 	// finds `Projects/`.
 	for _, entry := range sb.scope.Allow {
 		canonical, ok := spell(entry, known)
+		if !ok {
+			extra, err := knownAssets()
+			if err != nil {
+				return nil, err
+			}
+			canonical, ok = spell(entry, extra)
+		}
 		if !ok {
 			v.missingAllow = append(v.missingAllow, entry)
 			canonical = entry
@@ -160,6 +193,18 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 			if search.Fold(p) == search.Fold(entry) {
 				matched = true
 				break
+			}
+		}
+		if !matched {
+			extra, err := knownAssets()
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range extra {
+				if search.Fold(p) == search.Fold(entry) {
+					matched = true
+					break
+				}
 			}
 		}
 		if !matched {
@@ -446,25 +491,11 @@ func (sb *scopedBackend) ListFolders(ctx context.Context) ([]vault.FolderEntry, 
 }
 
 func (sb *scopedBackend) ListAssets(ctx context.Context) ([]vault.AssetMeta, error) {
-	v, err := sb.load(ctx)
+	all, err := sb.visibleAssets(ctx)
 	if err != nil {
 		return nil, err
 	}
-	all, err := sb.inner.ListAssets(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := []vault.AssetMeta{}
-	for _, a := range all {
-		if v.visible(a.Path) {
-			out = append(out, a)
-		}
-	}
-	return out, nil
-}
-
-func (sb *scopedBackend) ReadAsset(context.Context, string) ([]byte, error) {
-	return nil, errNotOffered
+	return append([]vault.AssetMeta{}, all...), nil
 }
 
 func (sb *scopedBackend) ReadNote(ctx context.Context, rel string) (vault.NoteContent, error) {
@@ -821,8 +852,14 @@ func (sb *scopedBackend) WriteComments(ctx context.Context, rel string, comments
 	return sb.inner.WriteComments(ctx, meta.Path, comments)
 }
 
-func (sb *scopedBackend) ListTemplates(context.Context) ([]vault.CustomTemplateFile, error) {
-	return nil, errNotOffered
+// ListTemplates is for starting a daily note the way the app would. A template
+// is not filed under any folder a scope can name and can hold anything, so a
+// client that sees only part of the vault gets none.
+func (sb *scopedBackend) ListTemplates(ctx context.Context) ([]vault.CustomTemplateFile, error) {
+	if sb.scope.Restricted() {
+		return nil, errNotOffered
+	}
+	return sb.inner.ListTemplates(ctx)
 }
 
 func (sb *scopedBackend) WriteTemplate(context.Context, vault.WriteTemplateInput) (vault.CustomTemplateFile, error) {

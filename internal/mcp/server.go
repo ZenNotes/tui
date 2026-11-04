@@ -2,7 +2,8 @@
 // tools, with a note-taker-focused system instruction, over stdio. Tool
 // names, argument shapes and result shapes match the server the desktop app
 // bundles, so an installed client keeps working when it launches this
-// binary instead.
+// binary instead. The tools in assets.go and worktools.go are this server's
+// alone until the desktop's mirrors them; see docs/shared-contracts.md.
 package mcp
 
 import (
@@ -148,6 +149,12 @@ func sortByUpdated(notes []vault.NoteMeta) {
 }
 
 func tools() []toolDef {
+	out := coreTools()
+	out = append(out, assetTools()...)
+	return append(out, workTools()...)
+}
+
+func coreTools() []toolDef {
 	return []toolDef{
 		{
 			name:        "vault_info",
@@ -342,9 +349,16 @@ func tools() []toolDef {
 		},
 		{
 			name:        "list_assets",
-			description: "List files under the vault’s attachments directory (images, PDFs, audio, video, other binaries). Useful when a note references an asset you need to inspect.",
-			schema:      `{"type":"object","properties":{}}`,
-			handler: func(ctx context.Context, _ args, b Backend) (any, error) {
+			description: "List files under the vault’s attachments directory (images, PDFs, audio, video, other binaries). Useful when a note references an asset you need to inspect. With deleted: true, lists the attachments in the app's Trash instead, with the undoToken restore_asset takes.",
+			schema:      `{"type":"object","properties":{"deleted":{"type":"boolean","description":"List deleted attachments instead."}}}`,
+			handler: func(ctx context.Context, a args, b Backend) (any, error) {
+				if a.boolIs("deleted") {
+					m, err := assetManager(b)
+					if err != nil {
+						return nil, err
+					}
+					return m.ListDeletedAssets(ctx)
+				}
 				return b.ListAssets(ctx)
 			},
 		},
@@ -1173,6 +1187,10 @@ func Run(ctx context.Context, opts Options) error {
 			})
 			if err != nil {
 				return errorResult("Error: " + DescribeToolError(err, b)), nil
+			}
+			// A tool that answers with more than text (read_asset) builds its own.
+			if built, ok := result.(*sdk.CallToolResult); ok {
+				return built, nil
 			}
 			payload, err := Payload(result)
 			if err != nil {

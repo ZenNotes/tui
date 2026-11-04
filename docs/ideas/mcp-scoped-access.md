@@ -649,3 +649,37 @@ Verified: both engines pass the fixture; the stdio parity probe (`probe_scoped.p
 session notes) gives identical transcripts for every scoped flag set on Go (fbaf94c plus the
 fix, with and without Phase 0 merged in) and on both TS entries, apart from the differences
 above. Not in 1b: profiles and the Settings UI (Phase 2).
+
+## 15. Attachment and work tools (ZenNotes/tui#34)
+
+The Go server gained eleven tools, 45 in all. The desktop's server has not mirrored them
+(see `docs/shared-contracts.md`), so this section describes zn. The rules are the ones above.
+
+| Tool | Needs | Under a scope |
+|------|-------|---------------|
+| `read_asset` | read | A visible listed asset, else `Asset not found: <path as given>`, the same bytes for hidden and missing. Case and accent variants resolve through the listing. |
+| `list_assets {deleted: true}` | read | Entries whose original path is visible. |
+| `upload_asset` | write | Writes only to the vault's assets folder, so `assets` must be visible (and on a local vault a real directory). Otherwise it refuses with one message. |
+| `rename_asset` | write | Source and new path visible. Links are rewritten in visible notes only on a local vault. A server rewrites every note, so a path-restricted client is refused there, as with `rename_note` (decision 6). |
+| `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
+| `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. |
+| `restore_asset` | write | Only an entry `list_assets {deleted: true}` would show, else `Deleted asset not found: <token>`. |
+| `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name. |
+| `update_task`, `edit_section` | write | Composed from `ReadNote` and `WriteNote`, so the note must be visible; recorded for agent edit review. |
+
+Every asset tool finds its file in the asset listing even with full access, so nothing but an
+asset can be named (`.zennotes/vault.json` and a note are both "not found"), and none of them
+changes a loose CSV database or its schema file.
+
+Purge and empty-deleted are not exposed, under any scope. A soft delete already does the job an
+assistant has; purging cannot be undone and frees only disk space, which is the user's call and
+has its own control in the app's Trash. `empty_trash` and `delete_note` predate this and stay.
+
+An entry may now name an attachment or a folder holding one: `--deny-path assets/secret` used to
+count as stale and share nothing, and `--allow-path assets` was reported under `missingAllow`.
+Assets are listed for this only when an entry is not found among the notes and folders, so a
+scope that names only folders costs no extra request. The three attachment folder names always
+count as known, so `--deny-path assets` holds before the folder exists.
+
+Leaks, in the terms of section 6: a rename onto a hidden file's exact name answers "already
+exists", the same one bit as the name collisions above. Otherwise none.

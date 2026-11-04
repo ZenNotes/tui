@@ -126,9 +126,118 @@ func (v *Vault) RenameAsset(rel, nextName string) (AssetMeta, error) {
 	return v.assetMetaForAbs(destAbs)
 }
 
+// RenameAssetRewritingLinksIn renames an asset and re-targets the notes that
+// reference it, the way the desktop and the server do (#785), in the notes
+// rewrite accepts (nil: every note). The plain RenameAsset leaves links to the
+// caller, because `zn tui` rewrites them through its open buffers.
+func (v *Vault) RenameAssetRewritingLinksIn(rel, nextName string, rewrite func(path string) bool) (AssetMeta, error) {
+	// Snapshot first so references still resolve to the asset under its old name.
+	assetsBefore, _ := v.ListAssets()
+	notesBefore, _ := v.ListNotes()
+	oldRel := vaultRelOf(v, rel)
+	meta, err := v.RenameAsset(rel, nextName)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	if meta.Path != oldRel {
+		v.rewriteAssetReferences(notesBefore, assetsBefore, oldRel, meta.Path, rewrite)
+	}
+	return meta, nil
+}
+
 // MoveAsset moves an asset file into targetDir (vault-relative; empty means the
 // unified assets/ folder), mirroring the desktop moveAsset. The filename is made
 // unique in the destination. (#379)
+func (v *Vault) MoveAsset(rel, targetDir string) (AssetMeta, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	srcAbs, err := v.assertAssetFile(rel)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	destDir, err := v.cleanAssetTargetDir(targetDir)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	if err := os.MkdirAll(destDir, v.dirMode); err != nil {
+		return AssetMeta{}, err
+	}
+	if filepath.Clean(destDir) == filepath.Clean(filepath.Dir(srcAbs)) {
+		return v.assetMetaForAbs(srcAbs)
+	}
+	name := filepath.Base(srcAbs)
+	ext := filepath.Ext(name)
+	destAbs, err := uniquePath(destDir, strings.TrimSuffix(name, ext), ext)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	if err := os.Rename(srcAbs, destAbs); err != nil {
+		return AssetMeta{}, err
+	}
+	return v.assetMetaForAbs(destAbs)
+}
+
+// MoveAssetRewritingLinksIn is MoveAsset plus the link rewrite, in the notes
+// rewrite accepts (nil: every note).
+func (v *Vault) MoveAssetRewritingLinksIn(rel, targetDir string, rewrite func(path string) bool) (AssetMeta, error) {
+	assetsBefore, _ := v.ListAssets()
+	notesBefore, _ := v.ListNotes()
+	oldRel := vaultRelOf(v, rel)
+	meta, err := v.MoveAsset(rel, targetDir)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	if meta.Path != oldRel {
+		v.rewriteAssetReferences(notesBefore, assetsBefore, oldRel, meta.Path, rewrite)
+	}
+	return meta, nil
+}
+
+// vaultRelOf spells rel the way the listings do, for comparing against them.
+func vaultRelOf(v *Vault, rel string) string {
+	abs, err := v.assertAssetFile(rel)
+	if err != nil {
+		return ""
+	}
+	return v.relPosix(abs)
+}
+
+// DuplicateAsset copies an asset next to itself as "<name> copy<ext>",
+// mirroring the desktop duplicateAsset.
+func (v *Vault) DuplicateAsset(rel string) (AssetMeta, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	srcAbs, err := v.assertAssetFile(rel)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	ext := filepath.Ext(srcAbs)
+	stem := strings.TrimSuffix(filepath.Base(srcAbs), ext)
+	destAbs, err := uniquePath(filepath.Dir(srcAbs), stem+" copy", ext)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	in, err := os.Open(srcAbs)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(destAbs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, v.fileMode)
+	if err != nil {
+		return AssetMeta{}, err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(destAbs)
+		return AssetMeta{}, err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(destAbs)
+		return AssetMeta{}, err
+	}
+	return v.assetMetaForAbs(destAbs)
+}
+
 func (v *Vault) assertAssetFile(rel string) (string, error) {
 	trimmed := strings.Trim(strings.TrimSpace(filepath.ToSlash(rel)), "/")
 	if trimmed == "" {
@@ -158,6 +267,19 @@ func (v *Vault) assertAssetFile(rel string) (string, error) {
 
 // cleanAssetTargetDir resolves a vault-relative destination directory for a
 // move. Empty resolves to the unified assets/ folder. Assumes caller holds v.mu.
+func (v *Vault) cleanAssetTargetDir(targetDir string) (string, error) {
+	normalized := strings.Trim(strings.TrimSpace(filepath.ToSlash(targetDir)), "/")
+	if normalized == "" {
+		return SafeJoin(v.root, AssetsDir)
+	}
+	for _, part := range strings.Split(normalized, "/") {
+		if part == internalVaultDir {
+			return "", errors.New("cannot move assets into internal ZenNotes files")
+		}
+	}
+	return SafeJoin(v.root, normalized)
+}
+
 func (v *Vault) assetMetaForAbs(abs string) (AssetMeta, error) {
 	info, err := os.Stat(abs)
 	if err != nil {

@@ -230,11 +230,34 @@ const DefaultInstructions = "You are connected to a user's ZenNotes vault: plain
 	"  confirmation.\n" +
 	"- Before rename_note, run backlinks.\n" +
 	"- Task ids from list_tasks (`path#index`) are stable, so pass\n" +
-	"  them to toggle_task.\n" +
+	"  them to toggle_task, or to update_task to change a due date,\n" +
+	"  priority, @waiting, state, status or text. Use update_task rather\n" +
+	"  than editing a task's line by hand.\n" +
+	"- Long note: note_sections lists its headings, and with `heading`\n" +
+	"  reads just that part. edit_section adds to or rewrites the part\n" +
+	"  under a heading, so you need no line numbers.\n" +
+	"- \"Add to today's note\": daily_note says where it lives under this\n" +
+	"  vault's settings. Never build a daily note's path yourself. If it\n" +
+	"  does not exist, pass its `createWith` to create_note as it is.\n" +
 	"- list_tasks omits notes opted out of Tasks (frontmatter\n" +
 	"  `tasks: false`/`note`, excluded folders, the template folder,\n" +
 	"  and notes outside the vault's Task folders when it has any). Pass\n" +
 	"  includeExcluded: true only when the user asks for everything.\n" +
+	"\n" +
+	"## Attachments\n" +
+	"\n" +
+	"Images, PDFs, audio and other files live beside the notes. Find them with\n" +
+	"list_assets; read_asset shows you one, up to 5 MiB.\n" +
+	"\n" +
+	"- To attach a file, call upload_asset, then put the `markdown` it returns\n" +
+	"  into the note with append_to_note or edit_section. It never overwrites:\n" +
+	"  use the `path` and `markdown` it gives back.\n" +
+	"- A diagram you can draw belongs in a fence (see below), not in an image.\n" +
+	"- rename_asset and move_asset update the notes that link to the file.\n" +
+	"- delete_asset moves a file to the app's Trash and returns an undoToken for\n" +
+	"  restore_asset; list_assets with `deleted: true` shows what can come back.\n" +
+	"  Permanently deleting one is the user's to do, in the app. Notes keep their\n" +
+	"  links to a deleted file, so tell the user which ones.\n" +
 	"\n" +
 	"## Comments: reviewing a note together\n" +
 	"\n" +

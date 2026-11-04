@@ -32,14 +32,18 @@ var recordedTools = map[string]func(a args) string{
 	"prepend_to_note": pathArg,
 	"insert_at_line":  pathArg,
 	"replace_in_note": pathArg,
-	"toggle_task": func(a args) string {
-		id, _ := a["id"].(string)
-		hash := strings.LastIndex(id, "#")
-		if hash <= 0 {
-			return ""
-		}
-		return id[:hash]
-	},
+	"edit_section":    pathArg,
+	"toggle_task":     taskNoteArg,
+	"update_task":     taskNoteArg,
+}
+
+func taskNoteArg(a args) string {
+	id, _ := a["id"].(string)
+	hash := strings.LastIndex(id, "#")
+	if hash <= 0 {
+		return ""
+	}
+	return id[:hash]
 }
 
 func pathArg(a args) string {
