@@ -8,8 +8,8 @@ import (
 )
 
 // A table cell escapes a wikilink's separator as `\|`, because GFM would end the
-// cell at a bare pipe. Note names cannot hold a backslash, so one right before
-// the pipe is always the escape and never part of the target.
+// cell at a bare pipe. The app never creates a name with a backslash, so one right
+// before the pipe is read as the escape and never as part of the target.
 
 func TestExtractWikilinksReadsAnEscapedPipe(t *testing.T) {
 	for _, c := range []struct {
@@ -143,6 +143,19 @@ func TestRewritesKeepTheSpacesAroundATarget(t *testing.T) {
 		got, n := RewriteAssetReferencesInBody(c.in, assets, nil, "notes/n.md", "assets/pic.png", c.newPath)
 		if got != c.want || n != c.changed {
 			t.Errorf("asset: %s -> %d, %s, want %d, %s", c.in, n, got, c.changed, c.want)
+		}
+	}
+}
+
+func TestRenameKeepsAFolderWrittenWithABackslash(t *testing.T) {
+	notes := []NoteMeta{{Path: "inbox/C.md", Title: "C", Folder: FolderInbox}}
+	for in, want := range map[string]string{
+		`[[inbox\C.md|d]]`: `[[inbox\Renamed.md|d]]`,
+		// Only a `/` or a `.md` makes a target a path, as the resolver reads them.
+		`[[inbox\C]]`: `[[inbox\C]]`,
+	} {
+		if got, _ := RewriteWikilinksForRename(in, notes, "inbox/C.md", "Renamed"); got != want {
+			t.Errorf("rename: %s -> %s, want %s", in, got, want)
 		}
 	}
 }

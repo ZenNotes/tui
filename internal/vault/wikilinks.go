@@ -141,7 +141,8 @@ func wikiKeepSpaces(written, next string) string {
 
 func wikiSwapBasename(target, newTitle string) string {
 	dir, base := "", target
-	if slash := strings.LastIndexByte(target, '/'); slash >= 0 {
+	// The resolver reads a backslash as a path separator too.
+	if slash := strings.LastIndexAny(target, `/\`); slash >= 0 {
 		dir, base = target[:slash+1], target[slash+1:]
 	}
 	md := ""

@@ -25,8 +25,9 @@ var (
 )
 
 // assetSplitWikilink separates a wikilink's target from its `|alias` or `|300`,
-// keeping the separator, which a table escapes as `\|`, on the second part. Note
-// names cannot hold a backslash, so one right before the pipe is that escape.
+// keeping the separator, which a table escapes as `\|`, on the second part. The
+// app never creates a name with a backslash, so one right before the pipe is read
+// as that escape.
 func assetSplitWikilink(content string) (target, rest string) {
 	p := strings.IndexByte(content, '|')
 	if p < 0 {
@@ -242,6 +243,9 @@ func assetEncodeLike(original, next string) string {
 // and otherwise gets the full path; a markdown href is a real relative path,
 // so it follows the file with `..` where needed.
 func assetRetarget(reference string, resolution assetReferenceResolution, noteDir, newPath string, bareStillUnique, wikilink bool) string {
+	if trimmed := strings.TrimSpace(reference); wikilink && trimmed != reference {
+		return wikiKeepSpaces(reference, assetRetarget(trimmed, resolution, noteDir, newPath, bareStillUnique, true))
+	}
 	angled := strings.HasPrefix(reference, "<") && strings.HasSuffix(reference, ">")
 	inner := reference
 	if angled {
@@ -348,8 +352,7 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteM
 		if _, isNote := ResolveWikilink(notes, target); isNote {
 			continue
 		}
-		retargeted := assetRetarget(strings.TrimSpace(target), r, noteDir, newPath, bareStillUnique, true)
-		next := embed + "[[" + wikiKeepSpaces(target, retargeted) + rest + "]]"
+		next := embed + "[[" + assetRetarget(target, r, noteDir, newPath, bareStillUnique, true) + rest + "]]"
 		if next == body[m[0]:m[1]] {
 			continue // a bare name that still resolves reads exactly as before
 		}
