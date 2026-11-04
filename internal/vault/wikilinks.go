@@ -144,49 +144,95 @@ func wikiSwapBasename(target, newTitle string) string {
 }
 
 // wikiCodeMask marks byte positions inside fenced or inline code so links
-// there are left untouched.
+// there are left untouched. Fences follow the desktop's stripCodeContent: only
+// the same character, at least as long as the opener with nothing after it,
+// closes one, and a backtick fence's info string has no backtick. An inline span
+// runs between two backtick runs of equal length on one line.
 func wikiCodeMask(body string) []bool {
 	mask := make([]bool, len(body))
-	lineStart := 0
-	inFence := false
-	for i := 0; i <= len(body); i++ {
-		if i == len(body) || body[i] == '\n' {
-			line := body[lineStart:i]
-			trimmed := strings.TrimLeft(line, " \t")
-			isFence := strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
-			switch {
-			case inFence:
-				for j := lineStart; j < i; j++ {
-					mask[j] = true
-				}
-				if isFence {
-					inFence = false
-				}
-			case isFence:
-				inFence = true
-				for j := lineStart; j < i; j++ {
-					mask[j] = true
-				}
-			default:
-				open := -1
-				for k := 0; k < len(line); k++ {
-					if line[k] != '`' {
-						continue
-					}
-					if open < 0 {
-						open = k
-					} else {
-						for j := open; j <= k; j++ {
-							mask[lineStart+j] = true
-						}
-						open = -1
-					}
-				}
-			}
-			lineStart = i + 1
+	fenceChar, fenceLen := byte(0), 0
+	for start := 0; start < len(body); {
+		end := len(body)
+		if i := strings.IndexByte(body[start:], '\n'); i >= 0 {
+			end = start + i
 		}
+		line := body[start:end]
+		char, n, rest := codeFenceMarker(line)
+		switch {
+		case fenceChar != 0:
+			markAll(mask[start:end])
+			if char == fenceChar && n >= fenceLen && strings.TrimSpace(rest) == "" {
+				fenceChar = 0
+			}
+		case n > 0 && (char == '~' || !strings.Contains(rest, "`")):
+			fenceChar, fenceLen = char, n
+			markAll(mask[start:end])
+		default:
+			markInlineCode(mask[start:end], line)
+		}
+		start = end + 1
 	}
 	return mask
+}
+
+// codeFenceMarker reads a line's fence marker of three or more backticks or
+// tildes, and what follows it. n is 0 when the line has none.
+func codeFenceMarker(line string) (char byte, n int, rest string) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if trimmed == "" || (trimmed[0] != '`' && trimmed[0] != '~') {
+		return 0, 0, ""
+	}
+	run := repeatedPrefix(trimmed)
+	if run < 3 {
+		return 0, 0, ""
+	}
+	return trimmed[0], run, trimmed[run:]
+}
+
+// repeatedPrefix is how many times s's first byte repeats at its start.
+func repeatedPrefix(s string) int {
+	n := 1
+	for n < len(s) && s[n] == s[0] {
+		n++
+	}
+	return n
+}
+
+func markAll(mask []bool) {
+	for i := range mask {
+		mask[i] = true
+	}
+}
+
+// markInlineCode marks the inline code spans of one line. A backtick run with no
+// partner of its length is literal text.
+func markInlineCode(mask []bool, line string) {
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		n := repeatedPrefix(line[i:])
+		closed := -1
+		for j := i + n; j < len(line); {
+			if line[j] != '`' {
+				j++
+				continue
+			}
+			m := repeatedPrefix(line[j:])
+			if m == n {
+				closed = j + m
+				break
+			}
+			j += m
+		}
+		if closed < 0 {
+			i += n
+			continue
+		}
+		markAll(mask[i:closed])
+		i = closed
+	}
 }
 
 // RewriteWikilinksForRename rewrites every `[[target]]` / `![[target]]` in

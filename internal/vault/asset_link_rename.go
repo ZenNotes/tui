@@ -254,10 +254,18 @@ func assetRetarget(reference string, resolution assetReferenceResolution, noteDi
 			next = "/" + newPath
 		}
 	}
-	out := assetEncodeLike(inner, next) + suffix
+	out := assetEncodeLike(inner, next)
+	// A raw name that happens to hold an escape, like 50%20off.pdf, would read
+	// back as another file. Goes beyond znserver's and the desktop's copies.
+	if !wikilink && out == next {
+		if decoded, err := url.PathUnescape(next); err == nil && decoded != next {
+			out = strings.ReplaceAll(next, "%", "%25")
+		}
+	}
+	out += suffix
 	// A Markdown destination with a space or a parenthesis only stays a link in
-	// angle brackets, and a rename or a numbered name can bring either in. This
-	// is the one place this copy goes beyond znserver's and the desktop's.
+	// angle brackets, and a rename or a numbered name can bring either in. Also
+	// goes beyond those copies.
 	if angled || (!wikilink && strings.ContainsAny(out, " \t()")) {
 		return "<" + strings.NewReplacer("<", "%3C", ">", "%3E").Replace(out) + ">"
 	}
@@ -269,8 +277,10 @@ func assetRetarget(reference string, resolution assetReferenceResolution, noteDi
 // changes the name, a move the directory). assets must be the pre-change
 // listing so references resolve to the asset under the path they currently
 // use; notePath is the note holding body, since a markdown href resolves
-// relative to it. Code is skipped.
-func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notePath, oldPath, newPath string) (string, int) {
+// relative to it. Code is skipped, and so is a wikilink target that names a note
+// in notes: a note wins over a file of the same name, as in the desktop's
+// follow-link.
+func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteMeta, notePath, oldPath, newPath string) (string, int) {
 	if newPath == "" || oldPath == newPath {
 		return body, 0
 	}
@@ -324,6 +334,9 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notePath, old
 		if !ok {
 			continue
 		}
+		if _, isNote := ResolveWikilink(notes, target); isNote {
+			continue
+		}
 		next := embed + "[[" + assetRetarget(target, r, noteDir, newPath, bareStillUnique, true) + rest + "]]"
 		if next == body[m[0]:m[1]] {
 			continue // a bare name that still resolves reads exactly as before
@@ -368,6 +381,51 @@ func rewriteAssetReferencesInBody(body string, assets []AssetMeta, notePath, old
 	return sb.String(), changed
 }
 
+// RewriteAssetReferencesInBody is rewriteAssetReferencesInBody for a caller that
+// writes through its own buffers, as `zn tui` does.
+func RewriteAssetReferencesInBody(body string, assets []AssetMeta, notes []NoteMeta, notePath, oldPath, newPath string) (string, int) {
+	return rewriteAssetReferencesInBody(body, assets, notes, notePath, oldPath, newPath)
+}
+
+// AssetsReferencedBy returns the vault-relative paths of the assets body
+// references, read the way a rename reads them: note-relative, then vault-root,
+// then by unique basename. Code is skipped, and so is a wikilink target that
+// names a note in notes. assets is the current listing; notePath is the note
+// holding body.
+func AssetsReferencedBy(body string, assets []AssetMeta, notes []NoteMeta, notePath string) map[string]bool {
+	found := map[string]bool{}
+	if !strings.Contains(body, "[[") && !strings.Contains(body, "](") {
+		return found
+	}
+	mask := wikiCodeMask(body)
+	resolve := func(reference string) (string, bool) {
+		t := strings.TrimSpace(reference)
+		if strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">") {
+			t = t[1 : len(t)-1]
+		}
+		return resolveAssetPathAmong(assets, notePath, t)
+	}
+	for _, m := range assetWikilinkRe.FindAllStringSubmatchIndex(body, -1) {
+		if mask[m[0]] {
+			continue
+		}
+		target, _, _ := strings.Cut(body[m[4]:m[5]], "|")
+		if p, ok := resolve(target); ok {
+			if _, isNote := ResolveWikilink(notes, target); !isNote {
+				found[p] = true
+			}
+		}
+	}
+	for _, m := range assetMdDestRe.FindAllStringSubmatchIndex(body, -1) {
+		if !mask[m[0]] {
+			if p, ok := resolve(body[m[2]:m[3]]); ok {
+				found[p] = true
+			}
+		}
+	}
+	return found
+}
+
 // rewriteAssetReferences rewrites every note that referenced the renamed or
 // moved asset, skipping the trash and whatever rewrite turns down (nil: every
 // note). This vault's listing carries no attachment flag, so it reads each note
@@ -381,7 +439,7 @@ func (v *Vault) rewriteAssetReferences(notesBefore []NoteMeta, assetsBefore []As
 		if err != nil {
 			continue
 		}
-		body, changed := rewriteAssetReferencesInBody(content.Body, assetsBefore, n.Path, oldRel, newRel)
+		body, changed := rewriteAssetReferencesInBody(content.Body, assetsBefore, notesBefore, n.Path, oldRel, newRel)
 		if changed > 0 {
 			_, _ = v.WriteNote(n.Path, body)
 		}
