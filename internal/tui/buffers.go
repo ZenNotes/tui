@@ -157,7 +157,7 @@ func (a *App) editorLineRows(buf *noteBuffer, line int) int {
 
 // dirty reports unsaved edits.
 func (b *noteBuffer) dirty() bool {
-	return !b.loading && b.ed.Text() != b.savedText
+	return !b.loading && b.ed.Text() != vim.NormalizedText(b.savedText)
 }
 
 // undoEmptied reports a buffer that undo or redo left blank while its file has

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
@@ -14,6 +15,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	xansi "github.com/charmbracelet/x/ansi"
+
+	"github.com/ZenNotes/tui/internal/termsafe"
 )
 
 // The reading view can render through Glamour, the renderer behind Glow.
@@ -448,6 +451,38 @@ func finishTokens(row string) string {
 	return tokenFinisher.Replace(row)
 }
 
+// breakLongWords puts a space into every word over 2 KB. Glamour's word wrap is
+// quadratic in a word's length, and a very long word would stall the reading
+// view. No such word fits a pane, so it wraps either way, and lines stay lines.
+func breakLongWords(text string) string {
+	const limit, chunk = 2048, 1024
+	run := 0
+	for i := 0; i < len(text); i++ {
+		if text[i] == ' ' || text[i] == '\n' || text[i] == '\t' {
+			run = 0
+		} else if run++; run > limit {
+			break
+		}
+	}
+	if run <= limit {
+		return text
+	}
+	var b strings.Builder
+	b.Grow(len(text) + len(text)/chunk)
+	run = 0
+	for i, r := range text {
+		if r == ' ' || r == '\n' || r == '\t' {
+			run = 0
+		} else if run >= chunk && len(text)-i > limit-chunk {
+			b.WriteByte(' ')
+			run = 0
+		}
+		b.WriteRune(r)
+		run += utf8.RuneLen(r)
+	}
+	return b.String()
+}
+
 // renderGlamourLines renders a note block by block.
 func (a *App) renderGlamourLines(text string, width int) ([]previewLine, error) {
 	return a.renderGlamourLinesFrom(text, width, a.previewPath)
@@ -461,7 +496,7 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 		return nil, err
 	}
 	th := a.theme
-	lines := strings.Split(text, "\n")
+	lines := strings.Split(breakLongWords(termsafe.Visible(text)), "\n")
 	out := []previewLine{}
 	for _, b := range splitBlocks(lines, a.prefs.TerminalMath == "latex") {
 		embedded, ok := a.embedBlockLines(b, lines, width, fromPath)

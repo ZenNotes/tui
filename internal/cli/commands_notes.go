@@ -118,14 +118,14 @@ func cmdRead(ctx context.Context, b backend.Backend, args Args) error {
 		return nil
 	}
 	if args.Bool("pretty") || args.Str("style") != "" {
-		out, err := renderPretty(note.Body, args.Str("style"))
+		out, err := renderPretty(screenText(note.Body), args.Str("style"))
 		if err != nil {
 			return err
 		}
 		fmt.Fprint(stdout, out)
 		return nil
 	}
-	fmt.Fprint(stdout, note.Body)
+	fmt.Fprint(stdout, screenText(note.Body))
 	if !strings.HasSuffix(note.Body, "\n") {
 		fmt.Fprint(stdout, "\n")
 	}

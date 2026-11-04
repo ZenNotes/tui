@@ -65,6 +65,7 @@ func dispatchTable() map[string]Handler {
 
 // Main runs the CLI and returns the exit code.
 func Main(argv []string) int {
+	useTerminalFilter()
 	code, err := run(argv)
 	if err != nil {
 		var invocation *invocationError

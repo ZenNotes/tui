@@ -19,6 +19,7 @@ import (
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/fswatch"
 	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
@@ -620,11 +621,13 @@ func (a *App) ignoreChange(path string) {
 // --- messages and toasts ---
 
 func (a *App) notify(text string) {
+	text = termsafe.Visible(text) // it often names a note
 	a.message, a.messageErr = text, false
 	a.addToast(text, false)
 }
 
 func (a *App) notifyError(text string) {
+	text = termsafe.Visible(text)
 	a.message, a.messageErr = text, true
 	a.addToast(text, true)
 }
@@ -763,7 +766,7 @@ func (a *App) View() string {
 	if a.cursorOut != nil {
 		a.cursorOut.Set(a.cursor)
 	}
-	return a.theme.paint(screen)
+	return termsafe.Clean(a.theme.paint(screen))
 }
 
 func (a *App) renderVerticalBorder(h int, focused bool) string {
