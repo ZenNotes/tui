@@ -149,3 +149,29 @@ func TestDecomposedDestinationFindsTheComposedFolderBesideAPlainOne(t *testing.T
 		t.Errorf("the note went elsewhere: %s", got)
 	}
 }
+
+// A note's path finds it the way a folder's does, even with its neighbour one fold away.
+func TestDecomposedNotePathFindsTheComposedFolderBesideAPlainOne(t *testing.T) {
+	const decomposed, composed = "Cafe\u0301", "Caf\u00e9"
+	root := seedDenyFolder(t, `{"primaryNotesLocation":"root"}`, []string{"Cafe/x.md", composed + "/x.md", "Other/n.md"})
+	if err := os.WriteFile(filepath.Join(root, composed, "x.md"), []byte("with accent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Cafe/x.md"), []byte("plain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, cs := range map[string]*sdk.ClientSession{
+		"allow": runScoped(t, root, testScope(t, "read", []string{composed, "Cafe"}, nil)),
+		"deny":  runScoped(t, root, testScope(t, "read", nil, []string{"Other/n.md"})),
+	} {
+		got := mustCall(t, cs, "read_note", map[string]any{"path": decomposed + "/x.md"})
+		if !strings.Contains(got, "with accent") {
+			t.Errorf("%s: read %s", name, got)
+		}
+	}
+	// A deny entry reads looser than a path does, so it hides both, by any spelling.
+	hidden := runScoped(t, root, testScope(t, "read", nil, []string{"Cafe/x.md"}))
+	for _, p := range []string{"Cafe/x.md", "cafe/X.md", composed + "/x.md", decomposed + "/x.md"} {
+		mustFail(t, hidden, "read_note", map[string]any{"path": p})
+	}
+}

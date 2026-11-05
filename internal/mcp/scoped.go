@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path"
@@ -561,17 +562,11 @@ func (v *scopeView) note(raw string) (vault.NoteMeta, bool) {
 	}
 	meta, ok := v.byPath[clean]
 	if !ok {
-		folded := search.Fold(clean)
-		count := 0
-		for p, m := range v.byPath {
-			if search.Fold(p) == folded {
-				meta = m
-				count++
-			}
-		}
-		if count != 1 {
+		spelled, found := spell(clean, slices.Collect(maps.Keys(v.byPath)))
+		if !found {
 			return vault.NoteMeta{}, false
 		}
+		meta = v.byPath[spelled]
 	}
 	if !v.visible(meta.Path) {
 		return vault.NoteMeta{}, false
