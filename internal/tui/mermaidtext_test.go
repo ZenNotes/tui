@@ -1242,3 +1242,39 @@ func TestMermaidLabelDropsInlineTags(t *testing.T) {
 		}
 	}
 }
+
+// A pane too narrow for a box still shows every node and edge, and fits.
+func TestMermaidFitsPanesOfOneToEightCells(t *testing.T) {
+	a := mermaidTestApp()
+	src := "graph TD\nA[One two]-->B[Two]\nB-->|yes|A\nsubgraph G\nC[Three]\nend"
+	parsed := parseMermaidText(src)
+	for width := 1; width <= 16; width++ {
+		lines := a.mermaidTextLines(parsed, src, 0, width)
+		text := ""
+		for _, l := range lines {
+			plain := stripAnsi(l.text)
+			if got := cellWidth(plain); got > width {
+				t.Errorf("width %d: row %q is %d cells", width, plain, got)
+			}
+			text += plain
+		}
+		text = squeezed(text)
+		for _, want := range []string{"One", "Two", "yes", "Three"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("width %d lost %q: %q", width, want, text)
+			}
+		}
+	}
+	// A wide character has nowhere to go in one cell, and the drawing still ends.
+	if got := flowWrap("＠＠", 1); len(got) != 2 {
+		t.Errorf("flowWrap gave %q", got)
+	}
+	// A source shown instead of a drawing fits as well.
+	for width := 1; width <= 8; width++ {
+		for _, l := range a.mermaidTextLines(parseMermaidText("classDiagram\nA <|-- B"), "classDiagram\nA <|-- B", 0, width) {
+			if got := cellWidth(stripAnsi(l.text)); got > width {
+				t.Errorf("source at width %d: %q is %d cells", width, stripAnsi(l.text), got)
+			}
+		}
+	}
+}

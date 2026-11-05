@@ -65,14 +65,17 @@ func parseMermaidText(src string) *mermaidText {
 // mermaidTextLines lays a parsed diagram out for a pane width.
 func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) []previewLine {
 	th := a.theme
-	inner := width - 1 // the row's leading space
+	inner, pad := width-1, " " // the row's leading space, if there is room for it
+	if width < 2 {
+		inner, pad = 1, ""
+	}
 	source := func(note string, noteStyle func(...string) string) []previewLine {
 		out := []previewLine{}
 		for _, row := range wrapCommentText(note, inner) {
-			out = append(out, previewLine{text: " " + noteStyle(row), srcLine: srcLine})
+			out = append(out, previewLine{text: pad + noteStyle(row), srcLine: srcLine})
 		}
 		for _, row := range wrapCommentText(strings.ReplaceAll(src, "\t", "  "), inner) {
-			out = append(out, previewLine{text: " " + th.Code.Render(row), srcLine: srcLine})
+			out = append(out, previewLine{text: pad + th.Code.Render(row), srcLine: srcLine})
 		}
 		return out
 	}
@@ -96,7 +99,7 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 	}
 	out := make([]previewLine, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, previewLine{text: " " + th.Base.Render(row), srcLine: srcLine})
+		out = append(out, previewLine{text: pad + th.Base.Render(row), srcLine: srcLine})
 	}
 	return out
 }
@@ -617,13 +620,32 @@ func mermaidStatementRead(line string, one *types.MermaidGraph, isState bool) bo
 // rows draws the diagram no wider than width.
 func (f *flowchart) rows(width int) []string {
 	var out []string
-	if f.leftToRight {
+	switch {
+	case width < flowBoxMinWidth:
+		out = f.rowsPlain(width)
+	case f.leftToRight:
 		out = f.rowsAcross(width)
 	}
 	if out == nil {
 		out = f.rowsDown(width)
 	}
 	return append(out, f.groupRows(width)...)
+}
+
+// flowBoxMinWidth is what a column needs: a box around two cells of label, and a
+// listed edge's hook and arrow with two cells of target.
+const flowBoxMinWidth = 8
+
+// rowsPlain is the diagram with no box drawing, for a pane too narrow for any.
+func (f *flowchart) rowsPlain(width int) []string {
+	out := []string{}
+	for _, id := range f.order {
+		out = append(out, flowWrap(f.label(id), width)...)
+		for _, e := range f.bySource[id] {
+			out = append(out, flowWrap("▶ "+f.edgeTarget(e), width)...)
+		}
+	}
+	return out
 }
 
 // outgoing splits a node's edges: the first to the node drawn next goes
@@ -660,7 +682,7 @@ func (f *flowchart) edgeTarget(e *types.MermaidEdge) string {
 // flowWrap wraps text at spaces, keeping a flag like -m whole, and breaks a
 // word only when it alone is wider than the width.
 func flowWrap(text string, width int) []string {
-	width = max(2, width) // one wide character always fits
+	width = max(1, width)
 	out := []string{}
 	for _, line := range strings.Split(text, "\n") {
 		if cellWidth(line) <= width {
@@ -676,7 +698,9 @@ func flowWrap(text string, width int) []string {
 			if row != "" {
 				out = append(out, row)
 			}
-			pieces := strings.Split(xansi.Hardwrap(word, width, false), "\n")
+			// A wide character in one cell gets a row of its own, past the pane's edge,
+			// and the wrap leaves an empty row before it.
+			pieces := strings.Split(strings.TrimLeft(xansi.Hardwrap(word, width, false), "\n"), "\n")
 			out = append(out, pieces[:len(pieces)-1]...)
 			row = pieces[len(pieces)-1]
 		}
