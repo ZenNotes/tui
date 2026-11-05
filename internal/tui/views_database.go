@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -285,7 +286,7 @@ func (v *databaseView) render(a *App, w, h int, focused bool) string {
 		v.refresh(a)
 	}
 	if v.err != nil {
-		return fitBlock(" "+th.StatusError.Render(v.err.Error()), w, h)
+		return fitBlock(" "+th.StatusError.Render(termsafe.Line(v.err.Error())), w, h)
 	}
 	lines := []string{v.renderTitle(a, w)}
 	v.pageRows = max(1, h-3)

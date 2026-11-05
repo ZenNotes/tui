@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -22,6 +23,8 @@ type previewState struct {
 	scroll     int
 	cursor     int
 	followLine int
+	// rows is the pane's height at the last draw.
+	rows int
 	// jumpLine is a source line the next draw brings to the top, for a link
 	// followed to an anchor; jumpPending says one is waiting.
 	jumpLine    int
@@ -69,6 +72,7 @@ var (
 	embedWikiRe  = regexp.MustCompile(`!\[\[((?:[^\]|\\]|\\[^\]|])[^\]|]*?)(?:\\?\|[^\]]*)?\]\]`)
 	embedImgRe   = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
 	highlightRe  = regexp.MustCompile(`==[^=\n]+==`)
+	strongEmphRe = regexp.MustCompile(`\*\*\*[^*\n]+\*\*\*|___[^_\n]+___`)
 	mathInlineRe = regexp.MustCompile(`\$[^$\n]+\$`)
 	orderedRe    = regexp.MustCompile(`^(\s*)(\d+)[.)]\s+(.*)$`)
 	bulletRe     = regexp.MustCompile(`^(\s*)[-*+]\s+(.*)$`)
@@ -84,6 +88,9 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 	fenceChar, fenceLen := byte(0), 0
 	inFront := len(lines) > 0 && lines[0] == "---"
 	frontDone := false
+	// Indented code cannot interrupt a paragraph, a quote's included, and under a list
+	// item the indent says the line belongs to the item.
+	afterParagraph, inList := false, false
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
@@ -119,16 +126,25 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 				i++
 				continue
 			}
-			for _, seg := range wrapLine([]rune(strings.ReplaceAll(line, "\t", "    ")), max(1, width-2)) {
-				out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string([]rune(strings.ReplaceAll(line, "\t", "    "))[seg.start:seg.end])), srcLine: i})
-			}
+			out = append(out, zenCodeRows(th, line, i, width)...)
 			i++
 			continue
 		}
+		wasParagraph := afterParagraph
+		afterParagraph = false
 		if strings.TrimSpace(line) == "" {
 			out = append(out, previewLine{text: "", srcLine: i})
 			i++
 			continue
+		}
+		if code, ok := strings.CutPrefix(strings.Replace(line, "\t", "    ", 1), "    "); ok {
+			if !wasParagraph && !inList {
+				out = append(out, zenCodeRows(th, code, i, width)...)
+				i++
+				continue
+			}
+		} else {
+			inList = listLineRe.MatchString(line)
 		}
 		if hrRe.MatchString(line) {
 			out = append(out, previewLine{text: th.Muted.Render(strings.Repeat("─", width)), srcLine: i})
@@ -169,11 +185,19 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 		}
 		if m := calloutRe.FindStringSubmatch(line); m != nil {
 			kind := strings.ToUpper(m[1])
-			title := m[2]
-			if title == "" {
-				title = kind
+			bar := th.Quote.Foreground(th.Blue).Render("▍ ")
+			titleStyle := th.Bold.Foreground(th.Blue)
+			if m[2] == "" {
+				out = append(out, previewLine{text: bar + titleStyle.Render(kind), srcLine: i})
+				afterParagraph = true
+				i++
+				continue
 			}
-			out = append(out, previewLine{text: th.Quote.Foreground(th.Blue).Render("▍ ") + th.Bold.Foreground(th.Blue).Render(kind+" · "+title), srcLine: i})
+			// A title is inline text like any other, so its embeds and code render.
+			label := kind + " · "
+			rows := a.paragraph(m[2], width-2-cellWidth(label), func(class int) lipgloss.Style { return titleStyle }, bar+titleStyle.Render(label), bar+strings.Repeat(" ", cellWidth(label)), i)
+			out = append(out, rows...)
+			afterParagraph = true
 			i++
 			continue
 		}
@@ -181,6 +205,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			content := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), ">"))
 			rows := a.paragraph(content, width-2, func(class int) lipgloss.Style { return th.Quote }, th.Quote.Render("▍ "), th.Quote.Render("▍ "), i)
 			out = append(out, rows...)
+			afterParagraph = true
 			i++
 			continue
 		}
@@ -232,7 +257,18 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 		}
 		rows := a.paragraph(line, width, nil, "", "", i)
 		out = append(out, rows...)
+		afterParagraph = true
 		i++
+	}
+	return out
+}
+
+// zenCodeRows draws one line of a code block in the zen style.
+func zenCodeRows(th Theme, line string, srcLine, width int) []previewLine {
+	runes := []rune(strings.ReplaceAll(line, "\t", "    "))
+	out := []previewLine{}
+	for _, seg := range wrapLine(runes, max(1, width-2)) {
+		out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string(runes[seg.start:seg.end])), srcLine: srcLine})
 	}
 	return out
 }
@@ -264,6 +300,33 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		}
 		spans = append(spans, inlineSpan{m[0], m[1], class, display, link})
 	}
+	// around marks syntax on either side of what is already taken: its markers show
+	// nothing, and the text between takes class. Code or a link inside `**` keeps its
+	// own look rather than leave the stars on screen.
+	around := func(m []int, marker, class int) {
+		from, to := m[0]+marker, m[1]-marker
+		if slices.Contains(taken[m[0]:from], true) || slices.Contains(taken[to:m[1]], true) {
+			return
+		}
+		// A marker with a space on its inner side is a literal character: `a * b * c`.
+		if text[from] == ' ' || text[to-1] == ' ' {
+			return
+		}
+		add([]int{m[0], from}, class, "", -1)
+		add([]int{to, m[1]}, class, "", -1)
+		for i := from; i < to; {
+			if taken[i] {
+				i++
+				continue
+			}
+			j := i
+			for j < to && !taken[j] {
+				j++
+			}
+			add([]int{i, j}, class, text[i:j], -1)
+			i = j
+		}
+	}
 	for _, c := range codes {
 		add([]int{c.start, c.end}, c.class, c.text, c.link)
 	}
@@ -285,6 +348,21 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		label := text[m[2]:m[3]]
 		link := mdLinkTargetOf(label, text[m[4]:m[5]])
 		links = append(links, link)
+		// A label's code and emphasis are part of the link's text.
+		spans = slices.DeleteFunc(spans, func(sp inlineSpan) bool {
+			inLabel := sp.class == stCode && m[2] <= sp.start && sp.end <= m[3]
+			if inLabel {
+				for i := sp.start; i < sp.end; i++ {
+					taken[i] = false
+				}
+			}
+			return inLabel
+		})
+		inner, _ := a.inlineRunes(label)
+		label = ""
+		for _, r := range inner {
+			label += string(r.r)
+		}
 		if label == "" {
 			label = link.target
 		}
@@ -294,10 +372,25 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		links = append(links, linkTarget{kind: "url", target: text[m[0]:m[1]]})
 		add(m, stLink, text[m[0]:m[1]], len(links)-1)
 	}
+	for _, m := range strongEmphRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 3, stStrong)
+			continue
+		}
+		add(m, stStrong, text[m[0]+3:m[1]-3], -1)
+	}
 	for _, m := range strongRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 2, stStrong)
+			continue
+		}
 		add(m, stStrong, text[m[0]+2:m[1]-2], -1)
 	}
 	for _, m := range strikeRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 2, stStrike)
+			continue
+		}
 		add(m, stStrike, text[m[0]+2:m[1]-2], -1)
 	}
 	for _, m := range highlightRe.FindAllStringIndex(text, -1) {
@@ -310,6 +403,10 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		start := m[0]
 		if start < len(text) && text[start] != '*' && text[start] != '_' {
 			start++
+		}
+		if slices.Contains(taken[start:m[1]], true) {
+			around([]int{start, m[1]}, 1, stEmph)
+			continue
 		}
 		add([]int{start, m[1]}, stEmph, text[start+1:m[1]-1], -1)
 	}
@@ -675,6 +772,7 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	width := max(1, w-2*pad)
 	lines := a.previewLinesFor(t, buf, width)
 	pv := t.preview
+	pv.rows = h
 	if t.mode == modeSplit {
 		// Follow the editor cursor.
 		target := previewRowFor(lines, pv.followLine)
@@ -698,8 +796,8 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 			pv.scroll = pv.cursor - h + 1
 		}
 	}
-	if pv.scroll > max(0, len(lines)-1) {
-		pv.scroll = max(0, len(lines)-1)
+	if pv.scroll > max(0, len(lines)-h) {
+		pv.scroll = max(0, len(lines)-h)
 	}
 	if pv.scroll < 0 {
 		pv.scroll = 0
@@ -722,12 +820,25 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	return strings.Join(out, "\n")
 }
 
-// previewKey handles reading-mode keys.
+// moveTo takes the row cursor to a row and the view with it, so a key that says
+// it scrolls shows that on its first press. Where the view cannot go further, at
+// either end of the note, the cursor goes on alone, which reaches the rows of the
+// first and last screens. Every row can still take the cursor, for Enter to
+// follow a link there or x to toggle a task.
+func (pv *previewState) moveTo(row, n, rows int) {
+	cur := listCursor{cursor: row}
+	cur.clamp(n)
+	cur.scroll = max(0, min(pv.scroll+cur.cursor-pv.cursor, n-rows))
+	cur.ensureVisible(rows)
+	pv.cursor, pv.scroll = cur.cursor, cur.scroll
+}
+
 // previewHint is the help line for reading mode.
 func (a *App) previewHint() string {
 	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"vim.leaderPrefix", "leader"}})
 }
 
+// previewKey handles reading-mode keys.
 func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	pv := t.preview
 	if pv == nil {
@@ -739,10 +850,22 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	if lines != nil {
 		n = len(lines.lines)
 	}
-	rows := a.editorRows(buf)
+	rows := pv.rows
+	if rows <= 0 {
+		rows = a.editorRows(buf)
+	}
+	// `gd` starts as `gg` does, so listNav holds its first key and drops it on the second.
+	if a.listKeyAllowed(k) && len(a.navKeys) > 0 {
+		seq := append(append([]vim.Key{}, a.navKeys...), k)
+		if complete, _ := matchSequence(seq, bindingKeys(a.keymap.Binding("vim.goToDefinition"))); complete {
+			a.navKeys = nil
+			a.previewFollow(t, buf)
+			return
+		}
+	}
 	cur := listCursor{cursor: pv.cursor, scroll: pv.scroll}
 	if a.listNav(&cur, k, n, rows) {
-		pv.cursor, pv.scroll = cur.cursor, cur.scroll
+		pv.moveTo(cur.cursor, n, rows)
 		return
 	}
 	if k.Is("enter") {

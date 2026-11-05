@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path"
@@ -19,6 +20,7 @@ import (
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -173,6 +175,11 @@ func (sb *scopedBackend) requireLinkMarks(ctx context.Context) error {
 	return nil
 }
 
+// databaseDirLister is a backend whose folder listing leaves database folders out.
+type databaseDirLister interface {
+	ListDatabaseDirs(ctx context.Context) ([]vault.FolderEntry, error)
+}
+
 func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	if err := sb.requireLinkMarks(ctx); err != nil {
 		return nil, err
@@ -198,7 +205,6 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		primaryAtRoot: desc.PrimaryNotesLocation == vault.PrimaryNotesRoot,
 		byPath:        map[string]vault.NoteMeta{},
 		folders:       map[string]vault.FolderEntry{},
-		allFolders:    folders,
 		ancestors:     map[string]bool{},
 	}
 	if sb.inner.Kind() == backend.KindLocal {
@@ -210,9 +216,19 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 			v.dirs = append(v.dirs, dir)
 		}
 	}
+	// A server lists a database folder as a folder, for its renderer, and a client with
+	// a path scope takes it as no more than that: it could delete the database, or rename
+	// it into a plain folder, with no sight of what else uses it. As on a local vault, it
+	// is not a folder to this client, though a path can still name it.
+	var databaseDirs []string
 	for _, f := range folders {
 		rel := v.folderRel(f)
+		if sb.scope.Restricted() && database.FormDirContaining(rel) != "" {
+			databaseDirs = append(databaseDirs, rel)
+			continue
+		}
 		v.folders[rel] = f
+		v.allFolders = append(v.allFolders, f)
 		v.dirs = append(v.dirs, rel)
 	}
 	// A linked note's content is whatever the link names, possibly a hidden
@@ -236,6 +252,18 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		known = append(known, n.Path)
 	}
 	known = append(known, v.dirs...)
+	known = append(known, databaseDirs...)
+	// A database folder is there to name, here where a folder listing leaves it out, even
+	// with no record page yet. It stays out of v.dirs: it takes no notes and no moves.
+	if lister, ok := sb.inner.(databaseDirLister); ok {
+		databases, err := lister.ListDatabaseDirs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range databases {
+			known = append(known, v.folderRel(f))
+		}
+	}
 
 	// An entry may name an attachment or the folder holding one. The listings
 	// above do not show those, so the assets are read only for an entry they
@@ -262,10 +290,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// Entries take the vault's own spelling, so `--allow-path /projects`
 	// finds `Projects/`.
 	for _, entry := range sb.scope.Allow {
-		canonical, ok := spellExactly(entry, known)
-		if !ok {
-			canonical, ok = spell(entry, known)
-		}
+		canonical, ok := spell(entry, known)
 		if !ok {
 			extra, err := knownAssets()
 			if err != nil {
@@ -354,11 +379,13 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 
 // notice tells whoever runs the server something the model should not read.
 func (sb *scopedBackend) notice(format string, args ...any) {
+	// It names what is in the vault, and whoever reads it may be at a terminal.
+	text := termsafe.Line(fmt.Sprintf(format, args...))
 	if sb.logf != nil {
-		sb.logf("mcp: "+format, args...)
+		sb.logf("mcp: %s", text)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "zn mcp: "+format+"\n", args...)
+	fmt.Fprintln(os.Stderr, "zn mcp: "+text)
 }
 
 func (sb *scopedBackend) flagWord(flag string) string {
@@ -395,38 +422,26 @@ func (sb *scopedBackend) occupiedCheck(ctx context.Context, root string) func(st
 	}
 }
 
-// spellExactly finds the one known path equal to p but for case and Unicode composition,
-// so that `Café` is that folder even with a `Cafe` beside it, where spell finds two.
-func spellExactly(p string, known []string) (string, bool) {
-	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
-	wanted, match, count := lower(p), "", 0
-	for _, k := range known {
-		if lower(k) == wanted {
-			match = k
-			count++
-		}
-	}
-	return match, count == 1
-}
-
-// spell finds the vault's spelling of p among known paths: exact, else the
-// one path equal to it after case and accent folding.
+// spell finds the vault's spelling of p among known paths: exact, else the one path
+// equal to it but for case and Unicode composition, so that `Café` is that folder even
+// with a `Cafe` beside it, else the one equal to it after accent folding as well. The
+// lists can name one path twice, which is still one path.
 func spell(p string, known []string) (string, bool) {
-	folded := search.Fold(p)
-	match := ""
-	count := 0
-	for _, k := range known {
-		if k == p {
-			return k, true
-		}
-		// The lists can name one path twice, which is still one path.
-		if search.Fold(k) == folded && k != match {
-			match = k
-			count++
-		}
+	if slices.Contains(known, p) {
+		return p, true
 	}
-	if count == 1 {
-		return match, true
+	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	for _, same := range []func(string) string{lower, search.Fold} {
+		wanted, match, count := same(p), "", 0
+		for _, k := range known {
+			if same(k) == wanted && k != match {
+				match = k
+				count++
+			}
+		}
+		if count == 1 {
+			return match, true
+		}
 	}
 	return "", false
 }
@@ -557,17 +572,11 @@ func (v *scopeView) note(raw string) (vault.NoteMeta, bool) {
 	}
 	meta, ok := v.byPath[clean]
 	if !ok {
-		folded := search.Fold(clean)
-		count := 0
-		for p, m := range v.byPath {
-			if search.Fold(p) == folded {
-				meta = m
-				count++
-			}
-		}
-		if count != 1 {
+		spelled, found := spell(clean, slices.Collect(maps.Keys(v.byPath)))
+		if !found {
 			return vault.NoteMeta{}, false
 		}
+		meta = v.byPath[spelled]
 	}
 	if !v.visible(meta.Path) {
 		return vault.NoteMeta{}, false
@@ -784,9 +793,25 @@ type linkScopedRenamer interface {
 	RenameNoteRewritingLinksIn(ctx context.Context, rel, nextTitle string, rewrite func(path string) bool) (vault.NoteMeta, error)
 }
 
+// errRecordPageStaysPut is the refusal for taking a record page out of step with its
+// database. The database's schema names its pages and a row's title follows the
+// page's, and a client that sees part of the vault may not see the database.
+var errRecordPageStaysPut = errors.New("This assistant cannot rename, move, copy, archive, trash or delete a database's record page.")
+
+// keepsRecordPage refuses an operation on a record page under a path scope.
+func (sb *scopedBackend) keepsRecordPage(meta vault.NoteMeta) error {
+	if sb.scope.Restricted() && database.FormDirContaining(meta.Path) != "" {
+		return errRecordPageStaysPut
+	}
+	return nil
+}
+
 func (sb *scopedBackend) RenameNote(ctx context.Context, rel, nextTitle string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	v, _ := sb.load(ctx)
@@ -807,6 +832,9 @@ func (sb *scopedBackend) RenameNote(ctx context.Context, rel, nextTitle string) 
 func (sb *scopedBackend) MoveNote(ctx context.Context, rel string, folder vault.NoteFolder, subpath string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	v, _ := sb.load(ctx)
@@ -866,6 +894,9 @@ func (sb *scopedBackend) ArchiveNote(ctx context.Context, rel string) (vault.Not
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
+	if err := sb.keepsRecordPage(meta); err != nil {
+		return vault.NoteMeta{}, err
+	}
 	if err := sb.exitOpen(ctx, meta, vault.FolderArchive); err != nil {
 		return vault.NoteMeta{}, err
 	}
@@ -876,6 +907,9 @@ func (sb *scopedBackend) ArchiveNote(ctx context.Context, rel string) (vault.Not
 func (sb *scopedBackend) MoveToTrash(ctx context.Context, rel string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	if err := sb.exitOpen(ctx, meta, vault.FolderTrash); err != nil {
@@ -931,6 +965,9 @@ func (sb *scopedBackend) DuplicateNote(ctx context.Context, rel string) (vault.N
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
+	if err := sb.keepsRecordPage(meta); err != nil {
+		return vault.NoteMeta{}, err
+	}
 	v, err := sb.load(ctx)
 	if err != nil {
 		return vault.NoteMeta{}, err
@@ -946,6 +983,9 @@ func (sb *scopedBackend) DuplicateNote(ctx context.Context, rel string) (vault.N
 func (sb *scopedBackend) DeleteNote(ctx context.Context, rel string) error {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return err
 	}
 	return sb.inner.DeleteNote(ctx, meta.Path)

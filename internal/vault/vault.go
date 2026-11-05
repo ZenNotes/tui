@@ -32,6 +32,11 @@ type Vault struct {
 	// SyncTitleHeading rewrites a note's leading `# Heading` on rename, the
 	// desktop's "Sync title heading on rename" preference. On by default.
 	SyncTitleHeading bool
+
+	// RecordPages treats the pages in a database folder as notes everywhere, as the
+	// desktop's renderer and a server do. `zn mcp` sets it. The CLI's listings and
+	// the TUI draw a database themselves and leave it off.
+	RecordPages bool
 }
 
 // Open binds a Vault to an existing directory.
@@ -306,7 +311,7 @@ func (v *Vault) walkNotes(folders []NoteFolder, includeFormDirs bool, visit func
 					if strings.HasPrefix(name, ".") {
 						continue
 					}
-					if !includeFormDirs && isFormDirName(name) {
+					if !includeFormDirs && !v.RecordPages && isFormDirName(name) {
 						continue
 					}
 					if isPrimaryRoot && dir == top {

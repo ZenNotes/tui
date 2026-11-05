@@ -208,7 +208,7 @@ func (a *App) scrollAt(x, y, delta int) {
 			if pv.cache != nil {
 				n = len(pv.cache.lines)
 			}
-			pv.cursor = max(0, min(max(0, n-1), pv.cursor+delta))
+			pv.moveTo(pv.cursor+delta, n, max(1, pv.rows))
 			return
 		}
 		mode := buf.ed.Mode()

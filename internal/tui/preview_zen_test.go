@@ -191,3 +191,122 @@ func TestZenPreviewStylesEmbedSourceAsCode(t *testing.T) {
 		t.Fatalf("got %q", text.String())
 	}
 }
+
+func TestZenCalloutTitleIsInlineText(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"embed", "> [!note] ![[a.png]]", "▍ NOTE · ⟦image: a.png⟧"},
+		{"code", "> [!tip] use `this` here", "▍ TIP · use this here"},
+		{"embed in code", "> [!tip] `![[a.png]]`", "▍ TIP · ![[a.png]]"},
+		{"plain", "> [!warning] Careful", "▍ WARNING · Careful"},
+		{"no title", "> [!info]", "▍ INFO"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	lines := a.renderPreviewLines("> [!note] see [[Other]]", 60)
+	if len(lines[0].links) != 1 || lines[0].links[0].target != "Other" {
+		t.Errorf("the title's link is not on its row: %v", lines[0].links)
+	}
+}
+
+func TestZenCodeInsideBoldAndLinks(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"bold around code", "**`![[a.png]]`**", "![[a.png]]"},
+		{"bold around code and text", "**a `b` c**", "a b c"},
+		{"emphasis around code", "*`x`*", "x"},
+		{"strike around code", "~~`x`~~", "x"},
+		{"bold around a link", "**[[Note]]**", "Note"},
+		{"link with code", "[`x`](https://e.com) y", "x y"},
+		{"link with code and text", "[see `x` now](https://e.com)", "see x now"},
+		{"a star in code stays", "`a**b` and `c**d`", "a**b and c**d"},
+		{"code past the markers", "**a `b** c`", "**a b** c"},
+		{"plain bold", "**a** b", "a b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); got != tc.want+"" && !strings.HasPrefix(got, tc.want+"\n") {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	lines := a.renderPreviewLines("[`x`](https://e.com)", 60)
+	if len(lines[0].links) != 1 || lines[0].links[0].target != "https://e.com" {
+		t.Errorf("the link is not on its row: %v", lines[0].links)
+	}
+}
+
+// The default style reads these the same way, and a cell is as wide as its text.
+func TestZenTableCellEmbedIsNotCutBySourceWidth(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	if got := zenPreviewText(a, "| ![[x.png]] | b |\n|---|---|\n| 1 | 2 |"); !strings.Contains(got, "⟦image: x.png⟧") {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestZenIndentedCodeBlock(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"embed after a blank line", "para\n\n    ![[a.png]]", "│ ![[a.png]]"},
+		{"first line", "    ![[a.png]]", "│ ![[a.png]]"},
+		{"tab", "\t`x`", "│ `x`"},
+		{"after a heading", "# H\n    ![[a.png]]", "│ ![[a.png]]"},
+		{"two lines", "    a\n    b", "│ a\n│ b"},
+		{"inside continues a paragraph", "para\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"under a list item", "- item\n\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"nested bullet", "- item\n    - nested", "• nested"},
+		{"three spaces", "   ![[a.png]]", "⟦image: a.png⟧"},
+		{"after a list ends", "- item\n\npara\n\n    ![[a.png]]", "│ ![[a.png]]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestZenLiteralMarkersAndNestedEmphasis(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"spaced stars around code", "a * b `c` d * e", "a * b c d * e"},
+		{"spaced bold around code", "a ** b `c` d ** e", "a ** b c d ** e"},
+		{"tight stars around code", "a *b `c` d* e", "a b c d e"},
+		{"bold and emphasis around code", "***both `x`***", "both x"},
+		{"bold and emphasis", "***both***", "both"},
+		{"underscores around code", "___both `x`___", "both x"},
+		{"bold and code in a link label", "[**bold** `c`](https://e.com)", "bold c"},
+		{"emphasis in a link label", "[*em* x](https://e.com)", "em x"},
+		{"plain label", "[snake_case_name](https://e.com)", "snake_case_name"},
+		{"a code star in a label stays", "[`a*b*c`](https://e.com)", "a*b*c"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := strings.TrimRight(zenPreviewText(a, tc.body), "\n"); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	lines := a.renderPreviewLines("[**bold** `c`](https://e.com)", 60)
+	if len(lines[0].links) != 1 || lines[0].links[0].target != "https://e.com" {
+		t.Errorf("the link is not on its row: %v", lines[0].links)
+	}
+}
+
+func TestZenIndentedLineUnderAQuoteContinuesIt(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"quote", "> quote\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"callout", "> [!note] Title\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"callout with no title", "> [!note]\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"a blank line ends the quote", "> quote\n\n    ![[a.png]]", "│ ![[a.png]]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

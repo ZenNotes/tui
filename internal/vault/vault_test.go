@@ -706,3 +706,38 @@ func TestAssetRenameKeepsMarkdownLinksWorkingWithSpacedNames(t *testing.T) {
 		t.Fatalf("the next rename lost the link: %q (%d)", second, count)
 	}
 }
+
+// The CLI's listings and the TUI keep drawing a database as one thing.
+func TestRecordPagesStayOutOfListingsUnlessAsked(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox/Books.base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, body := range map[string]string{"inbox/note.md": "- [ ] a\n", "inbox/Books.base/Alpha.md": "- [ ] b\n", "inbox/Books.base/data.csv": "title\n"} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func() (notes, tasks int) {
+		ns, err := v.ListNotes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts, err := v.ScanTasks(ParseTasksOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(ns), len(ts)
+	}
+	if n, ts := count(); n != 1 || ts != 1 {
+		t.Errorf("by default: %d notes, %d tasks", n, ts)
+	}
+	v.RecordPages = true
+	if n, ts := count(); n != 2 || ts != 2 {
+		t.Errorf("with record pages: %d notes, %d tasks", n, ts)
+	}
+}

@@ -124,7 +124,8 @@ func refuseDatabaseFile(meta vault.AssetMeta, all []vault.AssetMeta) error {
 
 // checkAssetName refuses a name the asset listing would not show afterwards,
 // since a file the listing cannot see is one no tool can reach again. Dots and
-// spaces at the end of a name do not count.
+// spaces at the end of a name do not count for that, and a name with spaces around
+// it is refused last, so a note or a hidden file is told what it is.
 func checkAssetName(name string) error {
 	trimmed := strings.TrimSpace(name)
 	lower := strings.ToLower(trimmed)
@@ -140,6 +141,9 @@ func checkAssetName(name string) error {
 		return errors.New("Notes are not attachments: use create_note or rename_note.")
 	case strings.HasSuffix(bare, ".excalidraw"), vault.IsAtomicWriteTempPath(trimmed), database.IsLooseInternalPath(bare):
 		return errors.New("That kind of file cannot be managed as an attachment.")
+	case trimsDifferently(name):
+		// The name would be trimmed to another, as a target folder would be.
+		return errors.New("A file name cannot start or end with a space.")
 	}
 	return nil
 }

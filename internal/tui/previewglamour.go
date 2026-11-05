@@ -257,8 +257,11 @@ var (
 func prepareMarkdown(text string) string {
 	text = guardCode(text)
 	text = tokenHider.Replace(text)
-	text = embedWikiRe.ReplaceAllString(text, "⟦image: $1⟧")
-	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
+	// A placeholder is a styled token that shows its brackets, as in the zen style:
+	// the token's own go, and these are read as the note's own.
+	placeholder := "⟦" + literalTokenOpen + "image: ${1}" + literalTokenClose + "⟧"
+	text = embedWikiRe.ReplaceAllString(text, placeholder)
+	text = embedImgRe.ReplaceAllString(text, placeholder)
 	text = wikilinkAtRe.ReplaceAllStringFunc(text, func(m string) string {
 		inner := strings.TrimSuffix(strings.TrimPrefix(m, "[["), "]]")
 		if wikilinkTargetOf(strings.TrimPrefix(inner, "!")).target == "" {

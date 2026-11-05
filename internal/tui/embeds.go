@@ -17,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -518,7 +519,7 @@ func (a *App) latexErrorRows(img *termImage, srcLine, width int) []previewLine {
 		return a.latexToolsNotice(srcLine, width)
 	}
 	out := []previewLine{}
-	for _, row := range wrapCommentText(firstLine(img.err.Error()), width-2) {
+	for _, row := range wrapCommentText(firstLine(termsafe.Visible(img.err.Error())), width-2) {
 		out = append(out, previewLine{text: " " + a.theme.StatusError.Render(row), srcLine: srcLine})
 	}
 	return out

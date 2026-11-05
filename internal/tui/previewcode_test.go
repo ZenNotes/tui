@@ -639,3 +639,42 @@ func TestSplitBlocksFollowsFenceRules(t *testing.T) {
 		}
 	}
 }
+
+// A table under a list item keeps the blank row its source has, as a quote does.
+func TestGlamourTableUnderAListItemKeepsItsBlankRow(t *testing.T) {
+	for name, md := range map[string]string{
+		"bullet":  "- item\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n",
+		"ordered": "1. item\n\n   | a | b |\n   |---|---|\n   | 1 | 2 |\n",
+		"two":     "- first\n- item\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			rows := glamourTestLines(t, md, 60)
+			at := -1
+			for i, l := range rows {
+				if strings.Contains(stripAnsi(l.text), "a") && strings.Contains(stripAnsi(l.text), "│") {
+					at = i
+					break
+				}
+			}
+			if at < 1 || strings.TrimSpace(stripAnsi(rows[at-1].text)) != "" {
+				t.Errorf("no blank row above the table:\n%s", plainRows(rows))
+			}
+			if !strings.Contains(stripAnsi(rows[at-2].text), "item") {
+				t.Errorf("the item is not above the blank row:\n%s", plainRows(rows))
+			}
+		})
+	}
+	// With no blank line in the source there is none on screen.
+	rows := glamourTestLines(t, "- item\n  | a | b |\n  |---|---|\n  | 1 | 2 |\n", 60)
+	if strings.TrimSpace(stripAnsi(rows[1].text)) == "" {
+		t.Errorf("a blank row appeared:\n%s", plainRows(rows))
+	}
+}
+
+func plainRows(rows []previewLine) string {
+	out := []string{}
+	for _, r := range rows {
+		out = append(out, stripAnsi(r.text))
+	}
+	return strings.Join(out, "\n")
+}

@@ -1130,3 +1130,211 @@ https://www.youtube.com/watch?v=abc123
 		}
 	}
 }
+
+// flowRows draws a flowchart as plain rows at a width.
+func flowRows(t *testing.T, src string, width int) []string {
+	t.Helper()
+	f, partial, err := parseFlowchart(src)
+	if err != nil || partial {
+		t.Fatalf("parse: %v, partial %v", err, partial)
+	}
+	return f.rows(width)
+}
+
+func TestWideFlowchartDrawsARowOnlyForAStraightRun(t *testing.T) {
+	straight := flowRows(t, "graph LR\nA[One]-->B[Two]-->C[Three]", 200)
+	if !strings.Contains(strings.Join(straight, "\n"), "│ One │─▶│ Two │─▶│ Three │") {
+		t.Errorf("a straight run left its row:\n%s", strings.Join(straight, "\n"))
+	}
+
+	for _, tc := range []struct {
+		name, src string
+		listed    string // the row under its source that names the edge
+	}{
+		{"back to an earlier box", "graph LR\nA[One]-->B[Two]-->C[Three]\nC-->A", "└─▶ One"},
+		{"skips a box", "graph LR\nA[One]-->B[Two]\nA-->C[Three]\nB-->C", "├─▶ Three"},
+		{"a loop with a label", "graph LR\nA[One]-->B[Two]\nB-->|again|A", "└─▶ One (again)"},
+		{"a second edge to the next box", "graph LR\nA[One]-->B[Two]\nA-.->B", "├╌▶ Two"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := flowRows(t, tc.src, 200)
+			text := strings.Join(rows, "\n")
+			if !strings.Contains(text, tc.listed) {
+				t.Errorf("the edge is not listed as %q:\n%s", tc.listed, text)
+			}
+			for _, row := range rows {
+				if strings.Count(row, "┐") > 1 || strings.Contains(row, "│─▶│") {
+					t.Errorf("boxes are side by side, so they read as a sequence:\n%s", text)
+					break
+				}
+			}
+		})
+	}
+}
+
+// Boxes with no edge between them get no stroke in a column either.
+func TestFlowchartColumnDrawsNoStrokeBetweenUnjoinedBoxes(t *testing.T) {
+	rows := flowRows(t, "graph LR\nA[One]-->B[Two]\nA-->C[Three]", 200)
+	text := strings.Join(rows, "\n")
+	two := strings.Index(text, "Two")
+	three := strings.LastIndex(text, "Three")
+	if two < 0 || three < 0 {
+		t.Fatalf("a box is missing:\n%s", text)
+	}
+	if between := text[two:three]; strings.ContainsAny(between, "▼┬▶") {
+		t.Errorf("a stroke joins Two to Three, which share no edge:\n%s", text)
+	}
+}
+
+func TestWideFlowchartKeepsEveryNodeAndEdgeAtAnyWidth(t *testing.T) {
+	src := "graph LR\nA[One]-->B[Two]\nB-->|yes|C[Three]\nB-->|no|A\nC-.->A\nD[Alone]"
+	for _, width := range []int{12, 30, 80, 200, 400} {
+		text := strings.Join(flowRows(t, src, width), "\n")
+		for _, want := range []string{"One", "Two", "Three", "Alone", "yes", "no"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("width %d lost %q:\n%s", width, want, text)
+			}
+		}
+	}
+}
+
+func TestMermaidEntityKeepsItsStatementWhole(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{"graph TD\nA[d #35; e]-->B", "d # e"},
+		{"graph TD\nA[\"d #35; e\"]-->B", "d # e"},
+		{"graph TD\nA[x #amp; y]-->B", "x & y"},
+		{"graph TD\nA[x #quot;q#quot; y]-->B", `x "q" y`},
+		{"graph TD\nA-->|n #35;1|B", "n #1"},
+		{"graph TD; A-->B; B-->C", "C"},
+	} {
+		text := strings.Join(flowRows(t, tc.src, 60), "\n")
+		if !strings.Contains(text, tc.want) {
+			t.Errorf("%q drew:\n%s", tc.src, text)
+		}
+	}
+}
+
+// An arrow no diagram defines stays in view as written, rather than draw a box
+// called `A-` or lose the edge.
+func TestMermaidLongerSequenceArrowShowsItsSource(t *testing.T) {
+	a := mermaidTestApp()
+	for _, src := range []string{"sequenceDiagram\nA--->>B: hi", "graph LR\nA--->>B"} {
+		text := ""
+		for _, l := range a.mermaidTextLines(parseMermaidText(src), src, 0, 60) {
+			text += stripAnsi(l.text) + "\n"
+		}
+		if !strings.Contains(text, "A--->>B") || !strings.Contains(text, "source.") {
+			t.Errorf("%q drew:\n%s", src, text)
+		}
+	}
+}
+
+// A colour's semicolon ends its statement, so what follows it is drawn.
+func TestMermaidColourKeepsItsSemicolon(t *testing.T) {
+	for _, tc := range []struct {
+		src  string
+		want []string
+	}{
+		{"graph TD\nA[One]-->B[Two]; style A fill:#f9f; B-->C[Three]", []string{"One", "Two", "Three"}},
+		{"graph LR; classDef big fill:#f96; A[One]:::big-->B[Two]; B-->C[Three]", []string{"One", "Two", "Three"}},
+		{"graph TD\nA[One]-->B[Two]; style A fill: #123; B-->C[Three]", []string{"One", "Three"}},
+		{"graph TD\nA[One]-->B[Two]; style A fill:#f9f,stroke:#333; B-->C[Three]", []string{"One", "Three"}},
+		{"graph TD\nA[One #35; two]-->B[Two]; style A fill:#f9f; B-->C[Three]", []string{"One # two", "Three"}},
+	} {
+		text := strings.Join(flowRows(t, tc.src, 60), "\n")
+		for _, want := range tc.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%q has no %q:\n%s", tc.src, want, text)
+			}
+		}
+	}
+}
+
+func TestMermaidLabelDropsInlineTags(t *testing.T) {
+	text := strings.Join(flowRows(t, "graph TD\nA[\"<b>bold</b> x\"]-->|<i>lab</i>|B[\"<span style='color:red'>red</span>\"]\nC[\"a\"]-->D[\"keep <thing> here\"]", 60), "\n")
+	for _, want := range []string{"bold x", "lab", "red", "keep <thing> here"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in:\n%s", want, text)
+		}
+	}
+	for _, bad := range []string{"<b>", "</b>", "<i>", "<span", "</span>"} {
+		if strings.Contains(text, bad) {
+			t.Errorf("%q is still there:\n%s", bad, text)
+		}
+	}
+}
+
+// A tag with no partner is the label's own text.
+func TestMermaidLabelKeepsATypeThatReadsLikeATag(t *testing.T) {
+	for src, want := range map[string]string{
+		"graph TD\nA[\"Vec<i>\"]-->B":                   "Vec<i>",
+		"graph TD\nA[\"Array<code>\"]-->B":              "Array<code>",
+		"graph TD\nA[\"a </b> b\"]-->B":                 "a </b> b",
+		"graph TD\nA[\"<b>Vec<i></b>\"]-->B":            "Vec<i>",
+		"graph TD\nA[\"<b>x</b> and <B>y</B>\"]-->B":    "x and y",
+		"graph TD\nA[\"<b><i>x</i></b>\"]-->B":          "x",
+		"graph TD\nA[\"<span class='c'>x</span>\"]-->B": "x",
+	} {
+		rows := strings.Join(flowRows(t, src, 60), "\n")
+		if !strings.Contains(rows, "│ "+want+" │") {
+			t.Errorf("%q drew:\n%s", src, rows)
+		}
+	}
+}
+
+// A pane too narrow for a box still shows every node and edge, and fits.
+func TestMermaidFitsPanesOfOneToEightCells(t *testing.T) {
+	a := mermaidTestApp()
+	src := "graph TD\nA[One two]-->B[Two]\nB-->|yes|A\nsubgraph G\nC[Three]\nend"
+	parsed := parseMermaidText(src)
+	for width := 1; width <= 16; width++ {
+		lines := a.mermaidTextLines(parsed, src, 0, width)
+		text := ""
+		for _, l := range lines {
+			plain := stripAnsi(l.text)
+			if got := cellWidth(plain); got > width {
+				t.Errorf("width %d: row %q is %d cells", width, plain, got)
+			}
+			text += plain
+		}
+		text = squeezed(text)
+		for _, want := range []string{"One", "Two", "yes", "Three"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("width %d lost %q: %q", width, want, text)
+			}
+		}
+	}
+	// A wide character has nowhere to go in one cell, and the drawing still ends.
+	if got := flowWrap("＠＠", 1); len(got) != 2 {
+		t.Errorf("flowWrap gave %q", got)
+	}
+	// A source shown instead of a drawing fits as well.
+	for width := 1; width <= 8; width++ {
+		for _, l := range a.mermaidTextLines(parseMermaidText("classDiagram\nA <|-- B"), "classDiagram\nA <|-- B", 0, width) {
+			if got := cellWidth(stripAnsi(l.text)); got > width {
+				t.Errorf("source at width %d: %q is %d cells", width, stripAnsi(l.text), got)
+			}
+		}
+	}
+}
+
+// A pane of two cells holds a wide character, with no room for a leading space.
+func TestMermaidWideCharacterFitsTwoCells(t *testing.T) {
+	a := mermaidTestApp()
+	src := "graph TD\nA[＠＠]-->B[Two]"
+	for _, l := range a.mermaidTextLines(parseMermaidText(src), src, 0, 2) {
+		if got := cellWidth(stripAnsi(l.text)); got > 2 {
+			t.Errorf("row %q is %d cells", stripAnsi(l.text), got)
+		}
+	}
+}
+
+// With no room for a box, an edge still says what kind it is.
+func TestMermaidNarrowPaneKeepsEdgeStyles(t *testing.T) {
+	text := strings.Join(flowRows(t, "graph TD\nA-->B\nA-.->C\nA==>D\nA---E\nA<-->F", 7), "\n")
+	for _, want := range []string{"─▶ B", "╌▶ C", "━▶ D", "── E", "◀─▶ F"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in:\n%s", want, text)
+		}
+	}
+}

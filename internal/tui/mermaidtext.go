@@ -22,10 +22,12 @@ import (
 // and every edge label are dropped, and a branch is drawn through the boxes in
 // between. No width fixes that, so zn keeps the library's parser and draws
 // flowcharts and state diagrams itself, at the width of the pane: a row of
-// boxes when a left-to-right diagram fits, otherwise a column. An edge to the
-// box drawn next is an arrow between them, and any other edge is listed under
-// its source by the name of its target, so every node and edge can be read at
-// any width.
+// boxes when a left-to-right diagram fits and is a straight run, otherwise a
+// column. An edge to the box drawn next is an arrow between them, and any other
+// edge is listed under its source by the name of its target, so every node and
+// edge can be read at any width. A row has no place under a box for that list,
+// and boxes in a row read as a sequence, so an edge that skips or goes back to
+// another box puts the diagram in a column.
 //
 // The library's sequence drawing is kept only when it shows everything in the
 // source, and when it fits. Its class and ER drawings never do: relationships,
@@ -63,14 +65,17 @@ func parseMermaidText(src string) *mermaidText {
 // mermaidTextLines lays a parsed diagram out for a pane width.
 func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) []previewLine {
 	th := a.theme
-	inner := width - 1 // the row's leading space
+	inner, pad := width-1, " " // the row's leading space, if there is room for it
+	if width < 3 {
+		inner, pad = max(1, width), "" // two cells hold a wide character, with no space
+	}
 	source := func(note string, noteStyle func(...string) string) []previewLine {
 		out := []previewLine{}
 		for _, row := range wrapCommentText(note, inner) {
-			out = append(out, previewLine{text: " " + noteStyle(row), srcLine: srcLine})
+			out = append(out, previewLine{text: pad + noteStyle(row), srcLine: srcLine})
 		}
 		for _, row := range wrapCommentText(strings.ReplaceAll(src, "\t", "  "), inner) {
-			out = append(out, previewLine{text: " " + th.Code.Render(row), srcLine: srcLine})
+			out = append(out, previewLine{text: pad + th.Code.Render(row), srcLine: srcLine})
 		}
 		return out
 	}
@@ -94,7 +99,7 @@ func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) [
 	}
 	out := make([]previewLine, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, previewLine{text: " " + th.Base.Render(row), srcLine: srcLine})
+		out = append(out, previewLine{text: pad + th.Base.Render(row), srcLine: srcLine})
 	}
 	return out
 }
@@ -234,6 +239,8 @@ var (
 	mermaidHeadRe      = regexp.MustCompile(`(?i)^(graph|flowchart)(?:-elk)?(\s+\w+)?$`)
 	mermaidStateHeadRe = regexp.MustCompile(`(?i)^stateDiagram`)
 	mermaidBreakRe     = regexp.MustCompile(`(?i)<br\s*/?>`)
+	// Inline tags a label may style itself with, which a text drawing has no use for.
+	mermaidTagRe = regexp.MustCompile(`(?i)<(/?)(b|i|u|s|em|strong|small|sub|sup|code|span|font|mark)(?:\s[^<>]*)?>`)
 	// Statements that draw nothing, which the parser would otherwise read as a
 	// node with that name. An ID may start with the same word, so the word has
 	// to end here and the statement has to hold no arrow.
@@ -292,6 +299,62 @@ func mermaidMaskRunes(src string) (open, shut string) {
 		}
 	}
 	return found[0], found[1]
+}
+
+// mermaidEntityText is what an entity like #35; or #amp; stands for.
+func mermaidEntityText(entity string) (string, bool) {
+	name := entity[1 : len(entity)-1]
+	if name[0] >= '0' && name[0] <= '9' {
+		name = "#" + name
+	}
+	text := html.UnescapeString("&" + name + ";")
+	return text, text != "&"+name+";"
+}
+
+// mermaidDropTags takes out the tags that open and close around something. One with
+// no partner is the label's own text, like the type in `Vec<i>` or `Array<code>`.
+func mermaidDropTags(s string) string {
+	tags := mermaidTagRe.FindAllStringSubmatchIndex(s, -1)
+	drop := make([]bool, len(tags))
+	open := map[string][]int{}
+	for i, m := range tags {
+		name := strings.ToLower(s[m[4]:m[5]])
+		if m[3] == m[2] { // no slash
+			open[name] = append(open[name], i)
+		} else if held := open[name]; len(held) > 0 {
+			drop[i], drop[held[len(held)-1]] = true, true
+			open[name] = held[:len(held)-1]
+		}
+	}
+	var b strings.Builder
+	last := 0
+	for i, m := range tags {
+		if drop[i] {
+			b.WriteString(s[last:m[0]])
+			last = m[1]
+		}
+	}
+	b.WriteString(s[last:])
+	return b.String()
+}
+
+// mermaidMaskEntities hides each entity's semicolon from the statement split. A
+// colour's does end its statement: `fill:#f9f;` names no entity, and `fill:#123;`
+// would read as one, so a value after a colon is left alone.
+func mermaidMaskEntities(src string, mask func(entity string) string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range mermaidEntityRe.FindAllStringIndex(src, -1) {
+		entity := src[m[0]:m[1]]
+		if _, known := mermaidEntityText(entity); !known || strings.HasSuffix(strings.TrimRight(src[:m[0]], " \t"), ":") {
+			continue
+		}
+		b.WriteString(src[last:m[0]])
+		b.WriteString(mask(entity))
+		last = m[1]
+	}
+	b.WriteString(src[last:])
+	return b.String()
 }
 
 // mermaidPlainID says the parser can read a word as a node ID as it is. Its IDs
@@ -388,6 +451,10 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 		return m[1] + `"` + open + strconv.Itoa(len(quoted)-1) + shut + `"`
 	})
 	partial = badCloseRe.MatchString(masked)
+	masked = mermaidMaskEntities(masked, func(entity string) string {
+		quoted = append(quoted, entity)
+		return open + strconv.Itoa(len(quoted)-1) + shut
+	})
 	// Renamed IDs use a prefix the source does not hold.
 	idPrefix := "znid"
 	for strings.Contains(src, idPrefix) {
@@ -510,15 +577,12 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 			return names[n]
 		})
 		s = mermaidEntityRe.ReplaceAllStringFunc(s, func(m string) string {
-			name := m[1 : len(m)-1]
-			if name[0] >= '0' && name[0] <= '9' {
-				name = "#" + name
-			}
-			if text := html.UnescapeString("&" + name + ";"); text != "&"+name+";" {
+			if text, ok := mermaidEntityText(m); ok {
 				return text
 			}
 			return m
 		})
+		s = mermaidDropTags(s)
 		return strings.TrimSpace(mermaidBreakRe.ReplaceAllString(s, "\n"))
 	}
 	sameLabel := map[string]int{}
@@ -607,13 +671,32 @@ func mermaidStatementRead(line string, one *types.MermaidGraph, isState bool) bo
 // rows draws the diagram no wider than width.
 func (f *flowchart) rows(width int) []string {
 	var out []string
-	if f.leftToRight {
+	switch {
+	case width < flowBoxMinWidth:
+		out = f.rowsPlain(width)
+	case f.leftToRight:
 		out = f.rowsAcross(width)
 	}
 	if out == nil {
 		out = f.rowsDown(width)
 	}
 	return append(out, f.groupRows(width)...)
+}
+
+// flowBoxMinWidth is what a column needs: a box around two cells of label, and a
+// listed edge's hook and arrow with two cells of target.
+const flowBoxMinWidth = 8
+
+// rowsPlain is the diagram with no box drawing, for a pane too narrow for any.
+func (f *flowchart) rowsPlain(width int) []string {
+	out := []string{}
+	for _, id := range f.order {
+		out = append(out, flowWrap(f.label(id), width)...)
+		for _, e := range f.bySource[id] {
+			out = append(out, flowWrap(flowArrow(e, "")+" "+f.edgeTarget(e), width)...)
+		}
+	}
+	return out
 }
 
 // outgoing splits a node's edges: the first to the node drawn next goes
@@ -650,7 +733,7 @@ func (f *flowchart) edgeTarget(e *types.MermaidEdge) string {
 // flowWrap wraps text at spaces, keeping a flag like -m whole, and breaks a
 // word only when it alone is wider than the width.
 func flowWrap(text string, width int) []string {
-	width = max(2, width) // one wide character always fits
+	width = max(1, width)
 	out := []string{}
 	for _, line := range strings.Split(text, "\n") {
 		if cellWidth(line) <= width {
@@ -666,7 +749,9 @@ func flowWrap(text string, width int) []string {
 			if row != "" {
 				out = append(out, row)
 			}
-			pieces := strings.Split(xansi.Hardwrap(word, width, false), "\n")
+			// A wide character in one cell gets a row of its own, past the pane's edge,
+			// and the wrap leaves an empty row before it.
+			pieces := strings.Split(strings.TrimLeft(xansi.Hardwrap(word, width, false), "\n"), "\n")
 			out = append(out, pieces[:len(pieces)-1]...)
 			row = pieces[len(pieces)-1]
 		}
@@ -777,7 +862,8 @@ func (f *flowchart) rowsDown(width int) []string {
 	return out
 }
 
-// rowsAcross is one row of boxes, or nil when that is wider than width.
+// rowsAcross is one row of boxes, or nil when that is wider than width or
+// when an edge runs anywhere but to the box beside it.
 func (f *flowchart) rowsAcross(width int) []string {
 	type piece struct {
 		box       []string
@@ -785,11 +871,13 @@ func (f *flowchart) rowsAcross(width int) []string {
 		connector string
 	}
 	pieces := make([]piece, len(f.order))
-	listed := []string{}
 	height, total := 0, 0
 	for i, id := range f.order {
 		box := flowBox(f.label(id), 1<<16, false)
 		next, others := f.outgoing(i)
+		if len(others) > 0 {
+			return nil
+		}
 		connector := ""
 		switch {
 		case next != nil:
@@ -800,9 +888,6 @@ func (f *flowchart) rowsAcross(width int) []string {
 		pieces[i] = piece{box: box, w: cellWidth(box[0]), connector: connector}
 		total += pieces[i].w + cellWidth(connector)
 		height = max(height, len(box))
-		for _, e := range others {
-			listed = append(listed, f.flowName(id)+" "+flowArrow(e, "")+" "+f.edgeTarget(e))
-		}
 	}
 	if total > width {
 		return nil
@@ -823,9 +908,6 @@ func (f *flowchart) rowsAcross(width int) []string {
 			}
 		}
 		out = append(out, strings.TrimRight(b.String(), " "))
-	}
-	for _, text := range listed {
-		out = append(out, flowWrap(text, width)...)
 	}
 	return out
 }

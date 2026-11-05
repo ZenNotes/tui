@@ -62,3 +62,22 @@ func TestRenameKeepsAnEscapedPipeEscaped(t *testing.T) {
 		t.Fatalf("rewrote %d:\n%s", n, got)
 	}
 }
+
+// A backslash in a target reads as a path separator only once the target looks
+// like a path, which `.md` or a slash says. `inbox\C` has neither, so it names a
+// note called that, and leads to nothing, in the app and on a server as here. A
+// rename must not start treating it as a link to C.
+func TestRenameTreatsABackslashTargetAsTheDesktopDoes(t *testing.T) {
+	notes := []NoteMeta{{Path: "inbox/C.md", Title: "C", Folder: FolderInbox}}
+	for _, tc := range []struct{ in, want string }{
+		{`[[inbox\C]]`, `[[inbox\C]]`},
+		{`[[inbox\C\|e]]`, `[[inbox\C\|e]]`},
+		{`[[inbox\C.md]]`, `[[inbox\D.md]]`},
+		{`[[inbox\C.md\|e]]`, `[[inbox\D.md\|e]]`},
+		{`[[inbox/C\|e]]`, `[[inbox/D\|e]]`},
+	} {
+		if got, _ := RewriteWikilinksForRename(tc.in, notes, "inbox/C.md", "D"); got != tc.want {
+			t.Errorf("%s became %s, want %s", tc.in, got, tc.want)
+		}
+	}
+}

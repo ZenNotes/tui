@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/ZenNotes/tui/internal/keymaps"
 	"github.com/ZenNotes/tui/internal/vim"
 )
 
@@ -143,6 +144,20 @@ func (c *listCursor) ensureVisible(rows int) {
 	}
 }
 
+// pageChord says k is Ctrl+F or Ctrl+B as a page key. A chord a keymap gives to an
+// action stays with that action, which by default leaves Ctrl+B to the sidebar.
+func (a *App) pageChord(k vim.Key, r rune) bool {
+	if !k.IsCtrl(r) {
+		return false
+	}
+	for _, e := range keymaps.Catalog {
+		if a.bound(k, e.ID) {
+			return false
+		}
+	}
+	return true
+}
+
 // listNav applies the shared movement keys to a cursor. It returns true
 // when the key was a movement.
 func (a *App) listNav(c *listCursor, k vim.Key, n, pageRows int) bool {
@@ -154,11 +169,11 @@ func (a *App) listNav(c *listCursor, k vim.Key, n, pageRows int) bool {
 		c.move(-1, n)
 		return true
 	}
-	if k.Is("pgdn") {
+	if k.Is("pgdn") || a.pageChord(k, 'f') {
 		c.move(pageRows, n)
 		return true
 	}
-	if k.Is("pgup") {
+	if k.Is("pgup") || a.pageChord(k, 'b') {
 		c.move(-pageRows, n)
 		return true
 	}

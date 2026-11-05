@@ -3,6 +3,7 @@ package mcp
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -120,4 +121,57 @@ func TestFoldersHoldingHiddenNotesStayOnALocalVault(t *testing.T) {
 func TestFoldersHoldingHiddenNotesStayOnAServer(t *testing.T) {
 	scopeServerBinary(t)
 	testDenyFolder(t, runScopedOnServer)
+}
+
+// An allow entry written with a decomposed accent finds the composed folder beside a
+// plain one in the attachments folder, which the note listings do not show, as it does
+// among folders they do.
+func TestDecomposedAllowEntryFindsAnAttachmentFolderBesideAPlainOne(t *testing.T) {
+	const decomposed, composed = "Café", "Café"
+	root := seedFiles(t, map[string]string{"assets/Cafe/plain.png": "png", "assets/" + composed + "/menu.png": "png", "assets/" + composed + "/card.png": "png", "n.md": "x"})
+	cs := runScoped(t, root, testScope(t, "write", []string{"assets/" + decomposed}, nil))
+	got := mustCall(t, cs, "list_assets", map[string]any{})
+	if !strings.Contains(got, "menu.png") || !strings.Contains(got, "card.png") {
+		t.Errorf("the entry shares nothing: %s", got)
+	}
+	if strings.Contains(got, "plain.png") {
+		t.Errorf("the entry reached the folder without the accent: %s", got)
+	}
+}
+
+// A destination finds the same folder for the same spelling.
+func TestDecomposedDestinationFindsTheComposedFolderBesideAPlainOne(t *testing.T) {
+	const decomposed, composed = "Café", "Café"
+	root := seedDenyFolder(t, `{"primaryNotesLocation":"root"}`, []string{"Cafe/plain.md", composed + "/menu.md"})
+	cs := runScoped(t, root, testScope(t, "write", []string{composed}, nil))
+	got := mustCall(t, cs, "create_note", map[string]any{"folder": "inbox", "subpath": decomposed, "title": "new"})
+	if !strings.Contains(got, composed+"/new.md") {
+		t.Errorf("the note went elsewhere: %s", got)
+	}
+}
+
+// A note's path finds it the way a folder's does, even with its neighbour one fold away.
+func TestDecomposedNotePathFindsTheComposedFolderBesideAPlainOne(t *testing.T) {
+	const decomposed, composed = "Cafe\u0301", "Caf\u00e9"
+	root := seedDenyFolder(t, `{"primaryNotesLocation":"root"}`, []string{"Cafe/x.md", composed + "/x.md", "Other/n.md"})
+	if err := os.WriteFile(filepath.Join(root, composed, "x.md"), []byte("with accent\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Cafe/x.md"), []byte("plain\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, cs := range map[string]*sdk.ClientSession{
+		"allow": runScoped(t, root, testScope(t, "read", []string{composed, "Cafe"}, nil)),
+		"deny":  runScoped(t, root, testScope(t, "read", nil, []string{"Other/n.md"})),
+	} {
+		got := mustCall(t, cs, "read_note", map[string]any{"path": decomposed + "/x.md"})
+		if !strings.Contains(got, "with accent") {
+			t.Errorf("%s: read %s", name, got)
+		}
+	}
+	// A deny entry reads looser than a path does, so it hides both, by any spelling.
+	hidden := runScoped(t, root, testScope(t, "read", nil, []string{"Cafe/x.md"}))
+	for _, p := range []string{"Cafe/x.md", "cafe/X.md", composed + "/x.md", decomposed + "/x.md"} {
+		mustFail(t, hidden, "read_note", map[string]any{"path": p})
+	}
 }

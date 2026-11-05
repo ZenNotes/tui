@@ -42,7 +42,7 @@ func TestActiveSGR(t *testing.T) {
 
 func TestPrepareMarkdown(t *testing.T) {
 	out := prepareMarkdown("see [[Note|alias]] and [[Other]] ![[pic.png]]\n> [!tip] Title\n> body\n- [/] going\n- [-] dropped\n- [>] moved")
-	for _, want := range []string{"⟦alias⟧", "⟦Other⟧", "⟦image: pic.png⟧", "> **TIP** Title", "- ◩ going", "- ✕ ~~dropped~~", "- → moved"} {
+	for _, want := range []string{"⟦alias⟧", "⟦Other⟧", "⟦" + literalTokenOpen + "image: pic.png" + literalTokenClose + "⟧", "> **TIP** Title", "- ◩ going", "- ✕ ~~dropped~~", "- → moved"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %q", want, out)
 		}
@@ -142,4 +142,59 @@ func TestGlamourMultiWordWikilinkKeepsRowWidth(t *testing.T) {
 	if plain := ansi.Strip(row); !strings.Contains(plain, "double brackets") || strings.Contains(plain, "[0m") {
 		t.Fatalf("link text mangled: %q", plain)
 	}
+}
+
+// An image in running text shows as its placeholder, brackets included, in both
+// styles, and the table it sits in keeps its columns.
+func TestGlamourImagePlaceholderKeepsItsBrackets(t *testing.T) {
+	for name, md := range map[string]string{
+		"wikilink": "see ![[pic.png]] here\n",
+		"markdown": "see ![pic.png](b.png) here\n",
+		"list":     "- see ![[pic.png]] here\n",
+		"quote":    "> see ![[pic.png]] here\n",
+		"table":    "| see ![[pic.png]] here | x |\n|---|---|\n| 1 | 2 |\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := plainRows(glamourTestLines(t, md, 60))
+			if !strings.Contains(got, "⟦image: pic.png⟧") {
+				t.Errorf("no placeholder:\n%s", got)
+			}
+		})
+	}
+	t.Run("table columns", func(t *testing.T) {
+		rows := glamourTestLines(t, "| ![[pic.png]] | x |\n|---|---|\n| 1 | 2 |\n", 60)
+		var rules []int
+		for _, l := range rows {
+			text := stripAnsi(l.text)
+			for i, r := range []rune(text) {
+				if r == '│' || r == '┼' {
+					rules = append(rules, i)
+					break
+				}
+			}
+		}
+		for _, r := range rules {
+			if r != rules[0] {
+				t.Errorf("the column rule moved:\n%s", plainRows(rows))
+				break
+			}
+		}
+	})
+	t.Run("wrapped", func(t *testing.T) {
+		long := strings.Repeat("a", 30) + " " + strings.Repeat("b", 30) + ".png"
+		got := plainRows(glamourTestLines(t, "x ![["+long+"]] y\n", 40))
+		if !strings.Contains(got, "⟦image:") || !strings.Contains(got, ".png⟧") {
+			t.Errorf("a wrapped placeholder lost its brackets:\n%s", got)
+		}
+	})
+	t.Run("link token", func(t *testing.T) {
+		if got := plainRows(glamourTestLines(t, "[[Note|image: x]] and [[Other]]\n", 60)); strings.ContainsAny(got, "⟦⟧") {
+			t.Errorf("a link shows brackets:\n%s", got)
+		}
+	})
+	t.Run("code", func(t *testing.T) {
+		if got := plainRows(glamourTestLines(t, "`![[pic.png]]`\n", 60)); !strings.Contains(got, "![[pic.png]]") || strings.Contains(got, "⟦") {
+			t.Errorf("code changed:\n%s", got)
+		}
+	})
 }

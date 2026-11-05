@@ -83,7 +83,7 @@ func (s *sidebarState) buildRows(a *App) []sidebarRow {
 						}
 					}
 					key := "fav:" + f
-					rows = append(rows, sidebarRow{kind: "favorite-folder", key: key, label: label, depth: 1, folder: folder, subpath: sub, expandable: true, expanded: s.favOpen[key]})
+					rows = append(rows, sidebarRow{kind: "favorite-folder", key: key, label: termsafe.Line(label), depth: 1, folder: folder, subpath: sub, expandable: true, expanded: s.favOpen[key]})
 					if s.favOpen[key] {
 						rows = append(rows, s.subtreeRows(a, folder, sub, 2, a.notesIn(folder), "fav:")...)
 					}
@@ -179,7 +179,7 @@ func (s *sidebarState) subtreeRows(a *App, folder vault.NoteFolder, parent strin
 		if i := strings.LastIndex(sub, "/"); i >= 0 {
 			label = sub[i+1:]
 		}
-		rows = append(rows, sidebarRow{kind: "folder", key: key, label: label, depth: depth, folder: folder, subpath: sub, expandable: true, expanded: s.expanded(key)})
+		rows = append(rows, sidebarRow{kind: "folder", key: key, label: termsafe.Line(label), depth: depth, folder: folder, subpath: sub, expandable: true, expanded: s.expanded(key)})
 		if s.expanded(key) {
 			rows = append(rows, s.subtreeRows(a, folder, sub, depth+1, notes, prefix)...)
 		}
