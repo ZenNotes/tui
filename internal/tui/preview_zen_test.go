@@ -191,3 +191,25 @@ func TestZenPreviewStylesEmbedSourceAsCode(t *testing.T) {
 		t.Fatalf("got %q", text.String())
 	}
 }
+
+func TestZenCalloutTitleIsInlineText(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"embed", "> [!note] ![[a.png]]", "▍ NOTE · ⟦image: a.png⟧"},
+		{"code", "> [!tip] use `this` here", "▍ TIP · use this here"},
+		{"embed in code", "> [!tip] `![[a.png]]`", "▍ TIP · ![[a.png]]"},
+		{"plain", "> [!warning] Careful", "▍ WARNING · Careful"},
+		{"no title", "> [!info]", "▍ INFO"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	lines := a.renderPreviewLines("> [!note] see [[Other]]", 60)
+	if len(lines[0].links) != 1 || lines[0].links[0].target != "Other" {
+		t.Errorf("the title's link is not on its row: %v", lines[0].links)
+	}
+}
+

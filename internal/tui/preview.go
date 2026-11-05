@@ -171,11 +171,17 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 		}
 		if m := calloutRe.FindStringSubmatch(line); m != nil {
 			kind := strings.ToUpper(m[1])
-			title := m[2]
-			if title == "" {
-				title = kind
+			bar := th.Quote.Foreground(th.Blue).Render("▍ ")
+			titleStyle := th.Bold.Foreground(th.Blue)
+			if m[2] == "" {
+				out = append(out, previewLine{text: bar + titleStyle.Render(kind), srcLine: i})
+				i++
+				continue
 			}
-			out = append(out, previewLine{text: th.Quote.Foreground(th.Blue).Render("▍ ") + th.Bold.Foreground(th.Blue).Render(kind+" · "+title), srcLine: i})
+			// A title is inline text like any other, so its embeds and code render.
+			label := kind + " · "
+			rows := a.paragraph(m[2], width-2-cellWidth(label), func(class int) lipgloss.Style { return titleStyle }, bar+titleStyle.Render(label), bar+strings.Repeat(" ", cellWidth(label)), i)
+			out = append(out, rows...)
 			i++
 			continue
 		}
