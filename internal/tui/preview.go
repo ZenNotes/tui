@@ -22,6 +22,8 @@ type previewState struct {
 	scroll     int
 	cursor     int
 	followLine int
+	// rows is the pane's height at the last draw.
+	rows int
 	// jumpLine is a source line the next draw brings to the top, for a link
 	// followed to an anchor; jumpPending says one is waiting.
 	jumpLine    int
@@ -675,6 +677,7 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	width := max(1, w-2*pad)
 	lines := a.previewLinesFor(t, buf, width)
 	pv := t.preview
+	pv.rows = h
 	if t.mode == modeSplit {
 		// Follow the editor cursor.
 		target := previewRowFor(lines, pv.followLine)
@@ -698,8 +701,8 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 			pv.scroll = pv.cursor - h + 1
 		}
 	}
-	if pv.scroll > max(0, len(lines)-1) {
-		pv.scroll = max(0, len(lines)-1)
+	if pv.scroll > max(0, len(lines)-h) {
+		pv.scroll = max(0, len(lines)-h)
 	}
 	if pv.scroll < 0 {
 		pv.scroll = 0
@@ -722,12 +725,25 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	return strings.Join(out, "\n")
 }
 
-// previewKey handles reading-mode keys.
+// moveTo takes the row cursor to a row and the view with it, so a key that says
+// it scrolls shows that on its first press. Where the view cannot go further, at
+// either end of the note, the cursor goes on alone, which reaches the rows of the
+// first and last screens. Every row can still take the cursor, for Enter to
+// follow a link there or x to toggle a task.
+func (pv *previewState) moveTo(row, n, rows int) {
+	cur := listCursor{cursor: row}
+	cur.clamp(n)
+	cur.scroll = max(0, min(pv.scroll+cur.cursor-pv.cursor, n-rows))
+	cur.ensureVisible(rows)
+	pv.cursor, pv.scroll = cur.cursor, cur.scroll
+}
+
 // previewHint is the help line for reading mode.
 func (a *App) previewHint() string {
 	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"vim.leaderPrefix", "leader"}})
 }
 
+// previewKey handles reading-mode keys.
 func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	pv := t.preview
 	if pv == nil {
@@ -739,10 +755,13 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	if lines != nil {
 		n = len(lines.lines)
 	}
-	rows := a.editorRows(buf)
+	rows := pv.rows
+	if rows <= 0 {
+		rows = a.editorRows(buf)
+	}
 	cur := listCursor{cursor: pv.cursor, scroll: pv.scroll}
 	if a.listNav(&cur, k, n, rows) {
-		pv.cursor, pv.scroll = cur.cursor, cur.scroll
+		pv.moveTo(cur.cursor, n, rows)
 		return
 	}
 	if k.Is("enter") {
