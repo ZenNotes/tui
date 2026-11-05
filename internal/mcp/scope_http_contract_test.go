@@ -1027,6 +1027,11 @@ func TestHTTPMCPFullAccessMovesBackIntoAnEmptiedSubfolder(t *testing.T) {
 	}
 }
 
+func TestFoldersHoldingHiddenNotesStayThroughHTTP(t *testing.T) {
+	httpMCPBinary(t)
+	testDenyFolder(t, runScopedOnHTTPMCP)
+}
+
 // A note that is a link can lead out of the vault. No client on another machine gets it,
 // whatever its scope, by any tool.
 func TestHTTPMCPLinksStayOutAtFullAccess(t *testing.T) {

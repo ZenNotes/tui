@@ -177,7 +177,7 @@ process from environment variables, so the variables are tested as well as the r
 - **A deny entry follows a note between system folders.** A note keeps its folders when archived or
   trashed, so `deny: ["Journal"]` also hides `archive/Journal/x.md`, and an entry written with a system
   folder, in any case, hides that folder's name in the others: `INBOX/journal`, or `archive/AJ` for
-  `trash/AJ/a.md`.
+  `trash/AJ/a.md`. A folder holding such a note cannot be deleted or renamed as a whole.
 - **An allow entry with accents does not match a folder without them.** `cafe` still finds `Café`, as
   the fixture says, but `Café` no longer finds `Cafe`.
 

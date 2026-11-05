@@ -262,7 +262,10 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// Entries take the vault's own spelling, so `--allow-path /projects`
 	// finds `Projects/`.
 	for _, entry := range sb.scope.Allow {
-		canonical, ok := spell(entry, known)
+		canonical, ok := spellExactly(entry, known)
+		if !ok {
+			canonical, ok = spell(entry, known)
+		}
 		if !ok {
 			extra, err := knownAssets()
 			if err != nil {
@@ -392,6 +395,20 @@ func (sb *scopedBackend) occupiedCheck(ctx context.Context, root string) func(st
 	}
 }
 
+// spellExactly finds the one known path equal to p but for case and Unicode composition,
+// so that `Café` is that folder even with a `Cafe` beside it, where spell finds two.
+func spellExactly(p string, known []string) (string, bool) {
+	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	wanted, match, count := lower(p), "", 0
+	for _, k := range known {
+		if lower(k) == wanted {
+			match = k
+			count++
+		}
+	}
+	return match, count == 1
+}
+
 // spell finds the vault's spelling of p among known paths: exact, else the
 // one path equal to it after case and accent folding.
 func spell(p string, known []string) (string, bool) {
@@ -497,10 +514,15 @@ func (v *scopeView) entryWithoutBucket(e string) string {
 
 func (v *scopeView) visible(p string) bool { return v.covers(p) && !v.denied(p) }
 
-// denyInside says whether a deny entry lies at or below p.
+// denyInside says whether a note under p could be hidden by a deny entry, the way denied
+// reads one: at or below p, or, for a folder in a system folder, at or below its name there.
 func (v *scopeView) denyInside(p string) bool {
+	live := v.withoutBucket(p)
 	for _, e := range v.deny {
 		if insideFolded(e, p) {
+			return true
+		}
+		if entry := v.entryWithoutBucket(e); entry != "" && live != p && insideFolded(entry, live) {
 			return true
 		}
 	}
