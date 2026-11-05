@@ -1278,6 +1278,22 @@ func Run(ctx context.Context, opts Options) error {
 	return err
 }
 
+// withRecordPages opens a vault on this machine so its database record pages are
+// notes, in the listings, tasks and link rewrites, as they are on a server. A client
+// gets one answer wherever its vault is, and a scope can name what it can see.
+func withRecordPages(open func(backend.Target) (Backend, error)) func(backend.Target) (Backend, error) {
+	return func(target backend.Target) (Backend, error) {
+		b, err := open(target)
+		if err != nil {
+			return nil, err
+		}
+		if local, ok := b.(*backend.Local); ok {
+			local.Vault().RecordPages = true
+		}
+		return b, nil
+	}
+}
+
 // BuildServer is the MCP server with every tool the scope offers, ready for a
 // transport.
 func BuildServer(opts Options) *sdk.Server {
@@ -1287,7 +1303,7 @@ func BuildServer(opts Options) *sdk.Server {
 	}
 	vaults := &session{
 		resolve: opts.ResolveTarget,
-		open:    opts.OpenBackend,
+		open:    withRecordPages(opts.OpenBackend),
 		served:  backend.Served,
 		scoped:  opts.Scope != nil && opts.Scope.Active(),
 	}

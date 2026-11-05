@@ -45,7 +45,13 @@ func (l *Local) Describe(context.Context) (Description, error) {
 	}, nil
 }
 
-func (l *Local) ListNotes(context.Context) ([]vault.NoteMeta, error)   { return l.vault.ListNotes() }
+func (l *Local) ListNotes(context.Context) ([]vault.NoteMeta, error) { return l.vault.ListNotes() }
+
+// ListDatabaseDirs names the database folders, which a folder listing here leaves out.
+func (l *Local) ListDatabaseDirs(context.Context) ([]vault.FolderEntry, error) {
+	return l.vault.ListDatabaseDirs()
+}
+
 func (l *Local) ListAssets(context.Context) ([]vault.AssetMeta, error) { return l.vault.ListAssets() }
 func (l *Local) ListComments(_ context.Context, rel string) ([]vault.NoteComment, error) {
 	return l.vault.ReadNoteComments(rel)

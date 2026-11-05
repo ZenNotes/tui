@@ -1135,6 +1135,11 @@ What the client gets:
   look like a new folder). Archiving and trashing a visible note are allowed
   even when the archive or trash is not shared; the note then leaves what the
   client sees. If that system folder is a symbolic link, they are refused.
+- A database's record pages are notes, on a local vault as on a server: they are
+  in `list_notes`, `search_text` and `list_tasks`, and a path can name a page or
+  its `.base` folder. Its `data.csv` and `schema.json` are not, and nothing can be
+  created in a `.base` folder. `zn list` and `zn tui` still show a database as one
+  thing.
 - A system folder that is a symbolic link is hidden from the client, even if
   `--allow-path` names it, since what is in it may belong to another folder.
   `zn mcp` says so once on stderr, which ends up in the MCP client's logs.

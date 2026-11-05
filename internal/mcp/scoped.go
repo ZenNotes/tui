@@ -174,6 +174,11 @@ func (sb *scopedBackend) requireLinkMarks(ctx context.Context) error {
 	return nil
 }
 
+// databaseDirLister is a backend whose folder listing leaves database folders out.
+type databaseDirLister interface {
+	ListDatabaseDirs(ctx context.Context) ([]vault.FolderEntry, error)
+}
+
 func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	if err := sb.requireLinkMarks(ctx); err != nil {
 		return nil, err
@@ -237,6 +242,17 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		known = append(known, n.Path)
 	}
 	known = append(known, v.dirs...)
+	// A database folder is there to name, here where a folder listing leaves it out, even
+	// with no record page yet. It stays out of v.dirs: it takes no notes and no moves.
+	if lister, ok := sb.inner.(databaseDirLister); ok {
+		databases, err := lister.ListDatabaseDirs(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range databases {
+			known = append(known, v.folderRel(f))
+		}
+	}
 
 	// An entry may name an attachment or the folder holding one. The listings
 	// above do not show those, so the assets are read only for an entry they
