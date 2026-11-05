@@ -141,3 +141,67 @@ func TestRenamingARecordPageRewritesLinksToIt(t *testing.T) {
 		t.Error("the page did not move")
 	}
 }
+
+// A client with a path scope may not see the database a page belongs to, so it reads
+// and edits the page and leaves it where it is, wherever the vault lives.
+func testRecordPageStaysPut(t *testing.T, run func(*testing.T, string, *Scope) *sdk.ClientSession) {
+	const schema = `{"pages":{"row-1":"Alpha.md"}}`
+	for _, tc := range []struct {
+		name        string
+		allow, deny []string
+	}{
+		{name: "allow", allow: []string{"memory", "archive", "trash", "elsewhere"}},
+		{name: "deny", deny: []string{"memory/note.md"}},
+	} {
+		for tool, a := range map[string]map[string]any{
+			"rename_note":    {"path": recordPage, "newTitle": "Beta"},
+			"move_note":      {"path": recordPage, "targetFolder": "inbox", "targetSubpath": "memory"},
+			"archive_note":   {"path": recordPage},
+			"move_to_trash":  {"path": recordPage},
+			"duplicate_note": {"path": recordPage},
+		} {
+			t.Run(tc.name+"/"+tool, func(t *testing.T) {
+				root := seedRecordPages(t)
+				if err := os.WriteFile(filepath.Join(root, "memory/Books.base/schema.json"), []byte(schema), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				cs := run(t, root, testScope(t, "write", tc.allow, tc.deny))
+				if got := mustFail(t, cs, tool, a); !strings.Contains(got, "record page") {
+					t.Errorf("refused with: %s", got)
+				}
+				if !exists(root, recordPage) || exists(root, "memory/Books.base/Alpha copy.md") || exists(root, "memory/Books.base/Beta.md") || exists(root, "memory/Alpha.md") {
+					t.Error("a file moved or appeared")
+				}
+				if got := readFile(t, root, "memory/Books.base/schema.json"); got != schema {
+					t.Errorf("the schema changed: %s", got)
+				}
+				mustCall(t, cs, "write_note", map[string]any{"path": recordPage, "body": "edited\n"})
+			})
+		}
+	}
+}
+
+func TestRecordPageStaysPutOnALocalVault(t *testing.T) { testRecordPageStaysPut(t, runScoped) }
+
+func TestRecordPageStaysPutOnAServer(t *testing.T) {
+	scopeServerBinary(t)
+	testRecordPageStaysPut(t, runScopedOnServer)
+}
+
+// A hidden page answers as a missing one, before anything about what it is.
+func TestHiddenRecordPageIsNotFoundEvenForARefusedTool(t *testing.T) {
+	cs := runScoped(t, seedRecordPages(t), testScope(t, "write", nil, []string{recordPage}))
+	if got := mustFail(t, cs, "duplicate_note", map[string]any{"path": recordPage}); !strings.Contains(got, "Note not found") {
+		t.Errorf("got %s", got)
+	}
+}
+
+// With no paths in its scope, a client has the vault to itself, on a server as here.
+func TestRecordPageIsAnOrdinaryNoteAtFullAccess(t *testing.T) {
+	root := seedRecordPages(t)
+	cs := runScoped(t, root, nil)
+	mustCall(t, cs, "duplicate_note", map[string]any{"path": recordPage})
+	if !exists(root, "memory/Books.base/Alpha copy.md") {
+		t.Error("no copy")
+	}
+}

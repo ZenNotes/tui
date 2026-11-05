@@ -1228,6 +1228,7 @@ func TestMermaidLongerSequenceArrowShowsItsSource(t *testing.T) {
 		}
 	}
 }
+
 // A colour's semicolon ends its statement, so what follows it is drawn.
 func TestMermaidColourKeepsItsSemicolon(t *testing.T) {
 	for _, tc := range []struct {

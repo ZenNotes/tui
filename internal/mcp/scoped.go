@@ -788,9 +788,25 @@ type linkScopedRenamer interface {
 	RenameNoteRewritingLinksIn(ctx context.Context, rel, nextTitle string, rewrite func(path string) bool) (vault.NoteMeta, error)
 }
 
+// errRecordPageStaysPut is the refusal for taking a record page out of step with its
+// database. The database's schema names its pages and a row's title follows the
+// page's, and a client that sees part of the vault may not see the database.
+var errRecordPageStaysPut = errors.New("This assistant cannot rename, move, copy, archive or trash a database's record page.")
+
+// keepsRecordPage refuses an operation on a record page under a path scope.
+func (sb *scopedBackend) keepsRecordPage(meta vault.NoteMeta) error {
+	if sb.scope.Restricted() && database.FormDirContaining(meta.Path) != "" {
+		return errRecordPageStaysPut
+	}
+	return nil
+}
+
 func (sb *scopedBackend) RenameNote(ctx context.Context, rel, nextTitle string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	v, _ := sb.load(ctx)
@@ -811,6 +827,9 @@ func (sb *scopedBackend) RenameNote(ctx context.Context, rel, nextTitle string) 
 func (sb *scopedBackend) MoveNote(ctx context.Context, rel string, folder vault.NoteFolder, subpath string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	v, _ := sb.load(ctx)
@@ -870,6 +889,9 @@ func (sb *scopedBackend) ArchiveNote(ctx context.Context, rel string) (vault.Not
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
+	if err := sb.keepsRecordPage(meta); err != nil {
+		return vault.NoteMeta{}, err
+	}
 	if err := sb.exitOpen(ctx, meta, vault.FolderArchive); err != nil {
 		return vault.NoteMeta{}, err
 	}
@@ -880,6 +902,9 @@ func (sb *scopedBackend) ArchiveNote(ctx context.Context, rel string) (vault.Not
 func (sb *scopedBackend) MoveToTrash(ctx context.Context, rel string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	if err := sb.exitOpen(ctx, meta, vault.FolderTrash); err != nil {
@@ -933,6 +958,9 @@ func (sb *scopedBackend) RestoreFromTrash(ctx context.Context, rel string) (vaul
 func (sb *scopedBackend) DuplicateNote(ctx context.Context, rel string) (vault.NoteMeta, error) {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return vault.NoteMeta{}, err
 	}
 	v, err := sb.load(ctx)
