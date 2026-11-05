@@ -390,6 +390,11 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 		return m[1] + `"` + open + strconv.Itoa(len(quoted)-1) + shut + `"`
 	})
 	partial = badCloseRe.MatchString(masked)
+	// An entity's semicolon does not end a statement either, quoted or not.
+	masked = mermaidEntityRe.ReplaceAllStringFunc(masked, func(entity string) string {
+		quoted = append(quoted, entity)
+		return open + strconv.Itoa(len(quoted)-1) + shut
+	})
 	// Renamed IDs use a prefix the source does not hold.
 	idPrefix := "znid"
 	for strings.Contains(src, idPrefix) {

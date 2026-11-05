@@ -1197,3 +1197,35 @@ func TestWideFlowchartKeepsEveryNodeAndEdgeAtAnyWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestMermaidEntityKeepsItsStatementWhole(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{"graph TD\nA[d #35; e]-->B", "d # e"},
+		{"graph TD\nA[\"d #35; e\"]-->B", "d # e"},
+		{"graph TD\nA[x #amp; y]-->B", "x & y"},
+		{"graph TD\nA[x #quot;q#quot; y]-->B", `x "q" y`},
+		{"graph TD\nA-->|n #35;1|B", "n #1"},
+		{"graph TD\nA[#nosuchname; y]-->B", "#nosuchname; y"},
+		{"graph TD; A-->B; B-->C", "C"},
+	} {
+		text := strings.Join(flowRows(t, tc.src, 60), "\n")
+		if !strings.Contains(text, tc.want) {
+			t.Errorf("%q drew:\n%s", tc.src, text)
+		}
+	}
+}
+
+// An arrow no diagram defines stays in view as written, rather than draw a box
+// called `A-` or lose the edge.
+func TestMermaidLongerSequenceArrowShowsItsSource(t *testing.T) {
+	a := mermaidTestApp()
+	for _, src := range []string{"sequenceDiagram\nA--->>B: hi", "graph LR\nA--->>B"} {
+		text := ""
+		for _, l := range a.mermaidTextLines(parseMermaidText(src), src, 0, 60) {
+			text += stripAnsi(l.text) + "\n"
+		}
+		if !strings.Contains(text, "A--->>B") || !strings.Contains(text, "source.") {
+			t.Errorf("%q drew:\n%s", src, text)
+		}
+	}
+}
