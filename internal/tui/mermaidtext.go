@@ -301,6 +301,35 @@ func mermaidMaskRunes(src string) (open, shut string) {
 	return found[0], found[1]
 }
 
+// mermaidEntityText is what an entity like #35; or #amp; stands for.
+func mermaidEntityText(entity string) (string, bool) {
+	name := entity[1 : len(entity)-1]
+	if name[0] >= '0' && name[0] <= '9' {
+		name = "#" + name
+	}
+	text := html.UnescapeString("&" + name + ";")
+	return text, text != "&"+name+";"
+}
+
+// mermaidMaskEntities hides each entity's semicolon from the statement split. A
+// colour's does end its statement: `fill:#f9f;` names no entity, and `fill:#123;`
+// would read as one, so a value after a colon is left alone.
+func mermaidMaskEntities(src string, mask func(entity string) string) string {
+	var b strings.Builder
+	last := 0
+	for _, m := range mermaidEntityRe.FindAllStringIndex(src, -1) {
+		entity := src[m[0]:m[1]]
+		if _, known := mermaidEntityText(entity); !known || strings.HasSuffix(strings.TrimRight(src[:m[0]], " \t"), ":") {
+			continue
+		}
+		b.WriteString(src[last:m[0]])
+		b.WriteString(mask(entity))
+		last = m[1]
+	}
+	b.WriteString(src[last:])
+	return b.String()
+}
+
 // mermaidPlainID says the parser can read a word as a node ID as it is. Its IDs
 // are ASCII, so others are renamed while it reads them.
 func mermaidPlainID(word string) bool {
@@ -395,8 +424,7 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 		return m[1] + `"` + open + strconv.Itoa(len(quoted)-1) + shut + `"`
 	})
 	partial = badCloseRe.MatchString(masked)
-	// An entity's semicolon does not end a statement either, quoted or not.
-	masked = mermaidEntityRe.ReplaceAllStringFunc(masked, func(entity string) string {
+	masked = mermaidMaskEntities(masked, func(entity string) string {
 		quoted = append(quoted, entity)
 		return open + strconv.Itoa(len(quoted)-1) + shut
 	})
@@ -522,11 +550,7 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 			return names[n]
 		})
 		s = mermaidEntityRe.ReplaceAllStringFunc(s, func(m string) string {
-			name := m[1 : len(m)-1]
-			if name[0] >= '0' && name[0] <= '9' {
-				name = "#" + name
-			}
-			if text := html.UnescapeString("&" + name + ";"); text != "&"+name+";" {
+			if text, ok := mermaidEntityText(m); ok {
 				return text
 			}
 			return m

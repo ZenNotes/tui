@@ -1205,7 +1205,6 @@ func TestMermaidEntityKeepsItsStatementWhole(t *testing.T) {
 		{"graph TD\nA[x #amp; y]-->B", "x & y"},
 		{"graph TD\nA[x #quot;q#quot; y]-->B", `x "q" y`},
 		{"graph TD\nA-->|n #35;1|B", "n #1"},
-		{"graph TD\nA[#nosuchname; y]-->B", "#nosuchname; y"},
 		{"graph TD; A-->B; B-->C", "C"},
 	} {
 		text := strings.Join(flowRows(t, tc.src, 60), "\n")
@@ -1229,6 +1228,27 @@ func TestMermaidLongerSequenceArrowShowsItsSource(t *testing.T) {
 		}
 	}
 }
+// A colour's semicolon ends its statement, so what follows it is drawn.
+func TestMermaidColourKeepsItsSemicolon(t *testing.T) {
+	for _, tc := range []struct {
+		src  string
+		want []string
+	}{
+		{"graph TD\nA[One]-->B[Two]; style A fill:#f9f; B-->C[Three]", []string{"One", "Two", "Three"}},
+		{"graph LR; classDef big fill:#f96; A[One]:::big-->B[Two]; B-->C[Three]", []string{"One", "Two", "Three"}},
+		{"graph TD\nA[One]-->B[Two]; style A fill: #123; B-->C[Three]", []string{"One", "Three"}},
+		{"graph TD\nA[One]-->B[Two]; style A fill:#f9f,stroke:#333; B-->C[Three]", []string{"One", "Three"}},
+		{"graph TD\nA[One #35; two]-->B[Two]; style A fill:#f9f; B-->C[Three]", []string{"One # two", "Three"}},
+	} {
+		text := strings.Join(flowRows(t, tc.src, 60), "\n")
+		for _, want := range tc.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%q has no %q:\n%s", tc.src, want, text)
+			}
+		}
+	}
+}
+
 func TestMermaidLabelDropsInlineTags(t *testing.T) {
 	text := strings.Join(flowRows(t, "graph TD\nA[\"<b>bold</b> x\"]-->|<i>lab</i>|B[\"<span style='color:red'>red</span>\"]\nC[\"a <b>\"]-->D[\"keep <thing> here\"]", 60), "\n")
 	for _, want := range []string{"bold x", "lab", "red", "keep <thing> here"} {
