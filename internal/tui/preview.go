@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -121,9 +122,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 				i++
 				continue
 			}
-			for _, seg := range wrapLine([]rune(strings.ReplaceAll(line, "\t", "    ")), max(1, width-2)) {
-				out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string([]rune(strings.ReplaceAll(line, "\t", "    "))[seg.start:seg.end])), srcLine: i})
-			}
+			out = append(out, zenCodeRows(th, line, i, width)...)
 			i++
 			continue
 		}
@@ -245,6 +244,16 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 	return out
 }
 
+// zenCodeRows draws one line of a code block in the zen style.
+func zenCodeRows(th Theme, line string, srcLine, width int) []previewLine {
+	runes := []rune(strings.ReplaceAll(line, "\t", "    "))
+	out := []previewLine{}
+	for _, seg := range wrapLine(runes, max(1, width-2)) {
+		out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string(runes[seg.start:seg.end])), srcLine: srcLine})
+	}
+	return out
+}
+
 // inlineRunes tokenizes inline markdown into styled runes, hiding syntax.
 func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	links := []linkTarget{}
@@ -272,6 +281,29 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		}
 		spans = append(spans, inlineSpan{m[0], m[1], class, display, link})
 	}
+	// around marks syntax on either side of what is already taken: its markers show
+	// nothing, and the text between takes class. Code or a link inside `**` keeps its
+	// own look rather than leave the stars on screen.
+	around := func(m []int, marker, class int) {
+		from, to := m[0]+marker, m[1]-marker
+		if slices.Contains(taken[m[0]:from], true) || slices.Contains(taken[to:m[1]], true) {
+			return
+		}
+		add([]int{m[0], from}, class, "", -1)
+		add([]int{to, m[1]}, class, "", -1)
+		for i := from; i < to; {
+			if taken[i] {
+				i++
+				continue
+			}
+			j := i
+			for j < to && !taken[j] {
+				j++
+			}
+			add([]int{i, j}, class, text[i:j], -1)
+			i = j
+		}
+	}
 	for _, c := range codes {
 		add([]int{c.start, c.end}, c.class, c.text, c.link)
 	}
@@ -293,6 +325,17 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		label := text[m[2]:m[3]]
 		link := mdLinkTargetOf(label, text[m[4]:m[5]])
 		links = append(links, link)
+		// Code in a link's label is part of the link's text.
+		spans = slices.DeleteFunc(spans, func(sp inlineSpan) bool {
+			inLabel := sp.class == stCode && m[2] <= sp.start && sp.end <= m[3]
+			if inLabel {
+				label = strings.Replace(label, text[sp.start:sp.end], sp.text, 1)
+				for i := sp.start; i < sp.end; i++ {
+					taken[i] = false
+				}
+			}
+			return inLabel
+		})
 		if label == "" {
 			label = link.target
 		}
@@ -303,9 +346,17 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		add(m, stLink, text[m[0]:m[1]], len(links)-1)
 	}
 	for _, m := range strongRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 2, stStrong)
+			continue
+		}
 		add(m, stStrong, text[m[0]+2:m[1]-2], -1)
 	}
 	for _, m := range strikeRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 2, stStrike)
+			continue
+		}
 		add(m, stStrike, text[m[0]+2:m[1]-2], -1)
 	}
 	for _, m := range highlightRe.FindAllStringIndex(text, -1) {
@@ -318,6 +369,10 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		start := m[0]
 		if start < len(text) && text[start] != '*' && text[start] != '_' {
 			start++
+		}
+		if slices.Contains(taken[start:m[1]], true) {
+			around([]int{start, m[1]}, 1, stEmph)
+			continue
 		}
 		add([]int{start, m[1]}, stEmph, text[start+1:m[1]-1], -1)
 	}

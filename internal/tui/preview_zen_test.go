@@ -213,3 +213,37 @@ func TestZenCalloutTitleIsInlineText(t *testing.T) {
 	}
 }
 
+func TestZenCodeInsideBoldAndLinks(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"bold around code", "**`![[a.png]]`**", "![[a.png]]"},
+		{"bold around code and text", "**a `b` c**", "a b c"},
+		{"emphasis around code", "*`x`*", "x"},
+		{"strike around code", "~~`x`~~", "x"},
+		{"bold around a link", "**[[Note]]**", "Note"},
+		{"link with code", "[`x`](https://e.com) y", "x y"},
+		{"link with code and text", "[see `x` now](https://e.com)", "see x now"},
+		{"a star in code stays", "`a**b` and `c**d`", "a**b and c**d"},
+		{"code past the markers", "**a `b** c`", "**a b** c"},
+		{"plain bold", "**a** b", "a b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); got != tc.want+"" && !strings.HasPrefix(got, tc.want+"\n") {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	lines := a.renderPreviewLines("[`x`](https://e.com)", 60)
+	if len(lines[0].links) != 1 || lines[0].links[0].target != "https://e.com" {
+		t.Errorf("the link is not on its row: %v", lines[0].links)
+	}
+}
+
+// The default style reads these the same way, and a cell is as wide as its text.
+func TestZenTableCellEmbedIsNotCutBySourceWidth(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	if got := zenPreviewText(a, "| ![[x.png]] | b |\n|---|---|\n| 1 | 2 |"); !strings.Contains(got, "⟦image: x.png⟧") {
+		t.Errorf("got %q", got)
+	}
+}
+
