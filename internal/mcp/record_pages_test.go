@@ -159,6 +159,7 @@ func testRecordPageStaysPut(t *testing.T, run func(*testing.T, string, *Scope) *
 			"archive_note":   {"path": recordPage},
 			"move_to_trash":  {"path": recordPage},
 			"duplicate_note": {"path": recordPage},
+			"delete_note":    {"path": recordPage, "confirm": true},
 		} {
 			t.Run(tc.name+"/"+tool, func(t *testing.T) {
 				root := seedRecordPages(t)
@@ -166,7 +167,8 @@ func testRecordPageStaysPut(t *testing.T, run func(*testing.T, string, *Scope) *
 					t.Fatal(err)
 				}
 				cs := run(t, root, testScope(t, "write", tc.allow, tc.deny))
-				if got := mustFail(t, cs, tool, a); !strings.Contains(got, "record page") {
+				// A hosted client is not offered rename_note under a path scope at all.
+				if got := mustFail(t, cs, tool, a); !strings.Contains(got, "record page") && got != "Unknown tool: "+tool {
 					t.Errorf("refused with: %s", got)
 				}
 				if !exists(root, recordPage) || exists(root, "memory/Books.base/Alpha copy.md") || exists(root, "memory/Books.base/Beta.md") || exists(root, "memory/Alpha.md") {
@@ -188,6 +190,11 @@ func TestRecordPageStaysPutOnAServer(t *testing.T) {
 	testRecordPageStaysPut(t, runScopedOnServer)
 }
 
+func TestRecordPageStaysPutThroughHTTP(t *testing.T) {
+	httpMCPBinary(t)
+	testRecordPageStaysPut(t, runScopedOnHTTPMCP)
+}
+
 // A hidden page answers as a missing one, before anything about what it is.
 func TestHiddenRecordPageIsNotFoundEvenForARefusedTool(t *testing.T) {
 	cs := runScoped(t, seedRecordPages(t), testScope(t, "write", nil, []string{recordPage}))
@@ -203,5 +210,9 @@ func TestRecordPageIsAnOrdinaryNoteAtFullAccess(t *testing.T) {
 	mustCall(t, cs, "duplicate_note", map[string]any{"path": recordPage})
 	if !exists(root, "memory/Books.base/Alpha copy.md") {
 		t.Error("no copy")
+	}
+	mustCall(t, cs, "delete_note", map[string]any{"path": recordPage, "confirm": true})
+	if exists(root, recordPage) {
+		t.Error("the page was not deleted")
 	}
 }

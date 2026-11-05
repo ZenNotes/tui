@@ -786,7 +786,7 @@ type linkScopedRenamer interface {
 // errRecordPageStaysPut is the refusal for taking a record page out of step with its
 // database. The database's schema names its pages and a row's title follows the
 // page's, and a client that sees part of the vault may not see the database.
-var errRecordPageStaysPut = errors.New("This assistant cannot rename, move, copy, archive or trash a database's record page.")
+var errRecordPageStaysPut = errors.New("This assistant cannot rename, move, copy, archive, trash or delete a database's record page.")
 
 // keepsRecordPage refuses an operation on a record page under a path scope.
 func (sb *scopedBackend) keepsRecordPage(meta vault.NoteMeta) error {
@@ -973,6 +973,9 @@ func (sb *scopedBackend) DuplicateNote(ctx context.Context, rel string) (vault.N
 func (sb *scopedBackend) DeleteNote(ctx context.Context, rel string) error {
 	meta, err := sb.noteFor(ctx, rel, AccessWrite)
 	if err != nil {
+		return err
+	}
+	if err := sb.keepsRecordPage(meta); err != nil {
 		return err
 	}
 	return sb.inner.DeleteNote(ctx, meta.Path)
