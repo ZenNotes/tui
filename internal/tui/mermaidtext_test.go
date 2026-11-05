@@ -1229,3 +1229,16 @@ func TestMermaidLongerSequenceArrowShowsItsSource(t *testing.T) {
 		}
 	}
 }
+func TestMermaidLabelDropsInlineTags(t *testing.T) {
+	text := strings.Join(flowRows(t, "graph TD\nA[\"<b>bold</b> x\"]-->|<i>lab</i>|B[\"<span style='color:red'>red</span>\"]\nC[\"a <b>\"]-->D[\"keep <thing> here\"]", 60), "\n")
+	for _, want := range []string{"bold x", "lab", "red", "keep <thing> here"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in:\n%s", want, text)
+		}
+	}
+	for _, bad := range []string{"<b>", "</b>", "<i>", "<span", "</span>"} {
+		if strings.Contains(text, bad) {
+			t.Errorf("%q is still there:\n%s", bad, text)
+		}
+	}
+}

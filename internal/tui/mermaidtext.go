@@ -236,6 +236,8 @@ var (
 	mermaidHeadRe      = regexp.MustCompile(`(?i)^(graph|flowchart)(?:-elk)?(\s+\w+)?$`)
 	mermaidStateHeadRe = regexp.MustCompile(`(?i)^stateDiagram`)
 	mermaidBreakRe     = regexp.MustCompile(`(?i)<br\s*/?>`)
+	// Inline tags a label may style itself with, which a text drawing has no use for.
+	mermaidTagRe = regexp.MustCompile(`(?i)</?(?:b|i|u|s|em|strong|small|sub|sup|code|span|font|mark)(?:\s[^<>]*)?>`)
 	// Statements that draw nothing, which the parser would otherwise read as a
 	// node with that name. An ID may start with the same word, so the word has
 	// to end here and the statement has to hold no arrow.
@@ -526,6 +528,7 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 			}
 			return m
 		})
+		s = mermaidTagRe.ReplaceAllString(s, "")
 		return strings.TrimSpace(mermaidBreakRe.ReplaceAllString(s, "\n"))
 	}
 	sameLabel := map[string]int{}
