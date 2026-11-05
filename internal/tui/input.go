@@ -70,7 +70,8 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 	}
 	buf := a.activeBuffer()
 	editing := false
-	if buf != nil && a.focus == focusPane {
+	// A reading view has no text to type into, whatever mode its editor was left in.
+	if t := a.activeTab(); buf != nil && a.focus == focusPane && t.mode != modePreview {
 		m := buf.ed.Mode()
 		editing = m == vim.ModeInsert || m == vim.ModeReplace || m == vim.ModeCmdline || !a.prefs.VimMode
 	}
