@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,6 +16,9 @@ const nameColor = "\x1b[38;5;123m"
 
 func colorNameApp(t *testing.T) (*App, string) {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no file name with a control character in it")
+	}
 	dir := "inbox/" + nameColor + "fold"
 	note := dir + "/" + nameColor + "name.md"
 	a, root := linkTestApp(t, map[string]string{note: "# Note\n\n[[" + nameColor + "name|al" + nameColor + "ias]]\n\n[[other]]\n"})

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -56,6 +57,9 @@ func TestEmitErrorFollowsTheOutput(t *testing.T) {
 // A status line and a path error name what they acted on. On a terminal that name
 // is text, on its own row. Anywhere else, every byte stays.
 func TestStatusLinesCleanANameOnATerminal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no file name with a control character in it")
+	}
 	savedOut, savedErr := stdout, stderr
 	t.Cleanup(func() { stdout, stderr = savedOut, savedErr })
 	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
