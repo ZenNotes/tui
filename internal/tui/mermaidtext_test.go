@@ -1317,3 +1317,24 @@ func TestMermaidFitsPanesOfOneToEightCells(t *testing.T) {
 		}
 	}
 }
+
+// A pane of two cells holds a wide character, with no room for a leading space.
+func TestMermaidWideCharacterFitsTwoCells(t *testing.T) {
+	a := mermaidTestApp()
+	src := "graph TD\nA[＠＠]-->B[Two]"
+	for _, l := range a.mermaidTextLines(parseMermaidText(src), src, 0, 2) {
+		if got := cellWidth(stripAnsi(l.text)); got > 2 {
+			t.Errorf("row %q is %d cells", stripAnsi(l.text), got)
+		}
+	}
+}
+
+// With no room for a box, an edge still says what kind it is.
+func TestMermaidNarrowPaneKeepsEdgeStyles(t *testing.T) {
+	text := strings.Join(flowRows(t, "graph TD\nA-->B\nA-.->C\nA==>D\nA---E\nA<-->F", 7), "\n")
+	for _, want := range []string{"─▶ B", "╌▶ C", "━▶ D", "── E", "◀─▶ F"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in:\n%s", want, text)
+		}
+	}
+}

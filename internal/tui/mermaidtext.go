@@ -66,8 +66,8 @@ func parseMermaidText(src string) *mermaidText {
 func (a *App) mermaidTextLines(t *mermaidText, src string, srcLine, width int) []previewLine {
 	th := a.theme
 	inner, pad := width-1, " " // the row's leading space, if there is room for it
-	if width < 2 {
-		inner, pad = 1, ""
+	if width < 3 {
+		inner, pad = max(1, width), "" // two cells hold a wide character, with no space
 	}
 	source := func(note string, noteStyle func(...string) string) []previewLine {
 		out := []previewLine{}
@@ -693,7 +693,7 @@ func (f *flowchart) rowsPlain(width int) []string {
 	for _, id := range f.order {
 		out = append(out, flowWrap(f.label(id), width)...)
 		for _, e := range f.bySource[id] {
-			out = append(out, flowWrap("▶ "+f.edgeTarget(e), width)...)
+			out = append(out, flowWrap(flowArrow(e, "")+" "+f.edgeTarget(e), width)...)
 		}
 	}
 	return out
