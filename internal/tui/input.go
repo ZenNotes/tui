@@ -680,6 +680,11 @@ func (a *App) setPaneMode(mode paneMode) {
 	}
 	t.mode = mode
 	t.frontmatterPending = false
+	// The reading view has no command line to type into or to draw, and one left open
+	// would catch the first Esc.
+	if buf := a.buffers[t.path]; mode == modePreview && buf != nil && buf.ed.Mode() == vim.ModeCmdline {
+		buf.ed.HandleKey(vim.KeyEsc)
+	}
 	if a.prefs.RetainViewMode {
 		a.prefs.DefaultPaneMode = string(mode)
 	}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/ZenNotes/tui/internal/vim"
@@ -41,5 +42,39 @@ func TestReadingViewKeysAfterLeavingInsertMode(t *testing.T) {
 	}
 	if got := a.activeBuffer().ed.Text(); got != tallNote(100) {
 		t.Error("j was typed into the note")
+	}
+}
+
+// A command line being typed goes when the view changes, and Esc then does what the
+// hint says.
+func TestReadingViewClosesAnOpenCommandLine(t *testing.T) {
+	a, pv := readingApp(t, tallNote(100))
+	a.setPaneMode(modeEdit)
+	buf := a.activeBuffer()
+	a.View()
+	pressAndDraw(a, vim.Key{Rune: ':'}, vim.Key{Rune: 'w'}, vim.Key{Rune: 'q'})
+	if buf.ed.Mode() != vim.ModeCmdline {
+		t.Fatalf("no command line: mode %v", buf.ed.Mode())
+	}
+	pressAndDraw(a, vim.Alt('p'))
+	if a.activeTab().mode != modePreview {
+		t.Fatalf("not in the reading view: %v", a.activeTab().mode)
+	}
+	if buf.ed.Mode() == vim.ModeCmdline {
+		t.Error("the command line stayed open over the reading view")
+	}
+	if strings.Contains(stripAnsi(a.View()), ":wq") {
+		t.Error("the frame still shows the command")
+	}
+	pressAndDraw(a, vim.Key{Rune: 'j'})
+	if pv.scroll != 1 {
+		t.Errorf("j: scroll %d", pv.scroll)
+	}
+	pressAndDraw(a, vim.KeyEsc)
+	if a.activeTab().mode != modeEdit || buf.ed.Mode() == vim.ModeCmdline {
+		t.Errorf("Esc: mode %v, editor %v", a.activeTab().mode, buf.ed.Mode())
+	}
+	if a.quitting {
+		t.Error("the command ran")
 	}
 }
