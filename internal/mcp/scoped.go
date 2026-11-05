@@ -263,10 +263,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// Entries take the vault's own spelling, so `--allow-path /projects`
 	// finds `Projects/`.
 	for _, entry := range sb.scope.Allow {
-		canonical, ok := spellExactly(entry, known)
-		if !ok {
-			canonical, ok = spell(entry, known)
-		}
+		canonical, ok := spell(entry, known)
 		if !ok {
 			extra, err := knownAssets()
 			if err != nil {
@@ -398,38 +395,26 @@ func (sb *scopedBackend) occupiedCheck(ctx context.Context, root string) func(st
 	}
 }
 
-// spellExactly finds the one known path equal to p but for case and Unicode composition,
-// so that `Café` is that folder even with a `Cafe` beside it, where spell finds two.
-func spellExactly(p string, known []string) (string, bool) {
-	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
-	wanted, match, count := lower(p), "", 0
-	for _, k := range known {
-		if lower(k) == wanted {
-			match = k
-			count++
-		}
-	}
-	return match, count == 1
-}
-
-// spell finds the vault's spelling of p among known paths: exact, else the
-// one path equal to it after case and accent folding.
+// spell finds the vault's spelling of p among known paths: exact, else the one path
+// equal to it but for case and Unicode composition, so that `Café` is that folder even
+// with a `Cafe` beside it, else the one equal to it after accent folding as well. The
+// lists can name one path twice, which is still one path.
 func spell(p string, known []string) (string, bool) {
-	folded := search.Fold(p)
-	match := ""
-	count := 0
-	for _, k := range known {
-		if k == p {
-			return k, true
-		}
-		// The lists can name one path twice, which is still one path.
-		if search.Fold(k) == folded && k != match {
-			match = k
-			count++
-		}
+	if slices.Contains(known, p) {
+		return p, true
 	}
-	if count == 1 {
-		return match, true
+	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	for _, same := range []func(string) string{lower, search.Fold} {
+		wanted, match, count := same(p), "", 0
+		for _, k := range known {
+			if same(k) == wanted && k != match {
+				match = k
+				count++
+			}
+		}
+		if count == 1 {
+			return match, true
+		}
 	}
 	return "", false
 }
