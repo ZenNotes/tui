@@ -22,10 +22,12 @@ import (
 // and every edge label are dropped, and a branch is drawn through the boxes in
 // between. No width fixes that, so zn keeps the library's parser and draws
 // flowcharts and state diagrams itself, at the width of the pane: a row of
-// boxes when a left-to-right diagram fits, otherwise a column. An edge to the
-// box drawn next is an arrow between them, and any other edge is listed under
-// its source by the name of its target, so every node and edge can be read at
-// any width.
+// boxes when a left-to-right diagram fits and is a straight run, otherwise a
+// column. An edge to the box drawn next is an arrow between them, and any other
+// edge is listed under its source by the name of its target, so every node and
+// edge can be read at any width. A row has no place under a box for that list,
+// and boxes in a row read as a sequence, so an edge that skips or goes back to
+// another box puts the diagram in a column.
 //
 // The library's sequence drawing is kept only when it shows everything in the
 // source, and when it fits. Its class and ER drawings never do: relationships,
@@ -777,7 +779,8 @@ func (f *flowchart) rowsDown(width int) []string {
 	return out
 }
 
-// rowsAcross is one row of boxes, or nil when that is wider than width.
+// rowsAcross is one row of boxes, or nil when that is wider than width or
+// when an edge runs anywhere but to the box beside it.
 func (f *flowchart) rowsAcross(width int) []string {
 	type piece struct {
 		box       []string
@@ -785,11 +788,13 @@ func (f *flowchart) rowsAcross(width int) []string {
 		connector string
 	}
 	pieces := make([]piece, len(f.order))
-	listed := []string{}
 	height, total := 0, 0
 	for i, id := range f.order {
 		box := flowBox(f.label(id), 1<<16, false)
 		next, others := f.outgoing(i)
+		if len(others) > 0 {
+			return nil
+		}
 		connector := ""
 		switch {
 		case next != nil:
@@ -800,9 +805,6 @@ func (f *flowchart) rowsAcross(width int) []string {
 		pieces[i] = piece{box: box, w: cellWidth(box[0]), connector: connector}
 		total += pieces[i].w + cellWidth(connector)
 		height = max(height, len(box))
-		for _, e := range others {
-			listed = append(listed, f.flowName(id)+" "+flowArrow(e, "")+" "+f.edgeTarget(e))
-		}
 	}
 	if total > width {
 		return nil
@@ -823,9 +825,6 @@ func (f *flowchart) rowsAcross(width int) []string {
 			}
 		}
 		out = append(out, strings.TrimRight(b.String(), " "))
-	}
-	for _, text := range listed {
-		out = append(out, flowWrap(text, width)...)
 	}
 	return out
 }

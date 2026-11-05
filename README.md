@@ -660,7 +660,8 @@ sheet of your own, or `zen` for the built-in renderer).
 - **`![[Note]]`** renders the note inline.
 - **Mermaid** blocks draw as text, or as pictures when `mmdc` is installed.
   The text always fits the pane: a left-to-right flowchart runs down the page
-  when it is too wide for a row, and labels wrap. A sequence diagram draws
+  when it is too wide for a row, or when an edge goes anywhere but to the box
+  beside it, which is then listed under its source. Labels wrap. A sequence diagram draws
   when it has only participants and plain `->>` or `-->>` messages that fit.
   Other sequence diagrams, every class and ER diagram, and any diagram zn
   cannot draw in full as text show their source, with a note saying so. The

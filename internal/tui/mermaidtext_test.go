@@ -1130,3 +1130,70 @@ https://www.youtube.com/watch?v=abc123
 		}
 	}
 }
+
+// flowRows draws a flowchart as plain rows at a width.
+func flowRows(t *testing.T, src string, width int) []string {
+	t.Helper()
+	f, partial, err := parseFlowchart(src)
+	if err != nil || partial {
+		t.Fatalf("parse: %v, partial %v", err, partial)
+	}
+	return f.rows(width)
+}
+
+func TestWideFlowchartDrawsARowOnlyForAStraightRun(t *testing.T) {
+	straight := flowRows(t, "graph LR\nA[One]-->B[Two]-->C[Three]", 200)
+	if !strings.Contains(strings.Join(straight, "\n"), "│ One │─▶│ Two │─▶│ Three │") {
+		t.Errorf("a straight run left its row:\n%s", strings.Join(straight, "\n"))
+	}
+
+	for _, tc := range []struct {
+		name, src string
+		listed    string // the row under its source that names the edge
+	}{
+		{"back to an earlier box", "graph LR\nA[One]-->B[Two]-->C[Three]\nC-->A", "└─▶ One"},
+		{"skips a box", "graph LR\nA[One]-->B[Two]\nA-->C[Three]\nB-->C", "├─▶ Three"},
+		{"a loop with a label", "graph LR\nA[One]-->B[Two]\nB-->|again|A", "└─▶ One (again)"},
+		{"a second edge to the next box", "graph LR\nA[One]-->B[Two]\nA-.->B", "├╌▶ Two"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows := flowRows(t, tc.src, 200)
+			text := strings.Join(rows, "\n")
+			if !strings.Contains(text, tc.listed) {
+				t.Errorf("the edge is not listed as %q:\n%s", tc.listed, text)
+			}
+			for _, row := range rows {
+				if strings.Count(row, "┐") > 1 || strings.Contains(row, "│─▶│") {
+					t.Errorf("boxes are side by side, so they read as a sequence:\n%s", text)
+					break
+				}
+			}
+		})
+	}
+}
+
+// Boxes with no edge between them get no stroke in a column either.
+func TestFlowchartColumnDrawsNoStrokeBetweenUnjoinedBoxes(t *testing.T) {
+	rows := flowRows(t, "graph LR\nA[One]-->B[Two]\nA-->C[Three]", 200)
+	text := strings.Join(rows, "\n")
+	two := strings.Index(text, "Two")
+	three := strings.LastIndex(text, "Three")
+	if two < 0 || three < 0 {
+		t.Fatalf("a box is missing:\n%s", text)
+	}
+	if between := text[two:three]; strings.ContainsAny(between, "▼┬▶") {
+		t.Errorf("a stroke joins Two to Three, which share no edge:\n%s", text)
+	}
+}
+
+func TestWideFlowchartKeepsEveryNodeAndEdgeAtAnyWidth(t *testing.T) {
+	src := "graph LR\nA[One]-->B[Two]\nB-->|yes|C[Three]\nB-->|no|A\nC-.->A\nD[Alone]"
+	for _, width := range []int{12, 30, 80, 200, 400} {
+		text := strings.Join(flowRows(t, src, width), "\n")
+		for _, want := range []string{"One", "Two", "Three", "Alone", "yes", "no"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("width %d lost %q:\n%s", width, want, text)
+			}
+		}
+	}
+}
