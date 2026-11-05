@@ -66,7 +66,7 @@ func cmdTaskWatch(ctx context.Context, b backend.Backend, args Args) error {
 	}
 	asJSON := args.Bool("json")
 	if !asJSON {
-		fmt.Fprintf(stderr, "Watching %s for task status changes. Ctrl+C stops.\n", b.Label())
+		fmt.Fprintln(stderr, oneRow(stderr, "Watching "+b.Label()+" for task status changes. Ctrl+C stops."))
 	}
 	return followTaskStatuses(ctx, b, opts, first, changed, asJSON)
 }

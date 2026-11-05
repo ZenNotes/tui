@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1032,5 +1033,16 @@ func TestAVariantOfAFolderHoldingAnAssetIsStillThatFolder(t *testing.T) {
 	}
 	if got.Path != "Projects/move.png" {
 		t.Fatalf("%+v", got)
+	}
+}
+
+// A notice names what it found in the vault, and may land on a terminal.
+func TestScopeNoticeCleansAName(t *testing.T) {
+	var got string
+	sb := newScopedBackend(nil, Scope{})
+	sb.logf = func(format string, args ...any) { got = fmt.Sprintf(format, args...) }
+	sb.notice("the folder %s is hidden", "a\x1b[31mb")
+	if strings.Contains(got, "\x1b") || !strings.Contains(got, "a␛[31mb") {
+		t.Errorf("logged %q", got)
 	}
 }

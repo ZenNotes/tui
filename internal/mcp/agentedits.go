@@ -11,6 +11,7 @@ import (
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -130,7 +131,7 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 	existing := vault.ReadAgentEdit(b.Root(), rel)
 	started := vault.BeginAgentEdit(existing, before)
 	if err := vault.WriteAgentEdit(b.Root(), rel, started); err != nil {
-		fmt.Fprintf(os.Stderr, "zn mcp: could not record the edit to %s: %v\n", rel, err)
+		fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not record the edit to %s: %v", rel, err)))
 		return run()
 	}
 
@@ -147,7 +148,7 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 		finish = vault.WriteAgentEdit(b.Root(), rel, vault.FinishAgentEdit(started, after, entry))
 	}
 	if finish != nil {
-		fmt.Fprintf(os.Stderr, "zn mcp: could not finish the record for %s: %v\n", rel, finish)
+		fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not finish the record for %s: %v", rel, finish)))
 	}
 	return result, runErr
 }

@@ -37,7 +37,7 @@ func cmdConfig(ctx context.Context, args Args) error {
 		if err := os.WriteFile(path, []byte(config.DefaultConfigTOML), 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(stderr, "Created %s\n", path)
+		fmt.Fprintln(stderr, oneRow(stderr, "Created "+path))
 	} else if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func cmdConfig(ctx context.Context, args Args) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("editor exited with an error: %w", err)
 	}
-	fmt.Fprintf(stdout, "Edited %s\n", path)
+	emitOK("Edited " + path)
 	return nil
 }
 

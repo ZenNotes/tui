@@ -882,7 +882,7 @@ func (a *App) renderEmptyPane(w, h int) string {
 func (a *App) renderNoteTab(p *pane, t *tab, w, h int, focused bool) string {
 	buf, ok := a.buffers[t.path]
 	if !ok {
-		return a.theme.StatusError.Render("Note is not loaded: " + t.path)
+		return a.theme.StatusError.Render(termsafe.Line("Note is not loaded: " + t.path))
 	}
 	switch t.mode {
 	case modePreview:
@@ -994,7 +994,7 @@ func (a *App) renderStatusBar() string {
 			if sub != "" {
 				where += "/" + sub
 			}
-			segments = append(segments, t.Status.Render("  "+t.Bold.Render(name)+t.Dim.Render("  "+where+info)))
+			segments = append(segments, t.Status.Render("  "+t.Bold.Render(name)+t.Dim.Render("  "+termsafe.Line(where+info))))
 		} else {
 			segments = append(segments, t.Status.Render("  "+t.Bold.Render(name)))
 		}
@@ -1082,9 +1082,9 @@ func (a *App) renderCommandLine() string {
 		}
 		if msg, isErr := buf.ed.Message(); msg != "" {
 			if isErr {
-				return padRight(t.StatusError.Render(msg), a.width)
+				return padRight(t.StatusError.Render(termsafe.Line(msg)), a.width)
 			}
-			return padRight(msg, a.width)
+			return padRight(termsafe.Line(msg), a.width)
 		}
 	}
 	if a.message != "" {

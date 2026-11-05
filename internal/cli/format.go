@@ -74,8 +74,19 @@ func emitLine(line string) {
 	fmt.Fprintln(stdout, screenText(line))
 }
 
+// emitOK prints one status line. A name in it is text on a terminal, on that one
+// row, so it cannot colour the output or pass for another line. Other output keeps
+// every byte.
 func emitOK(message string) {
-	fmt.Fprintln(stdout, message)
+	fmt.Fprintln(stdout, oneRow(stdout, message))
+}
+
+// oneRow is text for one row of a stream, cleaned when that stream is a terminal.
+func oneRow(w io.Writer, s string) string {
+	if _, ok := w.(termsafe.Writer); ok {
+		return termsafe.Line(s)
+	}
+	return s
 }
 
 func emitError(message string) {

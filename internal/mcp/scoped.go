@@ -19,6 +19,7 @@ import (
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -354,11 +355,13 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 
 // notice tells whoever runs the server something the model should not read.
 func (sb *scopedBackend) notice(format string, args ...any) {
+	// It names what is in the vault, and whoever reads it may be at a terminal.
+	text := termsafe.Line(fmt.Sprintf(format, args...))
 	if sb.logf != nil {
-		sb.logf("mcp: "+format, args...)
+		sb.logf("mcp: %s", text)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "zn mcp: "+format+"\n", args...)
+	fmt.Fprintln(os.Stderr, "zn mcp: "+text)
 }
 
 func (sb *scopedBackend) flagWord(flag string) string {
