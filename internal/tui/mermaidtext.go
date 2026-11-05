@@ -240,7 +240,7 @@ var (
 	mermaidStateHeadRe = regexp.MustCompile(`(?i)^stateDiagram`)
 	mermaidBreakRe     = regexp.MustCompile(`(?i)<br\s*/?>`)
 	// Inline tags a label may style itself with, which a text drawing has no use for.
-	mermaidTagRe = regexp.MustCompile(`(?i)</?(?:b|i|u|s|em|strong|small|sub|sup|code|span|font|mark)(?:\s[^<>]*)?>`)
+	mermaidTagRe = regexp.MustCompile(`(?i)<(/?)(b|i|u|s|em|strong|small|sub|sup|code|span|font|mark)(?:\s[^<>]*)?>`)
 	// Statements that draw nothing, which the parser would otherwise read as a
 	// node with that name. An ID may start with the same word, so the word has
 	// to end here and the statement has to hold no arrow.
@@ -309,6 +309,33 @@ func mermaidEntityText(entity string) (string, bool) {
 	}
 	text := html.UnescapeString("&" + name + ";")
 	return text, text != "&"+name+";"
+}
+
+// mermaidDropTags takes out the tags that open and close around something. One with
+// no partner is the label's own text, like the type in `Vec<i>` or `Array<code>`.
+func mermaidDropTags(s string) string {
+	tags := mermaidTagRe.FindAllStringSubmatchIndex(s, -1)
+	drop := make([]bool, len(tags))
+	open := map[string][]int{}
+	for i, m := range tags {
+		name := strings.ToLower(s[m[4]:m[5]])
+		if m[3] == m[2] { // no slash
+			open[name] = append(open[name], i)
+		} else if held := open[name]; len(held) > 0 {
+			drop[i], drop[held[len(held)-1]] = true, true
+			open[name] = held[:len(held)-1]
+		}
+	}
+	var b strings.Builder
+	last := 0
+	for i, m := range tags {
+		if drop[i] {
+			b.WriteString(s[last:m[0]])
+			last = m[1]
+		}
+	}
+	b.WriteString(s[last:])
+	return b.String()
 }
 
 // mermaidMaskEntities hides each entity's semicolon from the statement split. A
@@ -555,7 +582,7 @@ func parseFlowchart(src string) (f *flowchart, partial bool, err error) {
 			}
 			return m
 		})
-		s = mermaidTagRe.ReplaceAllString(s, "")
+		s = mermaidDropTags(s)
 		return strings.TrimSpace(mermaidBreakRe.ReplaceAllString(s, "\n"))
 	}
 	sameLabel := map[string]int{}

@@ -1251,7 +1251,7 @@ func TestMermaidColourKeepsItsSemicolon(t *testing.T) {
 }
 
 func TestMermaidLabelDropsInlineTags(t *testing.T) {
-	text := strings.Join(flowRows(t, "graph TD\nA[\"<b>bold</b> x\"]-->|<i>lab</i>|B[\"<span style='color:red'>red</span>\"]\nC[\"a <b>\"]-->D[\"keep <thing> here\"]", 60), "\n")
+	text := strings.Join(flowRows(t, "graph TD\nA[\"<b>bold</b> x\"]-->|<i>lab</i>|B[\"<span style='color:red'>red</span>\"]\nC[\"a\"]-->D[\"keep <thing> here\"]", 60), "\n")
 	for _, want := range []string{"bold x", "lab", "red", "keep <thing> here"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no %q in:\n%s", want, text)
@@ -1260,6 +1260,24 @@ func TestMermaidLabelDropsInlineTags(t *testing.T) {
 	for _, bad := range []string{"<b>", "</b>", "<i>", "<span", "</span>"} {
 		if strings.Contains(text, bad) {
 			t.Errorf("%q is still there:\n%s", bad, text)
+		}
+	}
+}
+
+// A tag with no partner is the label's own text.
+func TestMermaidLabelKeepsATypeThatReadsLikeATag(t *testing.T) {
+	for src, want := range map[string]string{
+		"graph TD\nA[\"Vec<i>\"]-->B":                   "Vec<i>",
+		"graph TD\nA[\"Array<code>\"]-->B":              "Array<code>",
+		"graph TD\nA[\"a </b> b\"]-->B":                 "a </b> b",
+		"graph TD\nA[\"<b>Vec<i></b>\"]-->B":            "Vec<i>",
+		"graph TD\nA[\"<b>x</b> and <B>y</B>\"]-->B":    "x and y",
+		"graph TD\nA[\"<b><i>x</i></b>\"]-->B":          "x",
+		"graph TD\nA[\"<span class='c'>x</span>\"]-->B": "x",
+	} {
+		rows := strings.Join(flowRows(t, src, 60), "\n")
+		if !strings.Contains(rows, "│ "+want+" │") {
+			t.Errorf("%q drew:\n%s", src, rows)
 		}
 	}
 }
