@@ -171,3 +171,24 @@ func TestTheServerRewritesEveryNoteSoAPathScopeCannotRenameThere(t *testing.T) {
 		t.Fatalf("move: %v", err)
 	}
 }
+
+// A name with spaces around it would be trimmed to another. A target folder is
+// refused for that, so a file name is too, rather than answer with a name nobody
+// asked for.
+func TestAssetNameWithSpacesAroundItIsRefused(t *testing.T) {
+	for _, name := range []string{" trash", "trash ", "\ttrash", " pic.png", "pic.png\n"} {
+		root := seedFiles(t, map[string]string{"assets/a.png": "png", "n.md": "x"})
+		cs := runScoped(t, root, nil)
+		if got := mustFail(t, cs, "rename_asset", map[string]any{"path": "assets/a.png", "name": name}); !strings.Contains(got, "start or end with a space") {
+			t.Errorf("rename_asset %q: %s", name, got)
+		}
+		if got := mustFail(t, cs, "upload_asset", map[string]any{"filename": name, "content_base64": "cG5n"}); !strings.Contains(got, "start or end with a space") {
+			t.Errorf("upload_asset %q: %s", name, got)
+		}
+		if !exists(root, "assets/a.png") || exists(root, "assets/trash") || exists(root, "assets/pic.png") {
+			t.Errorf("%q: a file moved or appeared", name)
+		}
+		// The same name without them is fine.
+		mustCall(t, cs, "rename_asset", map[string]any{"path": "assets/a.png", "name": strings.TrimSpace(name)})
+	}
+}
