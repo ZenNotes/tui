@@ -268,3 +268,29 @@ func TestZenIndentedCodeBlock(t *testing.T) {
 		})
 	}
 }
+
+func TestZenLiteralMarkersAndNestedEmphasis(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"spaced stars around code", "a * b `c` d * e", "a * b c d * e"},
+		{"spaced bold around code", "a ** b `c` d ** e", "a ** b c d ** e"},
+		{"tight stars around code", "a *b `c` d* e", "a b c d e"},
+		{"bold and emphasis around code", "***both `x`***", "both x"},
+		{"bold and emphasis", "***both***", "both"},
+		{"underscores around code", "___both `x`___", "both x"},
+		{"bold and code in a link label", "[**bold** `c`](https://e.com)", "bold c"},
+		{"emphasis in a link label", "[*em* x](https://e.com)", "em x"},
+		{"plain label", "[snake_case_name](https://e.com)", "snake_case_name"},
+		{"a code star in a label stays", "[`a*b*c`](https://e.com)", "a*b*c"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := strings.TrimRight(zenPreviewText(a, tc.body), "\n"); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+	lines := a.renderPreviewLines("[**bold** `c`](https://e.com)", 60)
+	if len(lines[0].links) != 1 || lines[0].links[0].target != "https://e.com" {
+		t.Errorf("the link is not on its row: %v", lines[0].links)
+	}
+}

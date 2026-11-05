@@ -72,6 +72,7 @@ var (
 	embedWikiRe  = regexp.MustCompile(`!\[\[((?:[^\]|\\]|\\[^\]|])[^\]|]*?)(?:\\?\|[^\]]*)?\]\]`)
 	embedImgRe   = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
 	highlightRe  = regexp.MustCompile(`==[^=\n]+==`)
+	strongEmphRe = regexp.MustCompile(`\*\*\*[^*\n]+\*\*\*|___[^_\n]+___`)
 	mathInlineRe = regexp.MustCompile(`\$[^$\n]+\$`)
 	orderedRe    = regexp.MustCompile(`^(\s*)(\d+)[.)]\s+(.*)$`)
 	bulletRe     = regexp.MustCompile(`^(\s*)[-*+]\s+(.*)$`)
@@ -304,6 +305,10 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		if slices.Contains(taken[m[0]:from], true) || slices.Contains(taken[to:m[1]], true) {
 			return
 		}
+		// A marker with a space on its inner side is a literal character: `a * b * c`.
+		if text[from] == ' ' || text[to-1] == ' ' {
+			return
+		}
 		add([]int{m[0], from}, class, "", -1)
 		add([]int{to, m[1]}, class, "", -1)
 		for i := from; i < to; {
@@ -340,17 +345,21 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		label := text[m[2]:m[3]]
 		link := mdLinkTargetOf(label, text[m[4]:m[5]])
 		links = append(links, link)
-		// Code in a link's label is part of the link's text.
+		// A label's code and emphasis are part of the link's text.
 		spans = slices.DeleteFunc(spans, func(sp inlineSpan) bool {
 			inLabel := sp.class == stCode && m[2] <= sp.start && sp.end <= m[3]
 			if inLabel {
-				label = strings.Replace(label, text[sp.start:sp.end], sp.text, 1)
 				for i := sp.start; i < sp.end; i++ {
 					taken[i] = false
 				}
 			}
 			return inLabel
 		})
+		inner, _ := a.inlineRunes(label)
+		label = ""
+		for _, r := range inner {
+			label += string(r.r)
+		}
 		if label == "" {
 			label = link.target
 		}
@@ -359,6 +368,13 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	for _, m := range urlAtRe.FindAllStringIndex(text, -1) {
 		links = append(links, linkTarget{kind: "url", target: text[m[0]:m[1]]})
 		add(m, stLink, text[m[0]:m[1]], len(links)-1)
+	}
+	for _, m := range strongEmphRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 3, stStrong)
+			continue
+		}
+		add(m, stStrong, text[m[0]+3:m[1]-3], -1)
 	}
 	for _, m := range strongRe.FindAllStringIndex(text, -1) {
 		if slices.Contains(taken[m[0]:m[1]], true) {
