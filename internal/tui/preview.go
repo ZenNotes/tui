@@ -88,8 +88,8 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 	fenceChar, fenceLen := byte(0), 0
 	inFront := len(lines) > 0 && lines[0] == "---"
 	frontDone := false
-	// Indented code cannot interrupt a paragraph, and under a list item the indent
-	// says the line belongs to the item.
+	// Indented code cannot interrupt a paragraph, a quote's included, and under a list
+	// item the indent says the line belongs to the item.
 	afterParagraph, inList := false, false
 	i := 0
 	for i < len(lines) {
@@ -189,6 +189,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			titleStyle := th.Bold.Foreground(th.Blue)
 			if m[2] == "" {
 				out = append(out, previewLine{text: bar + titleStyle.Render(kind), srcLine: i})
+				afterParagraph = true
 				i++
 				continue
 			}
@@ -196,6 +197,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			label := kind + " · "
 			rows := a.paragraph(m[2], width-2-cellWidth(label), func(class int) lipgloss.Style { return titleStyle }, bar+titleStyle.Render(label), bar+strings.Repeat(" ", cellWidth(label)), i)
 			out = append(out, rows...)
+			afterParagraph = true
 			i++
 			continue
 		}
@@ -203,6 +205,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			content := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), ">"))
 			rows := a.paragraph(content, width-2, func(class int) lipgloss.Style { return th.Quote }, th.Quote.Render("▍ "), th.Quote.Render("▍ "), i)
 			out = append(out, rows...)
+			afterParagraph = true
 			i++
 			continue
 		}

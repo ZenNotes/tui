@@ -294,3 +294,19 @@ func TestZenLiteralMarkersAndNestedEmphasis(t *testing.T) {
 		t.Errorf("the link is not on its row: %v", lines[0].links)
 	}
 }
+
+func TestZenIndentedLineUnderAQuoteContinuesIt(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"quote", "> quote\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"callout", "> [!note] Title\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"callout with no title", "> [!note]\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"a blank line ends the quote", "> quote\n\n    ![[a.png]]", "│ ![[a.png]]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
