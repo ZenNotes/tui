@@ -165,7 +165,7 @@ func blockSource(b mdBlock, lines []string) string {
 // every line in place.
 //
 // Glamour runs an item's paragraphs together with no space between their words,
-// and drops the blank line before a quote. Those blank lines are filled, so the
+// and drops the blank line before a quote or a table. Those blank lines are filled, so the
 // first reads as one paragraph whose lines Glamour keeps, and the filler leaves a
 // blank row.
 //
@@ -204,11 +204,11 @@ func markItemContent(text string) string {
 				}
 			}
 			next := c.NextSibling()
-			if c.Kind() != ast.KindParagraph || marked.Len() == 0 || next == nil {
+			if marked.Len() == 0 || next == nil {
 				continue
 			}
-			switch next.Kind() {
-			case ast.KindParagraph, ast.KindBlockquote:
+			// An item holding a table reads as tight whatever its blank lines.
+			if next.Kind() == east.KindTable || c.Kind() == ast.KindParagraph && (next.Kind() == ast.KindParagraph || next.Kind() == ast.KindBlockquote) {
 				to := firstLineOf(next, lineOf)
 				if to < 0 {
 					continue
