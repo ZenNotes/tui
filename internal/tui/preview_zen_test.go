@@ -247,3 +247,24 @@ func TestZenTableCellEmbedIsNotCutBySourceWidth(t *testing.T) {
 	}
 }
 
+func TestZenIndentedCodeBlock(t *testing.T) {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	for _, tc := range []struct{ name, body, want string }{
+		{"embed after a blank line", "para\n\n    ![[a.png]]", "│ ![[a.png]]"},
+		{"first line", "    ![[a.png]]", "│ ![[a.png]]"},
+		{"tab", "\t`x`", "│ `x`"},
+		{"after a heading", "# H\n    ![[a.png]]", "│ ![[a.png]]"},
+		{"two lines", "    a\n    b", "│ a\n│ b"},
+		{"inside continues a paragraph", "para\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"under a list item", "- item\n\n    ![[a.png]]", "⟦image: a.png⟧"},
+		{"nested bullet", "- item\n    - nested", "• nested"},
+		{"three spaces", "   ![[a.png]]", "⟦image: a.png⟧"},
+		{"after a list ends", "- item\n\npara\n\n    ![[a.png]]", "│ ![[a.png]]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := zenPreviewText(a, tc.body); !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

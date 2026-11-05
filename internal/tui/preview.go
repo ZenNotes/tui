@@ -87,6 +87,9 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 	fenceChar, fenceLen := byte(0), 0
 	inFront := len(lines) > 0 && lines[0] == "---"
 	frontDone := false
+	// Indented code cannot interrupt a paragraph, and under a list item the indent
+	// says the line belongs to the item.
+	afterParagraph, inList := false, false
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
@@ -126,10 +129,21 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			i++
 			continue
 		}
+		wasParagraph := afterParagraph
+		afterParagraph = false
 		if strings.TrimSpace(line) == "" {
 			out = append(out, previewLine{text: "", srcLine: i})
 			i++
 			continue
+		}
+		if code, ok := strings.CutPrefix(strings.Replace(line, "\t", "    ", 1), "    "); ok {
+			if !wasParagraph && !inList {
+				out = append(out, zenCodeRows(th, code, i, width)...)
+				i++
+				continue
+			}
+		} else {
+			inList = listLineRe.MatchString(line)
 		}
 		if hrRe.MatchString(line) {
 			out = append(out, previewLine{text: th.Muted.Render(strings.Repeat("─", width)), srcLine: i})
@@ -239,6 +253,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 		}
 		rows := a.paragraph(line, width, nil, "", "", i)
 		out = append(out, rows...)
+		afterParagraph = true
 		i++
 	}
 	return out
