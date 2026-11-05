@@ -835,6 +835,15 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	if rows <= 0 {
 		rows = a.editorRows(buf)
 	}
+	// `gd` starts as `gg` does, so listNav holds its first key and drops it on the second.
+	if a.listKeyAllowed(k) && len(a.navKeys) > 0 {
+		seq := append(append([]vim.Key{}, a.navKeys...), k)
+		if complete, _ := matchSequence(seq, bindingKeys(a.keymap.Binding("vim.goToDefinition"))); complete {
+			a.navKeys = nil
+			a.previewFollow(t, buf)
+			return
+		}
+	}
 	cur := listCursor{cursor: pv.cursor, scroll: pv.scroll}
 	if a.listNav(&cur, k, n, rows) {
 		pv.moveTo(cur.cursor, n, rows)

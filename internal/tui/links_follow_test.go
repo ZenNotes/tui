@@ -360,3 +360,30 @@ func TestPreviewLinksMatchTheRenderer(t *testing.T) {
 		}
 	}
 }
+
+// Help says `gd` follows a link in the reading view, as Enter does.
+func TestReadingViewGdFollowsTheLinkOnTheRow(t *testing.T) {
+	a, _ := linkTestApp(t, map[string]string{"from.md": "[[to]]\n", "to.md": "# To\n"})
+	a.openNote("from.md", true)
+	a.setPaneMode(modePreview)
+	a.View()
+	a.handleKey(vim.Key{Rune: 'g'})
+	a.handleKey(vim.Key{Rune: 'd'})
+	if buf := a.activeBuffer(); buf == nil || buf.path != "to.md" {
+		t.Errorf("gd did not open the note: %+v", buf)
+	}
+	// `gg` still goes to the top, and `g` then another key does nothing else.
+	a2, _ := linkTestApp(t, map[string]string{"from.md": "[[to]]\n\nx\n", "to.md": "# To\n"})
+	a2.openNote("from.md", true)
+	a2.setPaneMode(modePreview)
+	a2.View()
+	a2.handleKey(vim.KeyDown)
+	a2.handleKey(vim.Key{Rune: 'g'})
+	a2.handleKey(vim.Key{Rune: 'g'})
+	if pv := a2.activeTab().preview; pv.cursor != 0 {
+		t.Errorf("gg: cursor %d", pv.cursor)
+	}
+	if buf := a2.activeBuffer(); buf.path != "from.md" {
+		t.Errorf("gg opened %s", buf.path)
+	}
+}
