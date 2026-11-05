@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/remote"
@@ -39,6 +41,11 @@ import (
 type scopedBackend struct {
 	inner Backend
 	scope Scope
+	// hosted says the server serves this over HTTP from inside itself, so its
+	// address means nothing to the client (Options.Hosted), and its scope comes from
+	// the server's settings rather than zn's flags.
+	hosted bool
+	logf   func(format string, args ...any)
 
 	once sync.Once
 	view *scopeView
@@ -82,6 +89,8 @@ type scopeView struct {
 	deny         []string
 	missingAllow []string
 	ancestors    map[string]bool
+	// dropsLinkedNotes says a listing held links this view left out.
+	dropsLinkedNotes bool
 
 	// linkedBuckets are the system folders with a symbolic link on the way to
 	// them, kept out of a client's view with its deny entries.
@@ -132,6 +141,9 @@ func cleanVaultDir(dir string) bool {
 	}
 	return true
 }
+
+// hostedSearchLimit is the most matches one search returns to a client on another machine.
+const hostedSearchLimit = 1000
 
 // capabilityReader is a backend that can say what its server supports.
 type capabilityReader interface {
@@ -206,9 +218,10 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// A linked note's content is whatever the link names, possibly a hidden
 	// note, and a write lands there too. A local listing never holds one. A
 	// client with no paths in its scope has nothing to be kept from, so it
-	// sees what an unscoped one does. Deny entries may still name one.
+	// sees what an unscoped one does, unless it is on another machine: a link can lead
+	// out of the vault, to a file on the server. Deny entries may still name one.
 	var linked []string
-	if sb.scope.Restricted() {
+	if sb.scope.Restricted() || sb.hosted {
 		notes = slices.DeleteFunc(notes, func(n vault.NoteMeta) bool {
 			if n.Symlink {
 				linked = append(linked, n.Path)
@@ -216,6 +229,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 			return n.Symlink
 		})
 	}
+	v.dropsLinkedNotes = len(linked) > 0
 	known := make([]string, 0, len(notes)+len(v.dirs))
 	for _, n := range notes {
 		v.byPath[n.Path] = n
@@ -248,13 +262,21 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// Entries take the vault's own spelling, so `--allow-path /projects`
 	// finds `Projects/`.
 	for _, entry := range sb.scope.Allow {
-		canonical, ok := spell(entry, known)
+		canonical, ok := spellExactly(entry, known)
+		if !ok {
+			canonical, ok = spell(entry, known)
+		}
 		if !ok {
 			extra, err := knownAssets()
 			if err != nil {
 				return nil, err
 			}
 			canonical, ok = spell(entry, extra)
+		}
+		// `cafe` finds `Café`, as a loose spelling should. `Café` does not find `Cafe`:
+		// someone who wrote the accent meant that folder, and this is a different one.
+		if ok && !accentsAgree(entry, canonical) {
+			ok = false
 		}
 		if !ok {
 			v.missingAllow = append(v.missingAllow, entry)
@@ -292,9 +314,9 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		}
 		if !matched {
 			if _, seen := staleDenyLogged.LoadOrStore(entry, true); !seen {
-				fmt.Fprintf(os.Stderr, "zn mcp: --deny-path %s matches nothing in this vault, so the MCP server shares nothing until it is fixed\n", entry)
+				sb.notice("%s %s matches nothing in this vault, so the MCP server shares nothing until it is fixed", sb.flagWord("--deny-path"), entry)
 			}
-			return nil, errors.New("This assistant's scope hides a folder or note that does not exist in this vault (renamed or deleted outside ZenNotes, or it belongs to another vault), so nothing is shared until the MCP client's --deny-path entries are fixed.")
+			return nil, fmt.Errorf("This assistant's scope hides a folder or note that does not exist in this vault (renamed or deleted outside ZenNotes, or it belongs to another vault), so nothing is shared until %s fixed.", sb.denyOwner())
 		}
 		v.deny = append(v.deny, entry)
 	}
@@ -302,7 +324,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 	// name, and a write there lands in that other folder. A client that sees part
 	// of the vault cannot tell which, so the folder is hidden from it, whatever
 	// its allow entries say.
-	if sb.scope.Restricted() {
+	if sb.scope.Restricted() || sb.hosted {
 		v.linkedBuckets, err = sb.inner.LinkedSystemFolders(ctx)
 		if errors.Is(err, backend.ErrLinkedFoldersUnknown) {
 			return nil, errServerMarksNoLinks
@@ -317,7 +339,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		// logs, not in front of the model.
 		for _, dir := range v.linkedBuckets {
 			if _, seen := linkedBucketLogged.LoadOrStore(dir, true); !seen {
-				fmt.Fprintf(os.Stderr, "zn mcp: the system folder %s is a symbolic link, so it is hidden from a client with --allow-path or --deny-path\n", dir)
+				sb.notice("the system folder %s is a symbolic link, so it is hidden from a client with a path scope", dir)
 			}
 		}
 		v.deny = append(v.deny, v.linkedBuckets...)
@@ -328,6 +350,29 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		}
 	}
 	return v, nil
+}
+
+// notice tells whoever runs the server something the model should not read.
+func (sb *scopedBackend) notice(format string, args ...any) {
+	if sb.logf != nil {
+		sb.logf("mcp: "+format, args...)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "zn mcp: "+format+"\n", args...)
+}
+
+func (sb *scopedBackend) flagWord(flag string) string {
+	if sb.hosted {
+		return "the deny entry"
+	}
+	return flag
+}
+
+func (sb *scopedBackend) denyOwner() string {
+	if sb.hosted {
+		return "the server's deny entries for this credential are"
+	}
+	return "the MCP client's --deny-path entries are"
 }
 
 // occupiedCheck is how this backend tells a free path from a taken one. Only
@@ -350,6 +395,20 @@ func (sb *scopedBackend) occupiedCheck(ctx context.Context, root string) func(st
 	}
 }
 
+// spellExactly finds the one known path equal to p but for case and Unicode composition,
+// so that `Café` is that folder even with a `Cafe` beside it, where spell finds two.
+func spellExactly(p string, known []string) (string, bool) {
+	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	wanted, match, count := lower(p), "", 0
+	for _, k := range known {
+		if lower(k) == wanted {
+			match = k
+			count++
+		}
+	}
+	return match, count == 1
+}
+
 // spell finds the vault's spelling of p among known paths: exact, else the
 // one path equal to it after case and accent folding.
 func spell(p string, known []string) (string, bool) {
@@ -370,6 +429,13 @@ func spell(p string, known []string) (string, bool) {
 		return match, true
 	}
 	return "", false
+}
+
+// accentsAgree says an allow entry may take a vault's spelling: it has no accents of
+// its own to disagree with, or the vault's has the same ones.
+func accentsAgree(entry, canonical string) bool {
+	lower := func(s string) string { return strings.ToLower(norm.NFC.String(s)) }
+	return lower(entry) == lower(canonical) || lower(entry) == search.Fold(entry)
 }
 
 func (v *scopeView) bucketDir(f vault.NoteFolder) string {
@@ -406,20 +472,57 @@ func (v *scopeView) covers(p string) bool {
 }
 
 func (v *scopeView) denied(p string) bool {
+	live := v.withoutBucket(p)
 	for _, e := range v.deny {
 		if insideFolded(p, e) {
+			return true
+		}
+		// A note keeps its folders when it is archived or trashed, so what a deny entry
+		// hides stays hidden there: archive/Journal/x.md for a deny entry on Journal.
+		if entry := v.entryWithoutBucket(e); entry != "" && live != p && insideFolded(live, entry) {
 			return true
 		}
 	}
 	return false
 }
 
+// withoutBucket is a path without the system folder it sits in, the same path when it
+// sits in none.
+func (v *scopeView) withoutBucket(p string) string {
+	for _, f := range []vault.NoteFolder{vault.FolderInbox, vault.FolderQuick, vault.FolderArchive, vault.FolderTrash} {
+		if dir := v.bucketDir(f); dir != "" && inside(p, dir) {
+			return strings.TrimPrefix(strings.TrimPrefix(p, dir), "/")
+		}
+	}
+	return p
+}
+
+// entryWithoutBucket is a deny entry without any system folder it starts with, in any
+// case, since entries match that way. "" when it names a system folder itself.
+func (v *scopeView) entryWithoutBucket(e string) string {
+	for _, f := range []vault.NoteFolder{vault.FolderInbox, vault.FolderQuick, vault.FolderArchive, vault.FolderTrash} {
+		if dir := v.bucketDir(f); dir != "" && insideFolded(e, dir) {
+			parts := strings.SplitN(e, "/", strings.Count(dir, "/")+2)
+			if len(parts) < strings.Count(dir, "/")+2 {
+				return ""
+			}
+			return parts[len(parts)-1]
+		}
+	}
+	return e
+}
+
 func (v *scopeView) visible(p string) bool { return v.covers(p) && !v.denied(p) }
 
-// denyInside says whether a deny entry lies at or below p.
+// denyInside says whether a note under p could be hidden by a deny entry, the way denied
+// reads one: at or below p, or, for a folder in a system folder, at or below its name there.
 func (v *scopeView) denyInside(p string) bool {
+	live := v.withoutBucket(p)
 	for _, e := range v.deny {
 		if insideFolded(e, p) {
+			return true
+		}
+		if entry := v.entryWithoutBucket(e); entry != "" && live != p && insideFolded(entry, live) {
 			return true
 		}
 	}
@@ -828,6 +931,15 @@ func (sb *scopedBackend) DuplicateNote(ctx context.Context, rel string) (vault.N
 	if err != nil {
 		return vault.NoteMeta{}, err
 	}
+	v, err := sb.load(ctx)
+	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	// An allow entry can name one note, and its copy would land outside it.
+	ext := path.Ext(meta.Path)
+	if !v.visible(strings.TrimSuffix(meta.Path, ext) + " copy" + ext) {
+		return vault.NoteMeta{}, errors.New("This assistant cannot give the note that name.")
+	}
 	return sb.inner.DuplicateNote(ctx, meta.Path)
 }
 
@@ -940,17 +1052,35 @@ func (sb *scopedBackend) SearchText(ctx context.Context, query string, limit int
 	if limit <= 0 {
 		limit = 80
 	}
-	all, err := sb.inner.SearchText(ctx, query, int(^uint(0)>>1))
-	if err != nil {
-		return nil, err
+	// Answers wait in memory until a client reads them, and a client on another machine
+	// can choose not to.
+	if sb.hosted {
+		limit = min(limit, hostedSearchLimit)
 	}
-	out := []vault.TextSearchMatch{}
-	for _, m := range all {
-		if len(out) >= limit {
-			break
+	// Asking for everything holds every match in memory, on a server several times
+	// over. With nothing to filter, the limit is all it takes. Otherwise, ask for more
+	// only if hidden matches really did crowd out what was asked for.
+	asks := []int{max(limit, 1000), 10000, int(^uint(0) >> 1)}
+	if !sb.scope.Restricted() && !v.dropsLinkedNotes {
+		asks = []int{limit}
+	}
+	var out []vault.TextSearchMatch
+	for _, ask := range asks {
+		all, err := sb.inner.SearchText(ctx, query, ask)
+		if err != nil {
+			return nil, err
 		}
-		if n, ok := v.byPath[m.Path]; ok && v.visible(n.Path) {
-			out = append(out, m)
+		out = []vault.TextSearchMatch{}
+		for _, m := range all {
+			if len(out) >= limit {
+				break
+			}
+			if n, ok := v.byPath[m.Path]; ok && v.visible(n.Path) {
+				out = append(out, m)
+			}
+		}
+		if len(out) >= limit || len(all) < ask {
+			break
 		}
 	}
 	return out, nil

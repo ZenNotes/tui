@@ -1171,6 +1171,14 @@ from disk. The design, including what comes next (per-vault profiles chosen
 from the desktop app), is in
 [`docs/ideas/mcp-scoped-access.md`](docs/ideas/mcp-scoped-access.md).
 
+### On a ZenNotes server
+
+A self-hosted server, since 2.83.0, can serve these same tools itself at `/mcp`, with the same access
+rules, so assistants on other machines need no `zn` at all. It takes its own tokens,
+and one token can be limited to part of the vault as above. See
+[MCP for AI assistants](https://github.com/ZenNotes/znserver#mcp-for-ai-assistants) in
+the server's README.
+
 ## Layout of the code
 
 ```
@@ -1185,7 +1193,8 @@ internal/releases        official release lookup, bounded downloads, SHA-256 ver
 internal/server          native managed instances, health, lifecycle, updates, rollback
 internal/selfupdate      installation ownership and verified native CLI replacement
 internal/database        databases: .base folders and loose .csv files
-internal/mcp             the MCP stdio server
+internal/mcp             the MCP server: tools and access rules
+mcpserver                those tools over HTTP, for the ZenNotes server to mount (the only public package)
 internal/config          config.toml, workspaces, the desktop's app config
 internal/keymaps         the bindable-action catalog and overrides
 internal/periodic        daily, weekly and monthly note patterns

@@ -26,6 +26,12 @@ func newRemote(target Target) *Remote {
 	return &Remote{client: remote.NewClient(target.BaseURL, target.AuthToken), target: target}
 }
 
+// NewRemoteWithClient is a backend on an existing client, for a server that
+// reaches its own API without the network (mcpserver).
+func NewRemoteWithClient(client *remote.Client, target Target) *Remote {
+	return &Remote{client: client, target: target}
+}
+
 // Client exposes the HTTP client for callers that need server-only routes.
 func (r *Remote) Client() *remote.Client { return r.client }
 
@@ -229,7 +235,14 @@ func (r *Remote) DeleteFolder(ctx context.Context, folder vault.NoteFolder, subp
 // is applied here. It runs the server's own engine, so ordering can differ
 // from a local vault.
 func (r *Remote) SearchText(ctx context.Context, query string, limit int) ([]vault.TextSearchMatch, error) {
-	matches, err := r.client.SearchText(ctx, query)
+	// A server stops at its default limit, so a caller that wants more must say so. A
+	// scope filters afterwards, and asks for as many as this allows.
+	const defaultServerLimit, largestAsk = 200, 50000
+	ask := 0
+	if limit > defaultServerLimit {
+		ask = min(limit, largestAsk)
+	}
+	matches, err := r.client.SearchTextUpTo(ctx, query, ask)
 	if err != nil {
 		return nil, err
 	}

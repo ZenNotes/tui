@@ -241,7 +241,17 @@ type scopeContractDifference struct {
 // runScopeContract runs every case of the fixture against what open serves.
 // A difference replaces what the fixture expects of that call, so it is still
 // checked, and one that no longer matches a call fails the run.
+func hidesTool(restricted bool, hidden map[string]bool, tool string) bool {
+	return restricted && hidden[tool]
+}
+
 func runScopeContract(t *testing.T, open func(*testing.T, string, *Scope) *sdk.ClientSession, differences []scopeContractDifference) {
+	runScopeContractHiding(t, open, differences, nil)
+}
+
+// runScopeContractHiding is runScopeContract for an engine that does not list some
+// tools to a client with a path scope. A tool's calls then belong in differences.
+func runScopeContractHiding(t *testing.T, open func(*testing.T, string, *Scope) *sdk.ClientSession, differences []scopeContractDifference, hidden map[string]bool) {
 	contract := loadScopeContract(t)
 	unused := map[string]scopeContractDifference{}
 	for _, d := range differences {
@@ -293,13 +303,32 @@ func runScopeContract(t *testing.T, open func(*testing.T, string, *Scope) *sdk.C
 					names = append(names, name)
 				}
 				sort.Strings(names)
-				if tc.Tools.Count != nil && len(names) != *tc.Tools.Count {
-					t.Errorf("lists %d tools, want %d: %v", len(names), *tc.Tools.Count, names)
+				// A full-access client lists everything, whatever this engine hides.
+				hides := func(string) bool { return false }
+				if scope != nil && scope.Restricted() {
+					hides = func(name string) bool { return hidden[name] }
 				}
-				if tc.Tools.Exactly != nil && !reflect.DeepEqual(names, sortedCopy(tc.Tools.Exactly)) {
-					t.Errorf("lists %v, want %v", names, sortedCopy(tc.Tools.Exactly))
+				if tc.Tools.Count != nil {
+					want := *tc.Tools.Count
+					for name := range hidden {
+						if hides(name) && toolAllowed(name, scope) {
+							want--
+						}
+					}
+					if len(names) != want {
+						t.Errorf("lists %d tools, want %d: %v", len(names), want, names)
+					}
+				}
+				if tc.Tools.Exactly != nil {
+					want := slices.DeleteFunc(sortedCopy(tc.Tools.Exactly), hides)
+					if !reflect.DeepEqual(names, want) {
+						t.Errorf("lists %v, want %v", names, want)
+					}
 				}
 				for _, name := range tc.Tools.Include {
+					if hides(name) {
+						continue
+					}
 					if _, ok := listed[name]; !ok {
 						t.Errorf("%s is not listed", name)
 					}
@@ -342,6 +371,9 @@ func runScopeContract(t *testing.T, open func(*testing.T, string, *Scope) *sdk.C
 					diskExists = replaceDiskPaths(diskExists, d.Absent, d.Exists)
 					diskAbsent = replaceDiskPaths(diskAbsent, d.Exists, d.Absent)
 					maps.Copy(diskEquals, d.Equals)
+				}
+				if hidesTool(tc.Flags != nil && scope != nil && scope.Restricted(), hidden, call.Tool) {
+					e = scopeContractExpect{NotOffered: true}
 				}
 				if e.NotOffered {
 					if !failed {

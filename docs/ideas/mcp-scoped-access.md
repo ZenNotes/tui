@@ -433,8 +433,8 @@ folder. Renames outside ZenNotes are caught by the stale-deny rule (4.5).
   `--profile` clients see nothing (4.5).
 - Token handling (#830, Settings → MCP → Server token) is unchanged: the MCP process holds a
   full token, which the client never sees.
-- Later, with the parked remote connector (znserver `/mcp`, OAuth): the server enforces the
-  same profiles natively, and a scoped server token could bind a profile to the token so the
+- Later, with the parked remote connector (OAuth, on the `/mcp` route described in
+  [mcp-http-transport.md](mcp-http-transport.md)): the server enforces the same profiles natively, and a scoped server token could bind a profile to the token so the
   HTTP API itself refuses out-of-scope paths. Not needed for #21.
 
 ## 9. UI and docs
