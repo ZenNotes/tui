@@ -216,3 +216,66 @@ func TestRecordPageIsAnOrdinaryNoteAtFullAccess(t *testing.T) {
 		t.Error("the page was not deleted")
 	}
 }
+
+// To a client with a path scope a database is not a folder, wherever the vault lives,
+// while a path still names it for that scope's own entries.
+func testDatabaseIsNotAFolderUnderAScope(t *testing.T, run func(*testing.T, string, *Scope) *sdk.ClientSession) {
+	for _, tc := range []struct {
+		name        string
+		allow, deny []string
+	}{
+		{name: "allow its folder", allow: []string{"memory"}},
+		{name: "allow it", allow: []string{"memory/Books.base"}},
+		{name: "deny another note", deny: []string{"memory/note.md"}},
+		{name: "deny another database", deny: []string{"memory/Empty.base"}},
+	} {
+		for tool, a := range map[string]map[string]any{
+			"delete_folder":            {"folder": "inbox", "subpath": "memory/Books.base", "confirm": true},
+			"rename_folder":            {"folder": "inbox", "oldSubpath": "memory/Books.base", "newSubpath": "Plain"},
+			"rename_folder (in .base)": {"folder": "inbox", "oldSubpath": "memory/Books.base", "newSubpath": "memory/Moved.base"},
+		} {
+			t.Run(tc.name+"/"+tool, func(t *testing.T) {
+				root := seedRecordPages(t)
+				cs := run(t, root, testScope(t, "write", tc.allow, tc.deny))
+				if got := mustCall(t, cs, "list_folders", nil); strings.Contains(got, ".base") {
+					t.Errorf("list_folders shows a database: %s", got)
+				}
+				if got := mustFail(t, cs, strings.Fields(tool)[0], a); !strings.Contains(got, "Folder not found") {
+					t.Errorf("refused with: %s", got)
+				}
+				if !exists(root, recordPage) || !exists(root, "memory/Books.base/data.csv") || exists(root, "Plain") || exists(root, "memory/Moved.base") {
+					t.Error("the database changed")
+				}
+			})
+		}
+	}
+}
+
+func TestDatabaseIsNotAFolderOnALocalVault(t *testing.T) {
+	testDatabaseIsNotAFolderUnderAScope(t, runScoped)
+}
+
+func TestDatabaseIsNotAFolderOnAServer(t *testing.T) {
+	scopeServerBinary(t)
+	testDatabaseIsNotAFolderUnderAScope(t, runScopedOnServer)
+}
+
+func TestDatabaseIsNotAFolderThroughHTTP(t *testing.T) {
+	httpMCPBinary(t)
+	testDatabaseIsNotAFolderUnderAScope(t, runScopedOnHTTPMCP)
+}
+
+// A folder holding a database is still a folder, and at full access a server's
+// database folder stays what its listing says.
+func TestDatabaseIsAFolderAtFullAccessOnAServer(t *testing.T) {
+	scopeServerBinary(t)
+	root := seedRecordPages(t)
+	cs := runScopedOnServer(t, root, nil)
+	if got := mustCall(t, cs, "list_folders", nil); !strings.Contains(got, "Books.base") {
+		t.Errorf("list_folders: %s", got)
+	}
+	mustCall(t, cs, "delete_folder", map[string]any{"folder": "inbox", "subpath": "memory/Books.base", "confirm": true})
+	if exists(root, recordPage) {
+		t.Error("the database was not deleted")
+	}
+}

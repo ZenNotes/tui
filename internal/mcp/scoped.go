@@ -205,7 +205,6 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		primaryAtRoot: desc.PrimaryNotesLocation == vault.PrimaryNotesRoot,
 		byPath:        map[string]vault.NoteMeta{},
 		folders:       map[string]vault.FolderEntry{},
-		allFolders:    folders,
 		ancestors:     map[string]bool{},
 	}
 	if sb.inner.Kind() == backend.KindLocal {
@@ -217,9 +216,19 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 			v.dirs = append(v.dirs, dir)
 		}
 	}
+	// A server lists a database folder as a folder, for its renderer, and a client with
+	// a path scope takes it as no more than that: it could delete the database, or rename
+	// it into a plain folder, with no sight of what else uses it. As on a local vault, it
+	// is not a folder to this client, though a path can still name it.
+	var databaseDirs []string
 	for _, f := range folders {
 		rel := v.folderRel(f)
+		if sb.scope.Restricted() && database.FormDirContaining(rel) != "" {
+			databaseDirs = append(databaseDirs, rel)
+			continue
+		}
 		v.folders[rel] = f
+		v.allFolders = append(v.allFolders, f)
 		v.dirs = append(v.dirs, rel)
 	}
 	// A linked note's content is whatever the link names, possibly a hidden
@@ -243,6 +252,7 @@ func (sb *scopedBackend) build(ctx context.Context) (*scopeView, error) {
 		known = append(known, n.Path)
 	}
 	known = append(known, v.dirs...)
+	known = append(known, databaseDirs...)
 	// A database folder is there to name, here where a folder listing leaves it out, even
 	// with no record page yet. It stays out of v.dirs: it takes no notes and no moves.
 	if lister, ok := sb.inner.(databaseDirLister); ok {

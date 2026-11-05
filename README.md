@@ -1140,7 +1140,9 @@ What the client gets:
   its `.base` folder. Its `data.csv` and `schema.json` are not, and nothing can be
   created in a `.base` folder. A client with a path scope can read and edit a page
   but not rename, move, copy, archive, trash or delete it, since its database keeps
-  track of it. `zn list` and `zn tui` still show a database as one thing.
+  track of it. Its `.base` folder is not in `list_folders` for that client and cannot
+  be renamed or deleted as a folder. `zn list` and `zn tui` still show a database as
+  one thing.
 - A system folder that is a symbolic link is hidden from the client, even if
   `--allow-path` names it, since what is in it may belong to another folder.
   `zn mcp` says so once on stderr, which ends up in the MCP client's logs.
