@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -202,5 +203,111 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
+	}
+}
+
+// writeNotes writes notes, given by vault path, below root.
+func writeNotes(t *testing.T, root string, notes map[string]string) {
+	t.Helper()
+	for rel, body := range notes {
+		abs := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func readNote(t *testing.T, root, rel string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+var madeIDRe = regexp.MustCompile(`\^[a-z0-9]{6}\b`)
+
+// withoutNewID replaces the block id that a roll made with {ID}. The id
+// ab12cd is the one the tests write.
+func withoutNewID(text string) string {
+	return madeIDRe.ReplaceAllStringFunc(text, func(id string) string {
+		if id == "^ab12cd" {
+			return id
+		}
+		return "^{ID}"
+	})
+}
+
+// toggle_task copies the work sessions of a repeating task, and its result is
+// the toggled task as before.
+func TestToggleTaskToolCopiesWorkSessions(t *testing.T) {
+	root := t.TempDir()
+	writeNotes(t, root, map[string]string{
+		"inbox/Work.md":  "intro\n- [ ] Water plants repeat:mon,thu ^ab12cd\noutro\n",
+		"quick/Plans.md": "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n",
+	})
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/Work.md#^ab12cd"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	if strings.Contains(strings.ToLower(text), "warning") || !strings.Contains(text, `"checked": true`) {
+		t.Fatalf("result is not the toggled task: %s", text)
+	}
+	wantWork := "intro\n- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\noutro\n"
+	if got := withoutNewID(readNote(t, root, "inbox/Work.md")); got != wantWork {
+		t.Fatalf("Work.md:\n%s\nwant:\n%s", got, wantWork)
+	}
+	wantPlans := "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n" +
+		"- Water plants task:[[Work#^{ID}]] when:2026-11-05T09:00-09:15\n"
+	if got := withoutNewID(readNote(t, root, "quick/Plans.md")); got != wantPlans {
+		t.Fatalf("Plans.md:\n%s\nwant:\n%s", got, wantPlans)
+	}
+}
+
+// A scoped client's roll writes session copies only into notes that the
+// client may write. The other notes stay as they were, and the result is the
+// toggled task, with no warning and no path.
+func TestScopedToggleWritesOnlyNotesInScope(t *testing.T) {
+	root := t.TempDir()
+	session := "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n"
+	writeNotes(t, root, map[string]string{
+		".zennotes/vault.json":     `{"primaryNotesLocation":"root"}`,
+		"Projects/Work.md":         "- [ ] Water plants repeat:mon,thu ^ab12cd\n",
+		"Projects/Plans.md":        session,
+		"Projects/Clients/Plan.md": session,
+		"Journal/Plan.md":          session,
+	})
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	scope := testScope(t, "write", []string{"Projects"}, []string{"Projects/Clients"})
+	cs := runScopedWith(t, root, scope, backend.Options{Now: func() time.Time { return today }})
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "Projects/Work.md#^ab12cd"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	for _, leak := range []string{"Clients", "Journal", "warning", "Warning"} {
+		if strings.Contains(text, leak) {
+			t.Fatalf("result mentions %q: %s", leak, text)
+		}
+	}
+	wantWork := "- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\n"
+	if got := withoutNewID(readNote(t, root, "Projects/Work.md")); got != wantWork {
+		t.Fatalf("Work.md:\n%s", got)
+	}
+	wantPlans := session + "- Water plants task:[[Work#^{ID}]] when:2026-11-05T09:00-09:15\n"
+	if got := withoutNewID(readNote(t, root, "Projects/Plans.md")); got != wantPlans {
+		t.Fatalf("Plans.md:\n%s\nwant:\n%s", got, wantPlans)
+	}
+	for _, rel := range []string{"Projects/Clients/Plan.md", "Journal/Plan.md"} {
+		if got := readNote(t, root, rel); got != session {
+			t.Fatalf("%s changed:\n%s", rel, got)
+		}
 	}
 }

@@ -1189,7 +1189,19 @@ func (sb *scopedBackend) ToggleTask(ctx context.Context, taskID string, dialect 
 	if err != nil {
 		return nil, err
 	}
-	return sb.inner.ToggleTask(ctx, meta.Path+taskID[hash:], dialect)
+	id := meta.Path + taskID[hash:]
+	if inner, ok := sb.inner.(interface {
+		ToggleTaskWithin(ctx context.Context, taskID string, dialect vault.TaskDialect, canWrite func(rel string) bool) (*vault.Task, error)
+	}); ok {
+		// A roll can write other notes, the ones that hold the work sessions
+		// of the task. It writes only the ones this client may write.
+		canWrite := func(rel string) bool {
+			_, err := sb.noteFor(ctx, rel, AccessWrite)
+			return err == nil
+		}
+		return inner.ToggleTaskWithin(ctx, id, dialect, canWrite)
+	}
+	return sb.inner.ToggleTask(ctx, id, dialect)
 }
 
 // DatabaseOps is never reached through MCP; there is no database tool.

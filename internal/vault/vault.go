@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -43,6 +44,11 @@ type Vault struct {
 	WeekStart time.Weekday
 	// Now is the clock the task toggles read; nil means time.Now.
 	Now func() time.Time
+	// TaskWarning receives a warning when a roll cannot do all of its work.
+	// Nil drops the warning.
+	TaskWarning func(string)
+	// Rand is the source of new block ids; nil uses the global source.
+	Rand *rand.Rand
 }
 
 // Open binds a Vault to an existing directory.
@@ -1144,12 +1150,29 @@ func (v *Vault) ScanTasksForPath(rel string, opts ParseTasksOptions) ([]Task, er
 	return ParseTasks(relPosix, title, folder, string(body), opts), nil
 }
 
+// ToggleOptions tunes ToggleTaskWith.
+type ToggleOptions struct {
+	// CanWrite says whether the caller may change the note at a vault path.
+	// A roll does not write a session copy into a note that it refuses. The
+	// roll counts such notes and does not name them. Nil allows every note.
+	CanWrite func(rel string) bool
+}
+
 // ToggleTask flips the task named by an id, counted in the given grammar.
 // Exclusion-blind on purpose: an explicit id is an explicit ask. Finishing a
 // recurring task writes its next occurrence above it and returns the finished
 // one, whose id moved down past it. The remote backend toggles plainly instead.
 // Returns (nil, nil) when the id no longer matches a task.
+//
+// A roll copies the work sessions of the task. The note of the task is
+// written first, then each note that holds a session. A note that cannot be
+// written gives a warning to TaskWarning, and the roll stands.
 func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
+	return v.ToggleTaskWith(taskID, dialect, ToggleOptions{})
+}
+
+// ToggleTaskWith is ToggleTask with options.
+func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle ToggleOptions) (*Task, error) {
 	rel, indexStr, err := SplitTaskID(taskID)
 	if err != nil {
 		return nil, err
@@ -1165,57 +1188,131 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	relPosix := v.relPosix(abs)
 	title := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
 	opts := ParseTasksOptions{IncludeExcluded: true, Dialect: dialect}
+	now := v.now()
+	input := TaskRollInput{
+		Path: relPosix, Body: string(body), Dialect: dialect, Action: RollComplete,
+		Now: now, WeekStart: v.WeekStart, Names: v.skipResolver(now), Rand: v.Rand,
+	}
+	targetIndex := 0
 	if indexStr == "task" {
-		_, found := parseTaskFile(relPosix, title, folder, strings.ReplaceAll(string(body), "\r\n", "\n"), dialect)
+		task, found := parseTaskFile(relPosix, title, folder, strings.ReplaceAll(string(body), "\r\n", "\n"), dialect)
 		if !found {
 			return nil, nil
 		}
-		next, _ := RollTaskFileInBodyWith(string(body), RollComplete, v.now(), v.WeekStart, v.skipResolver(v.now()))
-		if _, err := v.WriteNote(relPosix, next); err != nil {
+		input.File = true
+		if task.Repeat != "" {
+			v.loadRollContext(&input, opts)
+		}
+	} else {
+		if id, byBlockID := strings.CutPrefix(indexStr, "^"); byBlockID {
+			// The id names a line by the block id that ends it. No such line is
+			// the same as an index that no task has.
+			targetIndex = -1
+			for _, t := range ParseTasks(relPosix, title, folder, string(body), opts) {
+				if t.Kind == "" && t.BlockID == id && id != "" {
+					targetIndex = t.TaskIndex
+					break
+				}
+			}
+			if targetIndex < 0 {
+				return nil, nil
+			}
+		} else if targetIndex, err = ParseTaskIndex(taskID, indexStr); err != nil {
 			return nil, err
 		}
-		for _, t := range ParseTasks(relPosix, title, folder, next, opts) {
-			if t.ID == taskID {
-				return &t, nil
-			}
-		}
-		return nil, nil
-	}
-	var targetIndex int
-	if id, byBlockID := strings.CutPrefix(indexStr, "^"); byBlockID {
-		// The id names a line by the block id that ends it. No such line is
-		// the same as an index that no task has.
-		targetIndex = -1
+		input.Index = targetIndex
 		for _, t := range ParseTasks(relPosix, title, folder, string(body), opts) {
-			if t.Kind == "" && t.BlockID == id && id != "" {
-				targetIndex = t.TaskIndex
+			if t.Kind == "" && t.TaskIndex == targetIndex && t.Repeat != "" {
+				v.loadRollContext(&input, opts)
 				break
 			}
 		}
-		if targetIndex < 0 {
-			return nil, nil
-		}
-	} else if targetIndex, err = ParseTaskIndex(taskID, indexStr); err != nil {
-		return nil, err
 	}
-	next, inserted, found := RollTaskInBodyWith(string(body), targetIndex, dialect, RollComplete, v.now(), v.WeekStart, v.skipResolver(v.now()))
-	finalIndex := targetIndex + inserted
-	if found && inserted == 0 {
+
+	plan, found := PlanTaskRoll(input)
+	finalIndex := targetIndex + plan.Inserted
+	if found && !input.File && plan.Inserted == 0 {
 		// A task with an `@repeat:` rule rolls as the desktop app rolls it.
-		next, finalIndex, found = ToggleTaskRepeating(string(body), targetIndex, dialect, v.now())
+		plan.Body, finalIndex, found = ToggleTaskRepeating(string(body), targetIndex, dialect, now)
 	}
 	if !found {
 		return nil, nil
 	}
-	if _, err := v.WriteNote(relPosix, next); err != nil {
+	if _, err := v.WriteNote(relPosix, plan.Body); err != nil {
 		return nil, err
 	}
-	for _, t := range ParseTasks(relPosix, title, folder, next, opts) {
-		if t.Kind == "" && t.TaskIndex == finalIndex {
+	v.writeSessionCopies(plan.Copies, toggle.CanWrite)
+
+	for _, t := range ParseTasks(relPosix, title, folder, plan.Body, opts) {
+		if input.File && t.ID == taskID {
+			return &t, nil
+		}
+		if !input.File && t.Kind == "" && t.TaskIndex == finalIndex {
 			return &t, nil
 		}
 	}
 	return nil, nil
+}
+
+// loadRollContext fills the parts of a roll input that the sessions need: the
+// tasks, the events and the block ids of the vault, and a way to read a note.
+func (v *Vault) loadRollContext(in *TaskRollInput, opts ParseTasksOptions) {
+	in.Tasks, _ = v.ScanTasks(opts)
+	in.Events, _ = v.ScanEvents()
+	in.IDs, _ = v.VaultBlockIDs()
+	in.Read = func(rel string) (string, bool) {
+		abs, err := v.AbsPath(rel)
+		if err != nil {
+			return "", false
+		}
+		data, err := os.ReadFile(abs)
+		return string(data), err == nil
+	}
+}
+
+// writeSessionCopies writes the session copies of a roll, one note at a time.
+// A note that the caller may not write is counted in one warning without its
+// path. A note that fails to write gets a warning that names it.
+func (v *Vault) writeSessionCopies(copies []SessionCopy, canWrite func(string) bool) {
+	var paths []string
+	byPath := map[string][]SessionCopy{}
+	for _, c := range copies {
+		if _, seen := byPath[c.Path]; !seen {
+			paths = append(paths, c.Path)
+		}
+		byPath[c.Path] = append(byPath[c.Path], c)
+	}
+	refused := 0
+	for _, path := range paths {
+		if canWrite != nil && !canWrite(path) {
+			refused += len(byPath[path])
+			continue
+		}
+		abs, err := v.AbsPath(path)
+		var data []byte
+		if err == nil {
+			data, err = os.ReadFile(abs)
+		}
+		if err == nil {
+			_, err = v.WriteNote(path, InsertSessionCopies(string(data), byPath[path]))
+		}
+		if err != nil {
+			v.warnTask(fmt.Sprintf("Could not copy a work session into %s: %v", path, err))
+		}
+	}
+	switch {
+	case refused == 1:
+		v.warnTask("1 work session in a note that you cannot change was not copied.")
+	case refused > 1:
+		v.warnTask(fmt.Sprintf("%d work sessions in notes that you cannot change were not copied.", refused))
+	}
+}
+
+// warnTask gives a warning about a roll to TaskWarning.
+func (v *Vault) warnTask(message string) {
+	if v.TaskWarning != nil {
+		v.TaskWarning(message)
+	}
 }
 
 // --- convenience edits ---

@@ -26,6 +26,7 @@ func newLocal(root string, opts Options) (*Local, error) {
 		v.WeekStart = time.Sunday
 	}
 	v.Now = opts.Now
+	v.TaskWarning = opts.TaskWarning
 	return &Local{vault: v}, nil
 }
 
@@ -152,6 +153,12 @@ func (l *Local) ScanTasksForPath(_ context.Context, rel string, opts vault.Parse
 }
 func (l *Local) ToggleTask(_ context.Context, taskID string, dialect vault.TaskDialect) (*vault.Task, error) {
 	return l.vault.ToggleTask(taskID, dialect)
+}
+
+// ToggleTaskWithin is ToggleTask for a caller with limited access: a roll
+// writes a session copy only into a note that canWrite accepts.
+func (l *Local) ToggleTaskWithin(_ context.Context, taskID string, dialect vault.TaskDialect, canWrite func(rel string) bool) (*vault.Task, error) {
+	return l.vault.ToggleTaskWith(taskID, dialect, vault.ToggleOptions{CanWrite: canWrite})
 }
 
 func (l *Local) ListTemplates(context.Context) ([]vault.CustomTemplateFile, error) {

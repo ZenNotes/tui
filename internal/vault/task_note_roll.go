@@ -33,13 +33,22 @@ func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart
 // items of the `skip` key. The days that names gives for a name count as skip
 // periods. A nil names leaves these items without effect.
 func RollTaskFileInBodyWith(body string, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver) (next string, rolled bool) {
+	next, rolled, _ = rollTaskFile(body, action, now, weekStart, names, "")
+	return next, rolled
+}
+
+// rollTaskFile does the work of RollTaskFileInBodyWith. base is the start date
+// of the earliest current work session, or empty. It takes the place of `due`
+// as the date the rule counts from, and a note with a session gets no `due`
+// that it did not have. days is how far the dates of the note moved.
+func rollTaskFile(body string, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver, base string) (next string, rolled bool, days int) {
 	task, ok := parseTaskFile("", "", FolderInbox, body, DialectCLI)
 	if !ok || task.Repeat == "" || task.Checked || task.Cancelled {
-		return plainTaskFileRoll(body, action, task.Checked, task.Cancelled, now), false
+		return plainTaskFileRoll(body, action, task.Checked, task.Cancelled, now), false, 0
 	}
 	rule, valid := ParseRepeatRule(task.Repeat)
 	if !valid {
-		return plainTaskFileRoll(body, action, false, false, now), false
+		return plainTaskFileRoll(body, action, false, false, now), false, 0
 	}
 	_, periods, _ := ParseSkipItems(strings.Join(task.Skip, ","))
 
@@ -51,22 +60,27 @@ func RollTaskFileInBodyWith(body string, action RollAction, now time.Time, weekS
 	}
 	due := Unquote(strings.TrimSpace(firstScalar(fields["due"])))
 
-	days, following, found := nextRollDate(rule, task.Due, periods, task.Until, now, weekStart)
+	from := task.Due
+	if base != "" {
+		from = base
+	}
+	days, following, found := nextRollDate(rule, from, periods, task.Until, now, weekStart)
 	if !found {
-		return plainTaskFileRoll(body, action, false, false, now), false
+		return plainTaskFileRoll(body, action, false, false, now), false, 0
 	}
 
 	updates := []frontmatterLine{
 		{key: "status", value: StrPtr("open")},
 		{key: "completedDate"},
 	}
-	if task.Due == "" {
+	switch {
+	case task.Due == "" && base == "":
 		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(following)})
-	} else {
+	case task.Due != "":
 		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(shiftDateTime(due, days))})
 	}
 	updates = append(updates, frontmatterLine{key: "lastCompleted", value: StrPtr(TodayISO(now))})
-	return setFrontmatterLines(body, updates), true
+	return setFrontmatterLines(body, updates), true, days
 }
 
 // plainTaskFileRoll is the status change a task note gets when it does not

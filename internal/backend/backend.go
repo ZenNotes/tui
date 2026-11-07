@@ -107,6 +107,9 @@ type Options struct {
 	// Now is the clock task toggles read; nil means time.Now. Applied by the
 	// local backend.
 	Now func() time.Time
+	// TaskWarning receives a warning when a task roll does not finish all of
+	// its writes. Applied by the local backend; nil drops the warning.
+	TaskWarning func(string)
 }
 
 // New binds a target to a backend.

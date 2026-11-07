@@ -116,6 +116,7 @@ func OpenBackend(target backend.Target) (backend.Backend, error) {
 		SyncTitleHeading: prefs.SyncTitleHeadingOnRename,
 		WeekStartSunday:  prefs.CalendarWeekStart == "sunday",
 		Now:              taskClock,
+		TaskWarning:      func(message string) { fmt.Fprintln(stderr, "warning: "+message) },
 	})
 }
 
