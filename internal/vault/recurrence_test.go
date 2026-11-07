@@ -130,7 +130,7 @@ func nextFrom(t *testing.T, rule, base, today string, weekStart time.Weekday, sk
 		_, p := ParseSkipItems(item)
 		periods = append(periods, p...)
 	}
-	return NextOccurrence(parsed, base, today, weekStart, periods)
+	return NextOccurrence(parsed, base, today, weekStart, periods, "")
 }
 
 func TestNextOccurrenceOfEachRule(t *testing.T) {
@@ -283,8 +283,62 @@ func TestNextOccurrenceIgnoresDaylightSavingChange(t *testing.T) {
 func TestNextOccurrenceRejectsBadDates(t *testing.T) {
 	rule, _ := ParseRepeatRule("1d")
 	for _, tc := range [][2]string{{"", "2026-11-02"}, {"2026-11-02", ""}, {"2026-02-30", "2026-11-02"}, {"2026-11-02T09:00", "2026-11-02"}} {
-		if got, ok := NextOccurrence(rule, tc[0], tc[1], time.Monday, nil); ok {
+		if got, ok := NextOccurrence(rule, tc[0], tc[1], time.Monday, nil, ""); ok {
 			t.Errorf("NextOccurrence(%q, %q) = %q, want no occurrence", tc[0], tc[1], got)
 		}
+	}
+}
+
+// nextUntil is nextFrom for a rule that ends on the until date.
+func nextUntil(t *testing.T, rule, base, today, until string, skip ...string) (string, bool) {
+	t.Helper()
+	parsed, ok := ParseRepeatRule(rule)
+	if !ok {
+		t.Fatalf("ParseRepeatRule(%q) rejected the rule", rule)
+	}
+	var periods []SkipPeriod
+	for _, item := range skip {
+		_, p := ParseSkipItems(item)
+		periods = append(periods, p...)
+	}
+	return NextOccurrence(parsed, base, today, time.Monday, periods, until)
+}
+
+func TestNextOccurrenceStopsAtUntil(t *testing.T) {
+	// The until day itself still counts.
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-03"); !ok || got != "2026-11-03" {
+		t.Errorf("until on the next day = %q, %v; want 2026-11-03", got, ok)
+	}
+	// The day after the until day does not.
+	if got, ok := nextUntil(t, "1d", "2026-11-03", "2026-11-03", "2026-11-03"); ok {
+		t.Errorf("past until = %q, want no occurrence", got)
+	}
+	// A skipped date comes first, and the date after it lies past until.
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-04", "2026-11-03..2026-11-05"); ok {
+		t.Errorf("skip up to past until = %q, want no occurrence", got)
+	}
+	// A skip period before until leaves the later date inside until.
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-06", "2026-11-03..2026-11-04"); !ok || got != "2026-11-05" {
+		t.Errorf("skip then until = %q, %v; want 2026-11-05", got, ok)
+	}
+	// An until date before the base date leaves no occurrence.
+	if got, ok := nextUntil(t, "1d", "2026-11-10", "2026-11-02", "2026-11-05"); ok {
+		t.Errorf("until before base = %q, want no occurrence", got)
+	}
+	// An until date before today leaves none for an earlier base.
+	if got, ok := nextUntil(t, "1w", "2026-11-02", "2026-11-20", "2026-11-15"); ok {
+		t.Errorf("until before today = %q, want no occurrence", got)
+	}
+	// A far until date does not slow an infinite rule.
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2099-12-31"); !ok || got != "2026-11-03" {
+		t.Errorf("far until = %q, %v; want 2026-11-03", got, ok)
+	}
+	// A skip that covers everything up to a far until date ends the search.
+	start := time.Now()
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2099-12-31", "2026-11-03..2099-12-31"); ok {
+		t.Errorf("skip to until = %q, want no occurrence", got)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("search took %v", time.Since(start))
 	}
 }

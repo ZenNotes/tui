@@ -25,11 +25,12 @@ const (
 // plain text and stays as written.
 // Every other case is the plain toggle or cancel, with nothing inserted: no
 // rule, an invalid rule, unticking, reopening, a forwarded task, or a rule
-// with no date left to land on.
+// with no date left to land on, such as one that has reached its `until:`
+// date.
 //
 // The next date counts from `due:`, else today, and from today when the rule
 // ends in `/done`. It is the first date of the rule after that and after today
-// that no `skip:` period covers. The copied subtasks' dates move by the same
+// that no `skip:` period covers and that is not past the `until:` date. The copied subtasks' dates move by the same
 // number of days as the task's `due:`, and each keeps its `THH:MM`. A task
 // with no `due:` gets `due:` on the copy. now and weekStart are inputs so the
 // caller chooses the clock and the first day of the week.
@@ -127,7 +128,7 @@ func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Wee
 	_, periods := ParseSkipItems(strings.Join(tokens.skip, ","))
 
 	field := tokens.due
-	days, following, found := nextRollDate(rule, field, periods, now, weekStart)
+	days, following, found := nextRollDate(rule, field, periods, tokens.until, now, weekStart)
 	if !found {
 		return nil, "", false
 	}
@@ -144,14 +145,15 @@ func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Wee
 // nextRollDate finds where a repeating task goes next. field is the date the
 // rule counts from, `due:`, or empty for a task with none. It returns that
 // date, and how many days the task's dates move to get there: the distance
-// from field, or from today when field is empty.
-func nextRollDate(rule RepeatRule, field string, periods []SkipPeriod, now time.Time, weekStart time.Weekday) (days int, following string, found bool) {
+// from field, or from today when field is empty. until is the last date the
+// rule may land on, or "" for none.
+func nextRollDate(rule RepeatRule, field string, periods []SkipPeriod, until string, now time.Time, weekStart time.Weekday) (days int, following string, found bool) {
 	today := TodayISO(now)
 	base := field
 	if base == "" || rule.FromCompletion {
 		base = today
 	}
-	following, found = NextOccurrence(rule, base, today, weekStart, periods)
+	following, found = NextOccurrence(rule, base, today, weekStart, periods, until)
 	if !found {
 		return 0, "", false
 	}

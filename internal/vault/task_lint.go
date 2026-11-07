@@ -7,8 +7,9 @@ import (
 )
 
 // TaskTokenProblem is one task token that the parsers set aside: a time that
-// is not a valid `HH:MM`, a `repeat:` rule outside the grammar, or a `skip:`
-// item that is not a real day or a forward range. Line is 1-based, and Token
+// is not a valid `HH:MM`, a `repeat:` rule outside the grammar, a `skip:`
+// item that is not a real day or a forward range, or an `until:` value that
+// does not end a rule. Line is 1-based, and Token
 // is the token as written, for example `due:2026-11-03T25:00`. Reason says
 // why the parsers ignore the token.
 type TaskTokenProblem struct {
@@ -28,13 +29,16 @@ func TaskTokenProblems(path, body string) []TaskTokenProblem {
 	add := func(line int, token string) {
 		out = append(out, TaskTokenProblem{Path: path, Line: line, Token: token, Reason: tokenReason(token)})
 	}
+	addWhy := func(line int, token, reason string) {
+		out = append(out, TaskTokenProblem{Path: path, Line: line, Token: token, Reason: reason})
+	}
 	lines := strings.Split(body, "\n")
 	if _, _, ok := Frontmatter(body); ok {
 		if _, isTask := parseTaskFile(path, "", FolderInbox, body, DialectApp); isTask {
-			lintFrontmatter(lines, add)
+			lintFrontmatter(lines, add, addWhy)
 		}
 	}
-	lintCheckboxes(lines, add)
+	lintCheckboxes(lines, add, addWhy)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
 	return out
 }
@@ -50,6 +54,8 @@ func tokenReason(token string) string {
 		return "the rule is not valid"
 	case "skip":
 		return "the item is not a real day or a forward range"
+	case "until":
+		return "the value is not a real date without a time"
 	}
 	return "the value is not valid"
 }
@@ -99,7 +105,29 @@ func badSkipItems(value string) []string {
 	return bad
 }
 
-func lintCheckboxes(lines []string, add func(line int, token string)) {
+// Reasons for an `until` value that is a real date but still ends no rule.
+const (
+	untilNeedsRule   = "an until date needs a valid repeat rule, so it is ignored"
+	untilBeforeStart = "the until date is before the due date, so the rule has no next date"
+	untilSecond      = "only the first until value is used, so this one is ignored"
+)
+
+// untilProblem says why an `until` value does not end a rule, or "" when it
+// does. due is the task's own date, or "" when it has none, and ruleOK says
+// whether the task has a valid `repeat` rule.
+func untilProblem(value, due string, ruleOK bool) string {
+	switch {
+	case validUntil(value) == "":
+		return tokenReason("until:" + value)
+	case !ruleOK:
+		return untilNeedsRule
+	case due != "" && value < due:
+		return untilBeforeStart
+	}
+	return ""
+}
+
+func lintCheckboxes(lines []string, add func(line int, token string), addWhy func(line int, token, reason string)) {
 	fenceRe, lineRe := taskFenceRe, DialectApp.lineRe()
 	inFence, fenceMarker := false, ""
 	for i, line := range lines {
@@ -134,14 +162,51 @@ func lintCheckboxes(lines []string, add func(line int, token string)) {
 				add(i+1, "skip:"+item)
 			}
 		}
+		lintInlineUntil(i+1, tail, addWhy)
 	}
 }
 
-// lintFrontmatter checks the `due`, `repeat` and `skip` keys of
+// lintInlineUntil checks the `until:` tokens of one checkbox line. The first
+// one is read against the line's own `repeat:` rule and `due:` date, and each
+// later one is set aside.
+func lintInlineUntil(line int, tail string, addWhy func(line int, token, reason string)) {
+	tokens := inlineUntilRe.FindAllStringSubmatch(tail, -1)
+	if len(tokens) == 0 {
+		return
+	}
+	ruleOK := false
+	if rm := inlineRepeatRe.FindStringSubmatch(tail); rm != nil {
+		_, ruleOK = ParseRepeatRule(rm[1])
+	}
+	due := ""
+	if dm := inlineDueRe.FindStringSubmatch(tail); dm != nil {
+		due, _, _ = SplitDateTime(dm[1])
+	}
+	if reason := untilProblem(tokens[0][1], due, ruleOK); reason != "" {
+		addWhy(line, "until:"+tokens[0][1], reason)
+	}
+	for _, tm := range tokens[1:] {
+		addWhy(line, "until:"+tm[1], untilSecond)
+	}
+}
+
+// lintFrontmatter checks the `due`, `repeat`, `skip` and `until` keys of
 // the frontmatter at the top of lines. A list under a key, one item per line,
 // is read as that key's values.
-func lintFrontmatter(lines []string, add func(line int, token string)) {
+func lintFrontmatter(lines []string, add func(line int, token string), addWhy func(line int, token, reason string)) {
 	key := ""
+	var due, repeat, until string
+	untilLine := 0
+	defer func() {
+		if untilLine == 0 {
+			return
+		}
+		_, ruleOK := ParseRepeatRule(strings.ToLower(repeat))
+		date, _, _ := SplitDateTime(due)
+		if reason := untilProblem(until, date, ruleOK); reason != "" {
+			addWhy(untilLine, "until:"+until, reason)
+		}
+	}()
 	for i := 1; i < len(lines); i++ {
 		line := strings.TrimRight(lines[i], "\r")
 		if strings.TrimSpace(line) == "---" && !fmLeadWsRe.MatchString(line) {
@@ -161,10 +226,18 @@ func lintFrontmatter(lines []string, add func(line int, token string)) {
 		case "due":
 			if v := Unquote(value); badDateTime(v) {
 				add(i+1, key+":"+v)
+			} else if due == "" {
+				due = v
 			}
 		case "repeat":
 			if v := Unquote(value); v != "" && badRepeat(strings.ToLower(v)) {
 				add(i+1, key+":"+v)
+			} else if repeat == "" {
+				repeat = v
+			}
+		case "until":
+			if v := Unquote(value); v != "" && untilLine == 0 {
+				until, untilLine = v, i+1
 			}
 		case "skip":
 			for _, part := range strings.Split(value, ",") {

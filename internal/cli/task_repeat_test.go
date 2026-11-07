@@ -335,3 +335,67 @@ func TestTaskToggleJSONReportsTheTickedTask(t *testing.T) {
 		t.Fatalf("reported %+v", task)
 	}
 }
+
+// A repeating task whose next date lies past its until date is only ticked,
+// and a task note is finished for good.
+func TestTaskToggleStopsAtUntil(t *testing.T) {
+	t.Run("copy before the end", func(t *testing.T) {
+		fixClock(t, "2026-11-02")
+		got, _ := toggleNote(t, "- [ ] T due:2026-11-02 repeat:1d until:2026-11-03\n", "0")
+		want := "- [ ] T due:2026-11-03 repeat:1d until:2026-11-03\n- [x] T due:2026-11-02 repeat:1d until:2026-11-03\n"
+		if got != want {
+			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+		}
+	})
+	t.Run("last date", func(t *testing.T) {
+		fixClock(t, "2026-11-03")
+		got, _ := toggleNote(t, "- [ ] T due:2026-11-03 repeat:1d until:2026-11-03\n", "0")
+		if want := "- [x] T due:2026-11-03 repeat:1d until:2026-11-03\n"; got != want {
+			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+		}
+	})
+	t.Run("skip reaches past the end", func(t *testing.T) {
+		fixClock(t, "2026-11-02")
+		in := "- [ ] T due:2026-11-02 repeat:1d skip:2026-11-03 until:2026-11-03\n"
+		got, _ := toggleNote(t, in, "0")
+		if want := "- [x] T due:2026-11-02 repeat:1d skip:2026-11-03 until:2026-11-03\n"; got != want {
+			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+		}
+	})
+	t.Run("json reports the ticked task", func(t *testing.T) {
+		fixClock(t, "2026-11-03")
+		_, out := toggleNote(t, "- [ ] T due:2026-11-03 repeat:1d until:2026-11-03\n", "0", "--json")
+		var task struct {
+			ID      string `json:"id"`
+			Checked bool   `json:"checked"`
+			Until   string `json:"until"`
+		}
+		if err := json.Unmarshal([]byte(out), &task); err != nil {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		if task.ID != "inbox/note.md#0" || !task.Checked || task.Until != "2026-11-03" {
+			t.Fatalf("got %+v", task)
+		}
+	})
+	t.Run("task note", func(t *testing.T) {
+		fixClock(t, "2026-11-03")
+		in := "---\ntags: [task]\nstatus: open\ndue: 2026-11-03\nrepeat: 1d\nuntil: 2026-11-03\n---\n"
+		got, _ := toggleNote(t, in, "task")
+		for _, want := range []string{"status: done", "completedDate: 2026-11-03", "due: 2026-11-03", "until: 2026-11-03"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q in:\n%s", want, got)
+			}
+		}
+		if strings.Contains(got, "lastCompleted") {
+			t.Errorf("lastCompleted written:\n%s", got)
+		}
+	})
+	t.Run("task note before the end", func(t *testing.T) {
+		fixClock(t, "2026-11-02")
+		in := "---\ntags: [task]\nstatus: open\ndue: 2026-11-02\nrepeat: 1d\nuntil: 2026-11-03\n---\n"
+		got, _ := toggleNote(t, in, "task")
+		if !strings.Contains(got, "due: 2026-11-03") || !strings.Contains(got, "status: open") {
+			t.Fatalf("got:\n%s", got)
+		}
+	})
+}

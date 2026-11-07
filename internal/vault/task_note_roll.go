@@ -9,7 +9,7 @@ import (
 // rule is valid and that is not already finished does not stay done: its
 // `due` date moves to the next date, `status` goes back to `open`, and
 // `lastCompleted` records today. The rest of the frontmatter,
-// `skip` lines included, and the whole body stay as they are. A stale
+// `skip` and `until` lines included, and the whole body stay as they are. A stale
 // `completedDate` is removed, because an open note has none.
 //
 // The next date and the offset follow the rules of RollTaskInBody: the rule
@@ -19,7 +19,8 @@ import (
 //
 // Every other case is the plain status change, SetTaskFileStatus or
 // SetTaskFileCancelled: no rule, an invalid rule, unticking a finished note,
-// reopening a cancelled one, or a rule with no date left to land on. rolled
+// reopening a cancelled one, or a rule with no date left to land on, such as
+// one that has reached its `until` date. rolled
 // reports whether the dates advanced.
 //
 // Only local notes roll. A remote vault's server parses the note itself, so
@@ -39,7 +40,7 @@ func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart
 	fields := ParseFrontmatterFields(block)
 	due := Unquote(strings.TrimSpace(firstScalar(fields["due"])))
 
-	days, following, found := nextRollDate(rule, task.Due, periods, now, weekStart)
+	days, following, found := nextRollDate(rule, task.Due, periods, task.Until, now, weekStart)
 	if !found {
 		return plainTaskFileRoll(body, action, false, false, now), false
 	}

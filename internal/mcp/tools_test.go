@@ -121,3 +121,29 @@ func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
 	}
 }
+
+// toggle_task ticks a repeating task on its last date and adds no copy.
+func TestToggleTaskToolStopsAtUntil(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "inbox", "plants.md")
+	note := "- [ ] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	today := time.Date(2026, 11, 3, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/plants.md#0"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	want := "- [x] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != want {
+		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
+	}
+}

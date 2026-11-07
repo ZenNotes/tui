@@ -250,15 +250,17 @@ const isoDay = "2006-01-02"
 // after base, after today and outside every skip period, as a `YYYY-MM-DD`
 // date. base is the date the rule counts from: the task's own date, or today
 // for a rule counted from completion. weekStart is the first day of the week
-// that `Nw` periods use. It reports false when base or today is not a date,
-// or when no date within the search bound qualifies.
+// that `Nw` periods use. until is the last date the rule may select, or ""
+// for a rule that never ends. It reports false when base or today is not a
+// date, when no date up to until qualifies, or when no date within the search
+// bound qualifies.
 //
 // A rule without an anchor counts base plus k steps, each counted from base
 // and clamped to the end of a shorter month. A rule with an anchor selects
 // dates in the period that holds base, and in every N-th period after it.
 // All arithmetic is on calendar days, so a daylight saving change never
 // moves a date.
-func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday, skips []SkipPeriod) (string, bool) {
+func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday, skips []SkipPeriod, until string) (string, bool) {
 	if !IsValidISODate(base) || !IsValidISODate(today) || rule.Every < 1 {
 		return "", false
 	}
@@ -271,6 +273,9 @@ func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday,
 	if today > after {
 		after = today
 	}
+	if until != "" && until < base {
+		return "", false
+	}
 	for period := 0; ; period++ {
 		dates, beyond := repeatPeriodDates(rule, b, period, weekStart, limit)
 		if beyond {
@@ -278,6 +283,11 @@ func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday,
 		}
 		for _, d := range dates {
 			s := d.Format(isoDay)
+			// The dates ascend, so the first one past until ends the search,
+			// even when a skip period covers it.
+			if until != "" && s > until {
+				return "", false
+			}
 			if s > after && !inSkipPeriod(s, skips) {
 				return s, true
 			}

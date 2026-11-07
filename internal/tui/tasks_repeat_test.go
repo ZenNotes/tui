@@ -276,3 +276,71 @@ func TestBoardDoneColumnChecksForwardedTask(t *testing.T) {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 }
+
+const (
+	untilLine = "- [ ] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	untilNote = "---\ntags: [task]\nstatus: open\ndue: 2026-11-03\nrepeat: 1d\nuntil: 2026-11-03\n---\n"
+)
+
+// On the last date the Tasks view, the board, the editor and a cancel only
+// change the one line, and a task note is finished for good.
+func TestTasksViewBoardAndEditorStopAtUntil(t *testing.T) {
+	ticked := "- [x] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	cancelled := "- [-] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+
+	t.Run("tasks view toggle", func(t *testing.T) {
+		a, path := repeatTasksApp(t, untilLine, "2026-11-03")
+		a.toggleTask(repeatTaskAt(t, path))
+		if got := readRepeatNote(t, path); got != ticked {
+			t.Errorf("note = %q, want %q", got, ticked)
+		}
+	})
+	t.Run("board done column", func(t *testing.T) {
+		a, path := repeatTasksApp(t, untilLine, "2026-11-03")
+		a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
+		if got := readRepeatNote(t, path); got != ticked {
+			t.Errorf("note = %q, want %q", got, ticked)
+		}
+	})
+	t.Run("tasks view cancel", func(t *testing.T) {
+		a, path := repeatTasksApp(t, untilLine, "2026-11-03")
+		a.setTaskCancelled(repeatTaskAt(t, path), true)
+		if got := readRepeatNote(t, path); got != cancelled {
+			t.Errorf("note = %q, want %q", got, cancelled)
+		}
+	})
+	t.Run("editor toggle", func(t *testing.T) {
+		a, _ := repeatTasksApp(t, untilLine, "2026-11-03")
+		buf := openRepeatBuffer(t, a)
+		buf.ed.ToggleCheckboxAtCursor()
+		if got := buf.ed.Text(); got != ticked {
+			t.Errorf("buffer = %q, want %q", got, ticked)
+		}
+	})
+	t.Run("editor cancel", func(t *testing.T) {
+		a, _ := repeatTasksApp(t, untilLine, "2026-11-03")
+		buf := openRepeatBuffer(t, a)
+		if err := a.setTaskStateAtCursor(buf, "cancel"); err != nil {
+			t.Fatal(err)
+		}
+		if got := buf.ed.Text(); got != cancelled {
+			t.Errorf("buffer = %q, want %q", got, cancelled)
+		}
+	})
+	t.Run("task note", func(t *testing.T) {
+		a, path := repeatTasksApp(t, untilNote, "2026-11-03")
+		a.toggleTask(repeatTaskAt(t, path))
+		got := readRepeatNote(t, path)
+		if !strings.Contains(got, "status: done") || strings.Contains(got, "lastCompleted") {
+			t.Errorf("note:\n%s", got)
+		}
+	})
+	t.Run("task note cancel", func(t *testing.T) {
+		a, path := repeatTasksApp(t, untilNote, "2026-11-03")
+		a.setTaskCancelled(repeatTaskAt(t, path), true)
+		got := readRepeatNote(t, path)
+		if !strings.Contains(got, "status: cancelled") || strings.Contains(got, "lastCompleted") {
+			t.Errorf("note:\n%s", got)
+		}
+	})
+}

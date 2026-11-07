@@ -153,8 +153,11 @@ type Task struct {
 	// Skip holds the valid `skip:` items in their written form: days and
 	// inclusive ranges that a repeating task passes over. Reserved `@name`
 	// items and invalid ones are not here.
-	Skip          []string `json:"skip,omitempty"`
-	CompletedDate string   `json:"completedDate,omitempty"`
+	Skip []string `json:"skip,omitempty"`
+	// Until is the last date a repeating task may land on, as `YYYY-MM-DD`.
+	// It is empty unless the task has a valid rule and a valid date.
+	Until         string `json:"until,omitempty"`
+	CompletedDate string `json:"completedDate,omitempty"`
 	// DueInferred marks a due date derived from the containing daily note
 	// rather than written on the line. Set by the TUI, never by a scan.
 	DueInferred bool `json:"dueInferred,omitempty"`
@@ -260,6 +263,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		Scheduled     string            `json:"scheduled,omitempty"`
 		Repeat        string            `json:"repeat,omitempty"`
 		Skip          []string          `json:"skip,omitempty"`
+		Until         string            `json:"until,omitempty"`
 		CompletedDate string            `json:"completedDate,omitempty"`
 		DueInferred   bool              `json:"dueInferred,omitempty"`
 	}
@@ -268,7 +272,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		LineNumber: t.LineNumber, TaskIndex: t.TaskIndex, RawText: t.RawText, Content: t.Content,
 		Checked: t.Checked, Cancelled: t.Cancelled, InProgress: t.InProgress, Due: t.Due, Priority: t.Priority,
 		Waiting: t.Waiting, Fields: t.Fields, Status: t.Status, Tags: t.Tags, Kind: t.Kind,
-		DueTime: t.DueTime, DueEnd: t.DueEnd, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
+		DueTime: t.DueTime, DueEnd: t.DueEnd, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, Until: t.Until, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
 	}
 	if t.Kind != "file" {
 		forwarded := t.Forwarded

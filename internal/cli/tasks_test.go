@@ -312,3 +312,23 @@ func TestTaskToggleCompletesPageTypeTaskNote(t *testing.T) {
 		t.Fatalf("note not completed:\n%s", got)
 	}
 }
+
+// The JSON lists the until date of a repeating task, and leaves it out when
+// the task has none or the date does not count.
+func TestTaskListJSONCarriesUntil(t *testing.T) {
+	tasks := listTaskJSON(t, "- [ ] A repeat:1w until:2027-03-21\n- [ ] B repeat:1w\n- [ ] C until:2027-03-21\n")
+	if len(tasks) != 3 {
+		t.Fatalf("got %+v", tasks)
+	}
+	if tasks[0]["until"] != "2027-03-21" || tasks[0]["content"] != "A" {
+		t.Fatalf("A: %+v", tasks[0])
+	}
+	for _, task := range tasks[1:] {
+		if _, present := task["until"]; present {
+			t.Errorf("until key present: %+v", task)
+		}
+	}
+	if tasks[2]["content"] != "C" {
+		t.Errorf("C: %+v", tasks[2])
+	}
+}

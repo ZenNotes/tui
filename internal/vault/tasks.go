@@ -25,6 +25,7 @@ var (
 	inlineDueRe      = regexp.MustCompile(`(?i)(?:^|\s)due:\s*(\S+)`)
 	inlineRepeatRe   = regexp.MustCompile(`(?i)(?:^|\s)repeat:(\S+)`)
 	inlineSkipRe     = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
+	inlineUntilRe    = regexp.MustCompile(`(?i)(?:^|\s)until:(\S+)`)
 	inlinePriorityRe = regexp.MustCompile(`(?i)(?:^|\s)!(high|med|medium|low|h|m|l)\b`)
 	inlineWaitingRe  = regexp.MustCompile(`(?i)(?:^|\s)@waiting\b`)
 	inlineFieldRe    = regexp.MustCompile(`(?i)(?:^|\s)@([a-z][a-z0-9_-]*):([\p{L}\d][\p{L}\d/_-]*)`)
@@ -247,6 +248,9 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		Skip:          frontmatterSkip(fm["skip"]),
 		CompletedDate: normalizeDueDate(firstScalar(fm["completeddate"])),
 	}
+	if task.Repeat != "" {
+		task.Until = validUntil(Unquote(strings.TrimSpace(firstScalar(fm["until"]))))
+	}
 	if dialect == DialectCLI {
 		// The CLI's JSON keeps the desktop CLI's key set, but says which status
 		// column the task is in, as the app does (ZenNotes/zennotes#941).
@@ -354,6 +358,7 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 
 			Repeat: tokens.repeat,
 			Skip:   tokens.skip,
+			Until:  tokens.until,
 		})
 		taskIndex++
 	}
@@ -364,6 +369,7 @@ type taskTokens struct {
 	due, dueTime, dueEnd, priority string
 	repeat                         string
 	skip                           []string
+	until                          string
 	waiting                        bool
 	fields                         map[string]string
 	tags                           []string
@@ -406,6 +412,14 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 		}
 		stripped = inlineSkipRe.ReplaceAllString(stripped, " ")
 	}
+	// Every until token leaves the content. Only the first one can set the end
+	// date, and only for a task with a valid rule and a date without a time.
+	if um := inlineUntilRe.FindStringSubmatch(stripped); um != nil {
+		if t.repeat != "" {
+			t.until = validUntil(um[1])
+		}
+		stripped = inlineUntilRe.ReplaceAllString(stripped, " ")
+	}
 	if pm := inlinePriorityRe.FindStringSubmatch(stripped); pm != nil {
 		t.priority = NormalizePriority(pm[1])
 		stripped = inlinePriorityRe.ReplaceAllString(stripped, " ")
@@ -441,6 +455,15 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 	}
 	t.stripped = strings.TrimSpace(wsCollapseRe.ReplaceAllString(stripped, " "))
 	return t
+}
+
+// validUntil returns value when it is a real `YYYY-MM-DD` date with no time,
+// and "" otherwise.
+func validUntil(value string) string {
+	if isoDateRe.MatchString(value) && IsValidISODate(value) {
+		return value
+	}
+	return ""
 }
 
 // SplitTaskID splits `<path>#<index>` into its halves; indexStr is the
