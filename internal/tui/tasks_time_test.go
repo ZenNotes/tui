@@ -142,3 +142,18 @@ func TestTasksListRowShowsDueRange(t *testing.T) {
 		t.Fatalf("12h row: %q", got)
 	}
 }
+
+func TestFormatAcrossDaysFollowsTimeFormat(t *testing.T) {
+	if got, want := formatWhenRange("2027-03-13", "", "2027-03-21", "", "24h"), "2027-03-13 – 2027-03-21"; got != want {
+		t.Fatalf("dates: got %q, want %q", got, want)
+	}
+	if got, want := formatWhenRange("2026-11-03", "22:00", "2026-11-04", "02:00", "24h"), "2026-11-03 22:00 – 2026-11-04 02:00"; got != want {
+		t.Fatalf("24h: got %q, want %q", got, want)
+	}
+	if got, want := formatWhenRange("2026-11-03", "22:00", "2026-11-04", "02:00", "12h"), "2026-11-03 10:00 PM – 2026-11-04 2:00 AM"; got != want {
+		t.Fatalf("12h: got %q, want %q", got, want)
+	}
+	if got, want := formatWhenRange("2026-11-03", "14:00", "2026-11-03", "15:30", "12h"), "2026-11-03 2:00 PM–3:30 PM"; got != want {
+		t.Fatalf("one day: got %q, want %q", got, want)
+	}
+}

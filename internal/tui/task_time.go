@@ -27,6 +27,18 @@ func formatTaskClock(clock, timeFormat string) string {
 	return fmt.Sprintf("%d:%02d %s", h, m, suffix)
 }
 
+// formatWhenRange renders a `when:` range for display. A range inside one day
+// reads `2026-11-03 2:00 PM–3:30 PM`. A range across days reads `2027-03-13 –
+// 2027-03-21` or `2026-11-03 10:00 PM – 2026-11-04 2:00 AM`. The times follow
+// the `time_format` preference.
+func formatWhenRange(startDate, startTime, endDate, endTime, timeFormat string) string {
+	if endDate == "" || endDate == startDate {
+		return withTaskClock(startDate, startTime, endTime, timeFormat)
+	}
+	return withTaskClock(startDate, startTime, "", timeFormat) + " – " +
+		withTaskClock(endDate, endTime, "", timeFormat)
+}
+
 // withTaskClock appends a formatted time to a date. With an end time, the time
 // is a range such as `14:00–15:30`. With no time it returns the date alone.
 func withTaskClock(date, clock, end, timeFormat string) string {

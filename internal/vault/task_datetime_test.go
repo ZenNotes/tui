@@ -141,3 +141,88 @@ func TestSetTaskNoteDueKeepsTime(t *testing.T) {
 		t.Fatalf("quoted: got %q, want %q", got, want)
 	}
 }
+
+func TestParseWhenValueReadsAllDayRange(t *testing.T) {
+	sd, st, ed, et, problem := ParseWhenValue("2027-03-13..2027-03-21")
+	if sd != "2027-03-13" || st != "" || ed != "2027-03-21" || et != "" || problem != "" {
+		t.Fatalf("got %q %q %q %q %q", sd, st, ed, et, problem)
+	}
+	if got := FormatWhenValue(sd, st, ed, et); got != "2027-03-13 – 2027-03-21" {
+		t.Fatalf("display: %q", got)
+	}
+}
+
+func TestParseWhenValueReadsTimedRangeAcrossMidnight(t *testing.T) {
+	sd, st, ed, et, problem := ParseWhenValue("2026-11-03T22:00..2026-11-04T02:00")
+	if sd != "2026-11-03" || st != "22:00" || ed != "2026-11-04" || et != "02:00" || problem != "" {
+		t.Fatalf("got %q %q %q %q %q", sd, st, ed, et, problem)
+	}
+	if got := FormatWhenValue(sd, st, ed, et); got != "2026-11-03 22:00 – 2026-11-04 02:00" {
+		t.Fatalf("display: %q", got)
+	}
+}
+
+func TestParseWhenValueSameDayDotsEqualsDashForm(t *testing.T) {
+	type parts [5]string
+	read := func(s string) parts {
+		a, b, c, d, e := ParseWhenValue(s)
+		return parts{a, b, c, d, e}
+	}
+	dots, dash := read("2026-11-03T14:00..2026-11-03T15:30"), read("2026-11-03T14:00-15:30")
+	if dots != dash || dots != (parts{"2026-11-03", "14:00", "2026-11-03", "15:30", ""}) {
+		t.Fatalf("timed: dots %q, dash %q", dots, dash)
+	}
+	if got, want := read("2026-11-03..2026-11-03"), read("2026-11-03"); got != want {
+		t.Fatalf("date: got %q, want %q", got, want)
+	}
+}
+
+func TestParseWhenValueKeepsStartWhenEndIsInvalid(t *testing.T) {
+	cases := []struct{ value, date, start string }{
+		{"2026-11-04..2026-11-03", "2026-11-04", ""},
+		{"2026-11-03T22:00..2026-11-03T21:00", "2026-11-03", "22:00"},
+		{"2026-11-03T22:00..2026-11-04", "2026-11-03", "22:00"},
+		{"2026-11-03..2026-11-04T02:00", "2026-11-03", ""},
+		{"2026-11-03..2026-02-30", "2026-11-03", ""},
+		{"2026-11-03T22:00..2026-11-04T25:00", "2026-11-03", "22:00"},
+	}
+	for _, c := range cases {
+		sd, st, ed, et, problem := ParseWhenValue(c.value)
+		if sd != c.date || st != c.start || ed != "" || et != "" {
+			t.Errorf("%s: got %q %q %q %q", c.value, sd, st, ed, et)
+		}
+		if problem == "" {
+			t.Errorf("%s: no problem text", c.value)
+		}
+	}
+}
+
+func TestParseWhenValueSuggestsDotsForSameDayEndBeforeStart(t *testing.T) {
+	sd, st, ed, et, problem := ParseWhenValue("2026-11-03T23:00-01:00")
+	if sd != "2026-11-03" || st != "23:00" || ed != "" || et != "" {
+		t.Fatalf("got %q %q %q %q", sd, st, ed, et)
+	}
+	if !strings.Contains(problem, "2026-11-03T23:00..2026-11-04T01:00") {
+		t.Fatalf("problem: %q", problem)
+	}
+}
+
+func TestShiftWhenValueKeepsTimesAndLength(t *testing.T) {
+	cases := []struct {
+		value string
+		days  int
+		want  string
+	}{
+		{"2026-11-03", 2, "2026-11-05"},
+		{"2026-11-03T14:00", -3, "2026-10-31T14:00"},
+		{"2026-11-03T14:00-15:30", 1, "2026-11-04T14:00-15:30"},
+		{"2027-03-13..2027-03-21", 20, "2027-04-02..2027-04-10"},
+		{"2026-11-03T22:00..2026-11-04T02:00", 1, "2026-11-04T22:00..2026-11-05T02:00"},
+		{"2026-11-04..2026-11-03", 1, "2026-11-04..2026-11-03"},
+	}
+	for _, c := range cases {
+		if got := ShiftWhenValue(c.value, c.days); got != c.want {
+			t.Errorf("%s by %d: got %q, want %q", c.value, c.days, got, c.want)
+		}
+	}
+}
