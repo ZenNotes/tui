@@ -268,7 +268,6 @@ func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday,
 	if err != nil {
 		return "", false
 	}
-	limit := b.Year() + searchYears
 	after := base
 	if today > after {
 		after = today
@@ -276,23 +275,65 @@ func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday,
 	if until != "" && until < base {
 		return "", false
 	}
-	for period := 0; ; period++ {
-		dates, beyond := repeatPeriodDates(rule, b, period, weekStart, limit)
+	next, found := "", false
+	eachRuleDate(rule, b, weekStart, 0, func(s string) bool {
+		// The dates ascend, so the first one past until ends the search,
+		// even when a skip period covers it.
+		if until != "" && s > until {
+			return false
+		}
+		if s > after && !inSkipPeriod(s, skips) {
+			next, found = s, true
+			return false
+		}
+		return true
+	})
+	return next, found
+}
+
+// eachRuleDate calls fn with the dates of the rule's sequence in ascending
+// order, from the period with index firstPeriod. It stops when fn returns
+// false or when the dates pass the search bound. A rule with an anchor can
+// give dates before base in its first period.
+func eachRuleDate(rule RepeatRule, base time.Time, weekStart time.Weekday, firstPeriod int, fn func(date string) bool) {
+	limit := base.Year() + searchYears
+	for period := firstPeriod; ; period++ {
+		dates, beyond := repeatPeriodDates(rule, base, period, weekStart, limit)
 		if beyond {
-			return "", false
+			return
 		}
 		for _, d := range dates {
-			s := d.Format(isoDay)
-			// The dates ascend, so the first one past until ends the search,
-			// even when a skip period covers it.
-			if until != "" && s > until {
-				return "", false
-			}
-			if s > after && !inSkipPeriod(s, skips) {
-				return s, true
+			if !fn(d.Format(isoDay)) {
+				return
 			}
 		}
 	}
+}
+
+// periodNear returns a period index that is not later than the first period
+// which holds a date on or after target. It lets a caller skip the periods
+// before a window. It keeps a margin of three periods, so a clamped date or
+// a week that starts on another day never lies before the returned period.
+func periodNear(rule RepeatRule, base, target time.Time) int {
+	days := int(target.Sub(base).Hours() / 24)
+	months := monthIndex(target) - monthIndex(base)
+	var p int
+	switch rule.Unit {
+	case RepeatDays:
+		p = days / rule.Every
+	case RepeatWeeks:
+		p = days / (7 * rule.Every)
+	case RepeatMonths:
+		p = months / rule.Every
+	case RepeatQuarters:
+		p = months / (3 * rule.Every)
+	default:
+		p = (target.Year() - base.Year()) / rule.Every
+	}
+	if p -= 3; p < 0 {
+		return 0
+	}
+	return p
 }
 
 func inSkipPeriod(day string, skips []SkipPeriod) bool {
