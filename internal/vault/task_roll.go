@@ -45,6 +45,13 @@ const (
 // normalised to LF, as ToggleTaskInBody does. ok is false when the body holds
 // no task at that index.
 func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday) (next string, inserted int, ok bool) {
+	return RollTaskInBodyWith(body, targetIndex, dialect, action, now, weekStart, nil)
+}
+
+// RollTaskInBodyWith is RollTaskInBody with a resolver for the `@name` items of
+// a `skip:` token. The days that names gives for a name count as skip periods.
+// A nil names leaves these items without effect.
+func RollTaskInBodyWith(body string, targetIndex int, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver) (next string, inserted int, ok bool) {
 	normalized := strings.ReplaceAll(body, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
 	numbers := taskLineNumbersIn(lines, dialect)
@@ -57,7 +64,7 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 		return body, 0, false
 	}
 
-	shift, due, rolled := planRoll(m, dialect, now, weekStart)
+	shift, due, rolled := planRoll(m, dialect, now, weekStart, names)
 	if !rolled {
 		if action == RollComplete {
 			plain, found := ToggleTaskInBody(body, targetIndex, dialect)
@@ -117,7 +124,7 @@ func cancelMarker(state string) string {
 // `due:` date in the text after a line's `[ ` (which starts with its `]`) by
 // the offset of the new occurrence, and due is the `due:` date to add to the
 // copy of a task that has none.
-func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Weekday) (shift func(string) string, due string, rolled bool) {
+func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Weekday, names SkipResolver) (shift func(string) string, due string, rolled bool) {
 	switch m[2] {
 	case " ", "/":
 	default:
@@ -128,7 +135,8 @@ func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Wee
 	if !valid {
 		return nil, "", false
 	}
-	_, periods := ParseSkipItems(strings.Join(tokens.skip, ","))
+	_, periods, _ := ParseSkipItems(strings.Join(tokens.skip, ","))
+	periods = append(periods, skipPeriodsFor(names, Event{}, tokens.skipNames)...)
 
 	field := tokens.due
 	days, following, found := nextRollDate(rule, field, periods, tokens.until, now, weekStart)

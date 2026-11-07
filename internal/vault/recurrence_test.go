@@ -127,7 +127,7 @@ func nextFrom(t *testing.T, rule, base, today string, weekStart time.Weekday, sk
 	}
 	var periods []SkipPeriod
 	for _, item := range skip {
-		_, p := ParseSkipItems(item)
+		_, p, _ := ParseSkipItems(item)
 		periods = append(periods, p...)
 	}
 	return NextOccurrence(parsed, base, today, weekStart, periods, "")
@@ -298,7 +298,7 @@ func nextUntil(t *testing.T, rule, base, today, until string, skip ...string) (s
 	}
 	var periods []SkipPeriod
 	for _, item := range skip {
-		_, p := ParseSkipItems(item)
+		_, p, _ := ParseSkipItems(item)
 		periods = append(periods, p...)
 	}
 	return NextOccurrence(parsed, base, today, time.Monday, periods, until)

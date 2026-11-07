@@ -252,7 +252,7 @@ func eventSkip(values []string) (dates, names []string) {
 				}
 				continue
 			}
-			items, _ := ParseSkipItems(item)
+			items, _, _ := ParseSkipItems(item)
 			dates = append(dates, items...)
 		}
 	}

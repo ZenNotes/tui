@@ -26,6 +26,13 @@ import (
 // Only local notes roll. A remote vault's server parses the note itself, so
 // remote toggles use ToggleFileTaskInBody and never advance a note.
 func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart time.Weekday) (next string, rolled bool) {
+	return RollTaskFileInBodyWith(body, action, now, weekStart, nil)
+}
+
+// RollTaskFileInBodyWith is RollTaskFileInBody with a resolver for the `@name`
+// items of the `skip` key. The days that names gives for a name count as skip
+// periods. A nil names leaves these items without effect.
+func RollTaskFileInBodyWith(body string, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver) (next string, rolled bool) {
 	task, ok := parseTaskFile("", "", FolderInbox, body, DialectCLI)
 	if !ok || task.Repeat == "" || task.Checked || task.Cancelled {
 		return plainTaskFileRoll(body, action, task.Checked, task.Cancelled, now), false
@@ -34,10 +41,14 @@ func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart
 	if !valid {
 		return plainTaskFileRoll(body, action, false, false, now), false
 	}
-	_, periods := ParseSkipItems(strings.Join(task.Skip, ","))
+	_, periods, _ := ParseSkipItems(strings.Join(task.Skip, ","))
 
 	block, _, _ := Frontmatter(body)
 	fields := ParseFrontmatterFields(block)
+	for _, value := range fields["skip"] {
+		_, _, skipNames := ParseSkipItems(value)
+		periods = append(periods, skipPeriodsFor(names, Event{}, skipNames)...)
+	}
 	due := Unquote(strings.TrimSpace(firstScalar(fields["due"])))
 
 	days, following, found := nextRollDate(rule, task.Due, periods, task.Until, now, weekStart)

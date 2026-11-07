@@ -233,7 +233,7 @@ func frontmatterRepeat(raw string) string {
 func frontmatterSkip(values []string) []string {
 	var out []string
 	for _, v := range values {
-		items, _ := ParseSkipItems(v)
+		items, _, _ := ParseSkipItems(v)
 		out = append(out, items...)
 	}
 	return out

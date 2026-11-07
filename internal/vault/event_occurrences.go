@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"strings"
 	"time"
 )
 
@@ -23,11 +22,11 @@ type EventOccurrence struct {
 // times and the length in days of the event.
 //
 // names gives the skip periods of an `@name` item of the event. It can be nil,
-// and then these items skip nothing.
+// and then these items skip nothing. It gets the event as its first argument.
 //
 // The walk starts near from, so the cost depends on the size of the window
 // and not on the age of the event. The function reads only its arguments.
-func EventOccurrences(e Event, from, to string, weekStart time.Weekday, names func(name string) []SkipPeriod) []EventOccurrence {
+func EventOccurrences(e Event, from, to string, weekStart time.Weekday, names SkipResolver) []EventOccurrence {
 	start, err := time.Parse(isoDay, e.StartDate)
 	if err != nil || !IsValidISODate(from) || !IsValidISODate(to) {
 		return nil
@@ -87,16 +86,11 @@ func endDateAfter(e Event, date string, length int) string {
 
 // eventSkipPeriods gathers the skip periods of an event: the date items it
 // writes and the periods that names gives for its `@name` items.
-func eventSkipPeriods(e Event, names func(name string) []SkipPeriod) []SkipPeriod {
+func eventSkipPeriods(e Event, names SkipResolver) []SkipPeriod {
 	var out []SkipPeriod
 	for _, item := range e.Skip {
-		_, periods := ParseSkipItems(item)
+		_, periods, _ := ParseSkipItems(item)
 		out = append(out, periods...)
 	}
-	if names != nil {
-		for _, name := range e.SkipNames {
-			out = append(out, names(strings.TrimSpace(name))...)
-		}
-	}
-	return out
+	return append(out, skipPeriodsFor(names, e, e.SkipNames)...)
 }

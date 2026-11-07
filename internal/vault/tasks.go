@@ -376,7 +376,7 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 type taskTokens struct {
 	due, dueTime, dueEnd, priority string
 	repeat                         string
-	skip                           []string
+	skip, skipNames                []string
 	until                          string
 	waiting                        bool
 	fields                         map[string]string
@@ -415,8 +415,9 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 	// and only its valid items are kept.
 	if sm := inlineSkipRe.FindAllStringSubmatch(stripped, -1); sm != nil {
 		for _, m := range sm {
-			items, _ := ParseSkipItems(m[1])
+			items, _, names := ParseSkipItems(m[1])
 			t.skip = append(t.skip, items...)
+			t.skipNames = append(t.skipNames, names...)
 		}
 		stripped = inlineSkipRe.ReplaceAllString(stripped, " ")
 	}

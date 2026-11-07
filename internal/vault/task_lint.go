@@ -98,7 +98,7 @@ func badSkipItems(value string) []string {
 		if item == "" || strings.HasPrefix(item, "@") {
 			continue
 		}
-		if valid, _ := ParseSkipItems(item); len(valid) == 0 {
+		if valid, _, _ := ParseSkipItems(item); len(valid) == 0 {
 			bad = append(bad, item)
 		}
 	}

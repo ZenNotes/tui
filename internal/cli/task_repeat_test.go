@@ -409,3 +409,90 @@ func TestTaskToggleByBlockId(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// writeEventNote writes an event note, named title, in a folder of root.
+func writeEventNote(t *testing.T, root, folder, title, front string) {
+	t.Helper()
+	dir := filepath.Join(root, folder)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\npage-type: event\n" + front + "---\n"
+	if err := os.WriteFile(filepath.Join(dir, title+".md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A name in a skip token stands for the days of the event note with that
+// title. A name that no single live event note answers skips nothing.
+func TestTaskToggleResolvesNamedSkip(t *testing.T) {
+	const spring = "when: 2027-03-13..2027-03-21\n"
+	const task = "- [ ] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break"
+	const later = "- [ ] Assignment due:2028-03-08T23:59 repeat:1w skip:@spring-break"
+	for _, tc := range []struct {
+		name, today, line, due string
+		prepare                func(t *testing.T, root string)
+	}{
+		{"note covers the next week", "2027-03-08", task, "2027-03-22T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "Spring Break", spring)
+		}},
+		{"title in other case", "2027-03-08", task, "2027-03-22T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "SPRING BREAK", spring)
+		}},
+		{"title with spaces and a hyphen", "2027-03-08", task, "2027-03-22T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "Spring - Break", spring)
+		}},
+		{"title with an underscore", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "Spring_Break", spring)
+		}},
+		{"title without a space", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "SpringBreak", spring)
+		}},
+		{"no note", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {}},
+		{"inline event only", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {
+			if err := os.WriteFile(filepath.Join(root, "inbox", "Plans.md"), []byte("- Spring break when:2027-03-13..2027-03-21\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"two notes with the title", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "Spring Break", spring)
+			writeEventNote(t, root, "quick", "Spring Break", spring)
+		}},
+		{"note in the trash", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "trash", "Spring Break", spring)
+		}},
+		{"yearly event ended before", "2028-03-08", later, "2028-03-15T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "Spring Break", spring+"repeat: 1y\nuntil: 2027-12-31\n")
+		}},
+		{"yearly event covers the later year", "2028-03-08", later, "2028-03-22T23:59", func(t *testing.T, root string) {
+			writeEventNote(t, root, "inbox", "Spring Break", spring+"repeat: 1y\n")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixClock(t, tc.today)
+			root := isolatedCLI(t)
+			if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			tc.prepare(t, root)
+			got, _ := toggleNoteIn(t, root, tc.line+"\n", "0")
+			open := "- [ ] Assignment due:" + tc.due + " repeat:1w skip:@spring-break"
+			done := strings.Replace(tc.line, "[ ]", "[x]", 1)
+			if want := open + "\n" + done + "\n"; got != want {
+				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
+// A task that reaches its until date inside a named skip only gets ticked.
+func TestTaskToggleNamedSkipStopsAtUntil(t *testing.T) {
+	fixClock(t, "2027-03-08")
+	root := isolatedCLI(t)
+	writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13..2027-03-21\n")
+	line := "- [ ] A due:2027-03-08 repeat:1w skip:@spring-break until:2027-03-20"
+	got, _ := toggleNoteIn(t, root, line+"\n", "0")
+	if want := strings.Replace(line, "[ ]", "[x]", 1) + "\n"; got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}

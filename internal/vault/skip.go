@@ -10,16 +10,22 @@ type SkipPeriod struct {
 }
 
 // ParseSkipItems reads the comma-separated value of a `skip:` token. An item
-// is a day (`2027-03-13`), an inclusive range (`2027-03-13..2027-03-21`) or a
-// reserved `@name`. It returns the valid items in their written form and,
-// separately, the periods they cover, which is what the next-occurrence
-// computation takes. An item that is not a real day, a reversed range, an
-// `@name` and anything unrecognised are ignored one at a time, so one bad item
-// never hides the others.
-func ParseSkipItems(value string) (items []string, periods []SkipPeriod) {
+// is a day (`2027-03-13`), an inclusive range (`2027-03-13..2027-03-21`) or an
+// `@name`. It returns the valid date items in their written form, the periods
+// they cover, which is what the next-occurrence computation takes, and the
+// names of the `@name` items without the `@`. An item that is not a real day,
+// a reversed range, an empty `@` and anything unrecognised are ignored one at
+// a time, so one bad item never hides the others.
+func ParseSkipItems(value string) (items []string, periods []SkipPeriod, names []string) {
 	for _, raw := range strings.Split(value, ",") {
 		item := strings.TrimSpace(raw)
-		if item == "" || strings.HasPrefix(item, "@") {
+		if item == "" {
+			continue
+		}
+		if name, isName := strings.CutPrefix(item, "@"); isName {
+			if name = strings.TrimSpace(name); name != "" {
+				names = append(names, name)
+			}
 			continue
 		}
 		period, ok := parseSkipItem(item)
@@ -29,7 +35,7 @@ func ParseSkipItems(value string) (items []string, periods []SkipPeriod) {
 		items = append(items, item)
 		periods = append(periods, period)
 	}
-	return items, periods
+	return items, periods, names
 }
 
 func parseSkipItem(item string) (SkipPeriod, bool) {

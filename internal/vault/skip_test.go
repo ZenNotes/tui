@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseSkipItemsKeepsValidDaysAndRanges(t *testing.T) {
-	items, periods := ParseSkipItems("2027-03-13..2027-03-21,2027-04-02")
+	items, periods, _ := ParseSkipItems("2027-03-13..2027-03-21,2027-04-02")
 	if want := []string{"2027-03-13..2027-03-21", "2027-04-02"}; !reflect.DeepEqual(items, want) {
 		t.Fatalf("items: %v, want %v", items, want)
 	}
@@ -15,27 +15,27 @@ func TestParseSkipItemsKeepsValidDaysAndRanges(t *testing.T) {
 		t.Fatalf("periods: %v, want %v", periods, want)
 	}
 	// A range of one day is valid, and so is a leap day.
-	items, _ = ParseSkipItems("2028-02-29..2028-02-29")
+	items, _, _ = ParseSkipItems("2028-02-29..2028-02-29")
 	if len(items) != 1 {
 		t.Fatalf("one-day range: %v", items)
 	}
 }
 
 func TestParseSkipItemsIgnoresReversedAndUnrealDates(t *testing.T) {
-	items, periods := ParseSkipItems("2027-03-21..2027-03-13,2027-02-30,2027-03-15,nonsense,2027-03-01..2027-02-30,,2027-3-4")
+	items, periods, _ := ParseSkipItems("2027-03-21..2027-03-13,2027-02-30,2027-03-15,nonsense,2027-03-01..2027-02-30,,2027-3-4")
 	if want := []string{"2027-03-15"}; !reflect.DeepEqual(items, want) {
 		t.Fatalf("items: %v, want %v", items, want)
 	}
 	if len(periods) != 1 || periods[0].Start != "2027-03-15" {
 		t.Fatalf("periods: %v", periods)
 	}
-	if items, periods := ParseSkipItems(""); len(items) != 0 || len(periods) != 0 {
+	if items, periods, _ := ParseSkipItems(""); len(items) != 0 || len(periods) != 0 {
 		t.Fatalf("empty value: %v %v", items, periods)
 	}
 }
 
 func TestParseSkipItemsIgnoresReservedNames(t *testing.T) {
-	items, periods := ParseSkipItems("@spring-break,2027-03-15")
+	items, periods, _ := ParseSkipItems("@spring-break,2027-03-15")
 	if want := []string{"2027-03-15"}; !reflect.DeepEqual(items, want) {
 		t.Fatalf("items: %v, want %v", items, want)
 	}

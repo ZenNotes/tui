@@ -172,3 +172,35 @@ func TestToggleTaskToolAcceptsBlockId(t *testing.T) {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
 	}
 }
+
+// toggle_task passes over the days of the event note that a skip name stands
+// for.
+func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	event := "---\npage-type: event\nwhen: 2027-03-13..2027-03-21\n---\n"
+	if err := os.WriteFile(filepath.Join(root, "inbox", "Spring Break.md"), []byte(event), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "inbox", "work.md")
+	note := "- [ ] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break\n"
+	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	today := time.Date(2027, 3, 8, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/work.md#0"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	want := "- [ ] Assignment due:2027-03-22T23:59 repeat:1w skip:@spring-break\n" +
+		"- [x] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break\n"
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != want {
+		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
+	}
+}
