@@ -1156,6 +1156,9 @@ type ToggleOptions struct {
 	// A roll does not write a session copy into a note that it refuses. The
 	// roll counts such notes and does not name them. Nil allows every note.
 	CanWrite func(rel string) bool
+	// Around runs before the roll writes a session copy into a note. The
+	// function that it returns runs after the write. Nil does nothing.
+	Around func(rel string) func()
 }
 
 // ToggleTask flips the task named by an id, counted in the given grammar.
@@ -1241,7 +1244,7 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 	if _, err := v.WriteNote(relPosix, plan.Body); err != nil {
 		return nil, err
 	}
-	v.writeSessionCopies(plan.Copies, toggle.CanWrite)
+	v.writeSessionCopies(plan.Copies, toggle.CanWrite, toggle.Around)
 
 	for _, t := range ParseTasks(relPosix, title, folder, plan.Body, opts) {
 		if input.File && t.ID == taskID {
@@ -1273,7 +1276,7 @@ func (v *Vault) loadRollContext(in *TaskRollInput, opts ParseTasksOptions) {
 // writeSessionCopies writes the session copies of a roll, one note at a time.
 // A note that the caller may not write is counted in one warning without its
 // path. A note that fails to write gets a warning that names it.
-func (v *Vault) writeSessionCopies(copies []SessionCopy, canWrite func(string) bool) {
+func (v *Vault) writeSessionCopies(copies []SessionCopy, canWrite func(string) bool, around func(string) func()) {
 	var paths []string
 	byPath := map[string][]SessionCopy{}
 	for _, c := range copies {
@@ -1288,6 +1291,10 @@ func (v *Vault) writeSessionCopies(copies []SessionCopy, canWrite func(string) b
 			refused += len(byPath[path])
 			continue
 		}
+		done := func() {}
+		if around != nil {
+			done = around(path)
+		}
 		abs, err := v.AbsPath(path)
 		var data []byte
 		if err == nil {
@@ -1296,6 +1303,7 @@ func (v *Vault) writeSessionCopies(copies []SessionCopy, canWrite func(string) b
 		if err == nil {
 			_, err = v.WriteNote(path, InsertSessionCopies(string(data), byPath[path]))
 		}
+		done()
 		if err != nil {
 			v.warnTask(fmt.Sprintf("Could not copy a work session into %s: %v", path, err))
 		}
