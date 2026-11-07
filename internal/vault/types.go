@@ -161,6 +161,16 @@ type Task struct {
 	// `^`. It is empty when the line has none.
 	BlockID       string `json:"blockId,omitempty"`
 	CompletedDate string `json:"completedDate,omitempty"`
+	// LastCompleted is the `lastCompleted` date of a repeating task note. It
+	// is not in the JSON.
+	LastCompleted string `json:"-"`
+	// SessionDate, SessionTime and SessionEnd come from the first current
+	// work session of the task that has not ended. JoinSessions sets them. A
+	// scan never does, and they are not in the JSON. SessionEnd is an
+	// `HH:MM` end of the session.
+	SessionDate string `json:"-"`
+	SessionTime string `json:"-"`
+	SessionEnd  string `json:"-"`
 	// DueInferred marks a due date derived from the containing daily note
 	// rather than written on the line. Set by the TUI, never by a scan.
 	DueInferred bool `json:"dueInferred,omitempty"`

@@ -123,3 +123,76 @@ func TestNoteOrderIgnoresTimes(t *testing.T) {
 		t.Fatalf("note order: %s", got)
 	}
 }
+
+// sessionGrouping groups the tasks of one note that has the given lines, with
+// the sessions that sit in a second note.
+func sessionGrouping(t *testing.T, today string, lines []string, sessions ...string) TaskGroups {
+	t.Helper()
+	tasks, events := sessionVault(
+		sessionNote{"Work.md", "Work", strings.Join(lines, "\n") + "\n"},
+		sessionNote{"Plans.md", "Plans", strings.Join(sessions, "\n") + "\n"},
+	)
+	day := groupingToday(today)
+	return GroupTasks(JoinSessions(tasks, events, day), day)
+}
+
+func TestGroupTasksBySessionDate(t *testing.T) {
+	const link = "task:[[Work#^ab12cd]] "
+	g := sessionGrouping(t, "2026-11-04", []string{"- [ ] X ^ab12cd"}, "- X "+link+"when:2026-11-04")
+	if len(g.Today) != 1 || g.OverdueCount != 0 {
+		t.Errorf("session today: %+v", g)
+	}
+	g = sessionGrouping(t, "2026-11-04", []string{"- [ ] X due:2026-11-20 ^ab12cd"}, "- X "+link+"when:2026-11-02")
+	if len(g.Today) != 1 || len(g.Upcoming) != 0 || g.OverdueCount != 0 {
+		t.Errorf("session earlier, due later: %+v", g)
+	}
+	g = sessionGrouping(t, "2026-11-04", []string{"- [ ] X due:2026-11-03 ^ab12cd"}, "- X "+link+"when:2026-11-02")
+	if len(g.Today) != 1 || g.OverdueCount != 1 {
+		t.Errorf("only the due date makes a task overdue: %+v", g)
+	}
+	g = sessionGrouping(t, "2026-11-04", []string{"- [ ] X @waiting ^ab12cd"}, "- X "+link+"when:2026-11-02")
+	if len(g.Waiting) != 1 || len(g.Today) != 0 {
+		t.Errorf("waiting: %+v", g)
+	}
+	g = sessionGrouping(t, "2026-11-04", []string{"- [ ] X ^ab12cd"}, "- X "+link+"when:2026-11-06")
+	if len(g.Undated) != 1 || len(g.Today) != 0 {
+		t.Errorf("session later: %+v", g)
+	}
+	g = sessionGrouping(t, "2026-11-04", []string{"- [/] X ^ab12cd"}, "- X "+link+"when:2026-11-02")
+	if len(g.Today) != 1 || !g.Today[0].InProgress {
+		t.Errorf("in progress: %+v", g)
+	}
+	g = sessionGrouping(t, "2026-11-04", []string{"- [x] X ^ab12cd", "- [-] Y ^cd34ef"},
+		"- X "+link+"when:2026-11-02", "- Y task:[[Work#^cd34ef]] when:2026-11-02")
+	if len(g.Done) != 1 || len(g.Cancelled) != 1 || len(g.Today) != 0 {
+		t.Errorf("done and cancelled: %+v", g)
+	}
+	// Without a join, a session changes nothing.
+	tasks, _ := sessionVault(sessionNote{"Work.md", "Work", "- [ ] X ^ab12cd\n"})
+	if g := GroupTasks(tasks, groupingToday("2026-11-04")); len(g.Undated) != 1 {
+		t.Errorf("no join: %+v", g)
+	}
+}
+
+func TestPriorityOrderInTodayUsesSessionTimeThenDueTime(t *testing.T) {
+	g := sessionGrouping(t, "2026-11-05", []string{
+		"- [ ] W !high due:2026-11-05",
+		"- [ ] X !high due:2026-11-05T15:00",
+		"- [ ] Y !high due:2026-11-05T17:00 ^ab12cd",
+		"- [ ] Z !high due:2026-11-05T09:00",
+	}, "- Y task:[[Work#^ab12cd]] when:2026-11-05T08:00")
+	if got := taskNames(g.Today); got != "Y Z X W" {
+		t.Fatalf("order: %s", got)
+	}
+	if got := taskNames(OrderTaskGroups(g, "priority").Today); got != "Y Z X W" {
+		t.Fatalf("priority order: %s", got)
+	}
+	// The session of a task is the first current one that has not ended.
+	g = sessionGrouping(t, "2026-11-05", []string{
+		"- [ ] X !high due:2026-11-05T15:00",
+		"- [ ] Y !high ^ab12cd",
+	}, "- Y task:[[Work#^ab12cd]] when:2026-11-05T08:00", "- Y task:[[Work#^ab12cd]] when:2026-11-06T07:00")
+	if got := taskNames(g.Today); got != "Y X" {
+		t.Fatalf("two sessions: %s", got)
+	}
+}

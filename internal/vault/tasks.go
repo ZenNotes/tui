@@ -252,6 +252,7 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		Repeat:        frontmatterRepeat(firstScalar(fm["repeat"])),
 		Skip:          frontmatterSkip(fm["skip"]),
 		CompletedDate: normalizeDueDate(firstScalar(fm["completeddate"])),
+		LastCompleted: normalizeDueDate(firstScalar(fm["lastcompleted"])),
 	}
 	if task.Repeat != "" {
 		task.Until = validUntil(Unquote(strings.TrimSpace(firstScalar(fm["until"]))))
@@ -1206,7 +1207,9 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 // app since ZenNotes 2.76 (#990): they used to land in Today. A daily-note task
 // is dated by InferDailyTaskDueDates before it gets here, so it stays in Today.
 // A `scheduled:` token or key places nothing. A time of day never moves a task
-// between groups: groups are judged by dates alone.
+// between groups: groups are judged by dates alone. An open task that is not
+// waiting and whose session date is today or earlier is in Today. Only its
+// due date makes it overdue.
 func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 	todayISO := TodayISO(today)
 	g := TaskGroups{}
@@ -1220,6 +1223,11 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 			g.Done = append(g.Done, task)
 		case task.Waiting:
 			g.Waiting = append(g.Waiting, task)
+		case task.SessionDate != "" && task.SessionDate <= todayISO:
+			g.Today = append(g.Today, task)
+			if task.Due != "" && task.Due < todayISO {
+				g.OverdueCount++
+			}
 		case task.Due == "":
 			g.Undated = append(g.Undated, task)
 		case task.Due < todayISO:
@@ -1306,13 +1314,22 @@ func timeSortKey(hhmm string) string {
 }
 
 // lessByPriority orders high before medium before low before none, then by
-// date, then by time of day with timed tasks first, then by line.
+// date, then by time of day with timed tasks first, then by line. A task with
+// a session date is placed by the date and the time of its session, and not
+// by its due date and time.
 func lessByPriority(a, b Task) bool {
 	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
 	if rank[a.Priority] != rank[b.Priority] {
 		return rank[a.Priority] < rank[b.Priority]
 	}
-	ad, bd, at, bt := a.Due, b.Due, a.DueTime, b.DueTime
+	ad, at := a.Due, a.DueTime
+	if a.SessionDate != "" {
+		ad, at = a.SessionDate, a.SessionTime
+	}
+	bd, bt := b.Due, b.DueTime
+	if b.SessionDate != "" {
+		bd, bt = b.SessionDate, b.SessionTime
+	}
 	if ad == "" {
 		ad = "9999-99-99"
 	}
