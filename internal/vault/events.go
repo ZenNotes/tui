@@ -66,7 +66,9 @@ var (
 	eventRepeatRe   = regexp.MustCompile(`(?i)(?:^|\s)repeat:(\S+)`)
 	eventSkipRe     = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
 	eventUntilRe    = regexp.MustCompile(`(?i)(?:^|\s)until:(\S+)`)
-	eventTaskRe     = regexp.MustCompile(`(?i)(?:^|\s)task:(\S+)`)
+	// A `task:` value that starts with `[[` ends at the first `]]`, spaces
+	// included. Any other value ends at the first space.
+	eventTaskRe = regexp.MustCompile(`(?i)(?:^|\s)task:(\[\[.*?\]\]|\S+)`)
 )
 
 // IsEventListNote reports whether the frontmatter of a note says
@@ -143,13 +145,25 @@ func eventFromNote(path, title string, folder NoteFolder, fm map[string][]string
 		Path: path, NoteTitle: title, Folder: folder, Kind: EventKindNote, Text: text,
 		When: when, StartDate: startDate, StartTime: startTime, EndDate: endDate, EndTime: endTime,
 		Repeat:   eventRepeat(frontmatterRepeat(firstScalar(fm["repeat"]))),
-		TaskLink: Unquote(firstScalar(fm["task"])),
+		TaskLink: eventNoteTaskLink(fm["task"]),
 	}
 	e.Skip, e.SkipNames = eventSkip(fm["skip"])
 	if e.Repeat != "" {
 		e.Until = validUntil(Unquote(firstScalar(fm["until"])))
 	}
 	return e, true
+}
+
+// eventNoteTaskLink gives the `task` link of an event note. The frontmatter
+// reader splits an unquoted `[[Note]]` value as a list that has one item
+// `[Note]`. This function puts the second pair of brackets back.
+func eventNoteTaskLink(v []string) string {
+	first := firstScalar(v)
+	if len(v) > 0 && strings.HasPrefix(first, "[") && !strings.HasPrefix(first, "[[") &&
+		strings.HasSuffix(v[len(v)-1], "]") {
+		return "[" + strings.Join(v, ",") + "]"
+	}
+	return Unquote(first)
 }
 
 // eventFromLine reads one line as an inline event. The caller sets the note

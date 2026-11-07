@@ -175,6 +175,31 @@ func TestUnresolvedSessionDoesNotGroup(t *testing.T) {
 	}
 }
 
+func TestSessionLinkWithSpacedNoteName(t *testing.T) {
+	uni := sessionNote{"Uni events.md", "Uni events", "- [ ] Study ^ab12cd\n"}
+	plans := sessionNote{"Plans.md", "Plans", "- Study when:2026-11-04T10:00-12:00 task:[[Uni events#^ab12cd]] later\n"}
+	tasks, events := sessionVault(uni, plans)
+	sessions := sessionsOf(events)
+	if len(sessions) != 1 || sessions[0].TaskLink != "[[Uni events#^ab12cd]]" || sessions[0].Text != "Study later" {
+		t.Fatalf("sessions: %+v", sessions)
+	}
+	got, ok := ResolveSession(tasks, sessions[0])
+	if !ok || got.SourcePath != "Uni events.md" {
+		t.Fatalf("resolved %+v, %v", got, ok)
+	}
+	for _, link := range []string{`"[[Uni events#^ab12cd]]"`, `[[Uni events#^ab12cd]]`} {
+		note := sessionNote{"Sprint.md", "Sprint", "---\npage-type: event\nwhen: 2026-11-04T09:00\ntask: " + link + "\n---\n"}
+		_, noteEvents := sessionVault(note)
+		if len(noteEvents) != 1 || noteEvents[0].TaskLink != "[[Uni events#^ab12cd]]" {
+			t.Errorf("event note %s: %+v", link, noteEvents)
+			continue
+		}
+		if _, ok := ResolveSession(tasks, noteEvents[0]); !ok {
+			t.Errorf("event note %s did not resolve", link)
+		}
+	}
+}
+
 func TestTaskNoteSessionsBeforeLastCompletedAreNotCurrent(t *testing.T) {
 	report := sessionNote{"Report.md", "Report", "---\npage-type: task\nstatus: open\nrepeat: 1w\nlastCompleted: 2026-11-02\n---\n"}
 	plans := sessionNote{"Plans.md", "Plans", "- Report task:[[Report]] when:2026-11-02T09:00\n- Report task:[[Report]] when:2026-11-05T09:00\n"}
