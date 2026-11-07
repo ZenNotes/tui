@@ -162,11 +162,16 @@ func firstScalar(v []string) string {
 	return v[0]
 }
 
-// hasTaskPageType reports whether the frontmatter says `page-type: task`. The
-// frontmatter reader lower-cases keys, so the key is matched here as written:
-// only the lower-case `page-type` counts, with the exact value `task`, bare,
-// quoted, or as the only item of a list.
+// hasTaskPageType reports whether the frontmatter says `page-type: task`.
 func hasTaskPageType(block string) bool {
+	return hasPageType(block, TaskFileTag)
+}
+
+// hasPageType reports whether the frontmatter says `page-type: <want>`. The
+// frontmatter reader lower-cases keys, so the key is matched here as written:
+// only the lower-case `page-type` counts, with the exact value, bare, quoted,
+// or as the only item of a list.
+func hasPageType(block, want string) bool {
 	var own []string
 	capturing := false
 	for _, line := range strings.Split(block, "\n") {
@@ -185,7 +190,7 @@ func hasTaskPageType(block string) bool {
 		return false
 	}
 	values := ParseFrontmatterFields(strings.Join(own, "\n"))["page-type"]
-	return len(values) == 1 && values[0] == TaskFileTag
+	return len(values) == 1 && values[0] == want
 }
 
 // parseTaskFile returns the whole-note task when the frontmatter `tags`
