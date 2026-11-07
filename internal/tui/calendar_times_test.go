@@ -115,3 +115,19 @@ func TestDueMenuClearRemovesTime(t *testing.T) {
 		t.Errorf("clear should leave no due token and no time:\n%q", got)
 	}
 }
+
+const calRangedNote = "- [ ] alpha job due:2026-11-18T14:00-15:30\n"
+
+func TestTodayKeyAndDueMenuKeepRange(t *testing.T) {
+	calFixToday(t, calDate(2026, time.October, 29))
+	a, tv, root := calVaultApp(t, map[string]string{"work.md": calRangedNote})
+	calPress(a, tv, vim.KeyEnter, vim.R('T'))
+	if got := calReadFile(t, root, "work.md"); !strings.Contains(got, "alpha job due:2026-10-29T14:00-15:30") {
+		t.Errorf("T should move the task to today and keep its range:\n%s", got)
+	}
+	a, _, root, m := calDueMenu(t, map[string]string{"work.md": calRangedNote}, true)
+	calPick(t, a, m, "tomorrow")
+	if got := calReadFile(t, root, "work.md"); !strings.Contains(got, "alpha job due:2026-10-30T14:00-15:30") {
+		t.Errorf("the due menu should keep the range:\n%s", got)
+	}
+}

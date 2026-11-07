@@ -540,7 +540,7 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 	}
 	meta := []string{}
 	if t.Due != "" {
-		due := "due " + withTaskClock(t.Due, t.DueTime, a.prefs.TimeFormat)
+		due := "due " + withTaskClock(t.Due, t.DueTime, t.DueEnd, a.prefs.TimeFormat)
 		if vault.IsOverdue(t, time.Now()) {
 			meta = append(meta, th.Overdue.Render(due))
 		} else {
@@ -639,9 +639,9 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 			meta := []string{}
 			if c.Due != "" {
 				if vault.IsOverdue(c, time.Now()) {
-					meta = append(meta, th.Overdue.Render(withTaskClock(c.Due, c.DueTime, a.prefs.TimeFormat)))
+					meta = append(meta, th.Overdue.Render(withTaskClock(c.Due, c.DueTime, c.DueEnd, a.prefs.TimeFormat)))
 				} else {
-					meta = append(meta, th.Dim.Render(withTaskClock(c.Due, c.DueTime, a.prefs.TimeFormat)))
+					meta = append(meta, th.Dim.Render(withTaskClock(c.Due, c.DueTime, c.DueEnd, a.prefs.TimeFormat)))
 				}
 			}
 			if c.Priority != "" {
@@ -1486,7 +1486,7 @@ func (a *App) taskPriorityMenu(t vault.Task) {
 }
 
 func (a *App) taskDuePrompt(t vault.Task) {
-	a.promptFor("Due date", t.Due, "YYYY-MM-DD[THH:MM], today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
+	a.promptFor("Due date", t.Due, "YYYY-MM-DD[THH:MM[-HH:MM]], today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
 		due, err := parseDueInput(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.notifyError(err.Error())
@@ -1528,8 +1528,15 @@ func parseDueInput(text string, now time.Time) (string, error) {
 	if vault.IsValidISODate(text) {
 		return text, nil
 	}
-	if date, clock, _ := vault.SplitDateTime(strings.ToUpper(text)); date != "" && clock != "" {
-		return date + "T" + clock, nil
+	if date, clock, end := vault.SplitDateTime(strings.ToUpper(text)); date != "" && clock != "" {
+		value := date + "T" + clock
+		if end != "" {
+			value += "-" + end
+		}
+		// Reject a value when its end time is not valid or not later than the start.
+		if value == strings.ToUpper(text) {
+			return value, nil
+		}
 	}
 	return "", fmt.Errorf("not a date: %s", text)
 }

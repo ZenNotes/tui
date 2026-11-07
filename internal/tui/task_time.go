@@ -27,11 +27,15 @@ func formatTaskClock(clock, timeFormat string) string {
 	return fmt.Sprintf("%d:%02d %s", h, m, suffix)
 }
 
-// withTaskClock appends a formatted time to a date; with no time it returns
-// the date alone.
-func withTaskClock(date, clock, timeFormat string) string {
+// withTaskClock appends a formatted time to a date. With an end time, the time
+// is a range such as `14:00–15:30`. With no time it returns the date alone.
+func withTaskClock(date, clock, end, timeFormat string) string {
 	if clock == "" {
 		return date
 	}
-	return date + " " + formatTaskClock(clock, timeFormat)
+	text := date + " " + formatTaskClock(clock, timeFormat)
+	if end != "" {
+		text += "–" + formatTaskClock(end, timeFormat)
+	}
+	return text
 }

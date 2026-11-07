@@ -85,3 +85,60 @@ func TestTasksBoardCardShowsDueTime(t *testing.T) {
 		t.Fatalf("board: %q", got)
 	}
 }
+
+func TestDuePromptKeepsRange(t *testing.T) {
+	cases := map[string]string{
+		"2026-12-24": "2026-12-24",
+		"tomorrow":   "2026-11-03",
+		"+3":         "2026-11-05",
+	}
+	for answer, date := range cases {
+		a, path := repeatTasksApp(t, "- [ ] Call Ana due:2026-11-01T14:00-15:30\n", "2026-11-02")
+		got := submitDuePrompt(t, a, path, answer)
+		if want := "- [ ] Call Ana due:" + date + "T14:00-15:30\n"; got != want {
+			t.Errorf("answer %q: got %q, want %q", answer, got, want)
+		}
+	}
+	a, path := repeatTasksApp(t, "---\npage-type: task\ndue: 2026-11-01T14:00-15:30\n---\n\n# Call Ana\n", "2026-11-02")
+	got := submitDuePrompt(t, a, path, "tomorrow")
+	if !strings.Contains(got, "2026-11-03T14:00-15:30") {
+		t.Errorf("task note lost its range: %q", got)
+	}
+}
+
+func TestDuePromptAnswerWithTimeReplacesRange(t *testing.T) {
+	a, path := repeatTasksApp(t, "- [ ] Call Ana due:2026-11-01T14:00-15:30\n", "2026-11-02")
+	got := submitDuePrompt(t, a, path, "2026-12-01T09:30")
+	if want := "- [ ] Call Ana due:2026-12-01T09:30\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	a, path = repeatTasksApp(t, "- [ ] Call Ana due:2026-11-01T14:00\n", "2026-11-02")
+	got = submitDuePrompt(t, a, path, "2026-12-01T09:30-11:00")
+	if want := "- [ ] Call Ana due:2026-12-01T09:30-11:00\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	a, path = repeatTasksApp(t, "- [ ] Call Ana\n", "2026-11-02")
+	if got := submitDuePrompt(t, a, path, "2026-12-01T11:00-09:30"); strings.Contains(got, "due:") {
+		t.Fatalf("a range that ends before it starts was written: %q", got)
+	}
+}
+
+func TestDuePromptEmptyAnswerClearsRange(t *testing.T) {
+	a, path := repeatTasksApp(t, "- [ ] Call Ana due:2026-11-01T14:00-15:30 !high\n", "2026-11-02")
+	got := submitDuePrompt(t, a, path, "")
+	if want := "- [ ] Call Ana !high\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestTasksListRowShowsDueRange(t *testing.T) {
+	a, path := repeatTasksApp(t, "- [ ] Call Ana due:2026-11-03T14:00-15:30\n", "2026-11-02")
+	a.prefs.TimeFormat = "24h"
+	if got := rowText(t, a, path); !strings.Contains(got, "due 2026-11-03 14:00–15:30") {
+		t.Fatalf("24h row: %q", got)
+	}
+	a.prefs.TimeFormat = "12h"
+	if got := rowText(t, a, path); !strings.Contains(got, "due 2026-11-03 2:00 PM–3:30 PM") {
+		t.Fatalf("12h row: %q", got)
+	}
+}

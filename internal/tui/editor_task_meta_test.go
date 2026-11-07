@@ -38,6 +38,14 @@ func TestEditorStylesRepeatAndSkipTokens(t *testing.T) {
 	}
 }
 
+func TestEditorStylesWholeRangedDueToken(t *testing.T) {
+	got := metaSpans("- [ ] Call due:2026-11-03T14:00-15:30")
+	want := []string{"due:2026-11-03T14:00-15:30"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("styled %q, want %q", got, want)
+	}
+}
+
 func TestEditorStylesWholeTimedDueToken(t *testing.T) {
 	got := metaSpans("- [ ] Call due:2026-11-03T14:00 scheduled:2026-11-02T09:30")
 	want := []string{"due:2026-11-03T14:00", "scheduled:2026-11-02T09:30"}
