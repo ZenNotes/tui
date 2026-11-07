@@ -49,41 +49,15 @@ func TestCalendarEntryShowsTimeInTwelveHourFormat(t *testing.T) {
 	}
 }
 
-func TestCalendarScheduledEntryShowsItsTime(t *testing.T) {
-	tasks := []vault.Task{{
-		ID: "a", Content: "Plan", Status: "open",
-		Scheduled: "2026-11-18", ScheduledTime: "09:30", Due: "2026-11-24",
-	}}
-	byDay, _ := bucketCalendarEntries(tasks)
-	got := byDay["2026-11-18"]
-	if len(got) != 1 || !got[0].scheduled || got[0].clock() != "09:30" {
-		t.Fatalf("entries on 2026-11-18 = %+v, want one scheduled entry at 09:30", got)
-	}
-	if due := byDay["2026-11-24"]; len(due) != 1 || due[0].clock() != "" {
-		t.Errorf("the due entry = %+v, want it untimed", due)
-	}
-	a, tv := calTestApp(t, tasks)
-	a.prefs.TimeFormat = "24h"
-	for _, sub := range []calSub{calMonth, calWeek, calDay} {
-		calToSub(t, a, tv, sub)
-		text := calShownLeftOfPanel(tv, calScreen(a, tv, 160, 40))
-		if !strings.Contains(text, calScheduledMark+"09:30") {
-			t.Errorf("sub %v: no scheduled entry carrying 09:30:\n%s", sub, text)
-		}
-	}
-}
-
 func TestCalendarOrdersTimedEntriesEarliestFirst(t *testing.T) {
 	tasks := []vault.Task{
 		{ID: "plain1", Content: "plain1", Due: "2026-11-18", Status: "open"},
 		{ID: "late", Content: "late", Due: "2026-11-18", DueTime: "16:00", Status: "open"},
-		{ID: "sched", Content: "sched", Scheduled: "2026-11-18", ScheduledTime: "12:00", Status: "open"},
-		{ID: "plain2", Content: "plain2", Scheduled: "2026-11-18", Status: "open"},
 		{ID: "early", Content: "early", Due: "2026-11-18", DueTime: "09:00", Status: "open"},
 		{ID: "plain3", Content: "plain3", Due: "2026-11-18", Status: "open"},
 	}
 	byDay, _ := bucketCalendarEntries(tasks)
-	want := []string{"early", "sched", "late", "plain1", "plain3", "plain2"}
+	want := []string{"early", "late", "plain1", "plain3"}
 	if got := entryIDs(byDay["2026-11-18"]); !reflect.DeepEqual(got, want) {
 		t.Errorf("order on 2026-11-18 = %v, want %v", got, want)
 	}
@@ -95,52 +69,12 @@ func TestCalendarOrdersTimedEntriesEarliestFirst(t *testing.T) {
 	// Timed entries sit in their hour rows, earliest first, and the untimed
 	// ones are in the all-day band above the rows, in the day's order.
 	prev := -1
-	for _, name := range []string{"plain1", "plain3", "plain2", "early", "sched", "late"} {
+	for _, name := range []string{"plain1", "plain3", "early", "late"} {
 		row := calRowOf(lines, name)
 		if row <= prev {
 			t.Errorf("%s is on row %d, not below the previous entry (row %d):\n%s", name, row, prev, calScreenText(lines))
 		}
 		prev = row
-	}
-}
-
-func TestCalendarEntryUsesItsOwnFieldsTime(t *testing.T) {
-	apart := []vault.Task{{
-		ID: "a", Content: "Apart", Status: "open",
-		Due: "2026-11-18", DueTime: "09:00", Scheduled: "2026-11-20", ScheduledTime: "15:00",
-	}}
-	byDay, _ := bucketCalendarEntries(apart)
-	if got := byDay["2026-11-18"]; len(got) != 1 || got[0].clock() != "09:00" {
-		t.Errorf("due entry = %+v, want the due time 09:00", got)
-	}
-	if got := byDay["2026-11-20"]; len(got) != 1 || got[0].clock() != "15:00" {
-		t.Errorf("scheduled entry = %+v, want the scheduled time 15:00", got)
-	}
-
-	together := []vault.Task{{
-		ID: "b", Content: "Together", Status: "open",
-		Due: "2026-11-18", DueTime: "09:00", Scheduled: "2026-11-18", ScheduledTime: "15:00",
-	}}
-	byDay, _ = bucketCalendarEntries(together)
-	got := byDay["2026-11-18"]
-	if len(got) != 1 || got[0].clock() != "15:00" {
-		t.Fatalf("merged entry = %+v, want one entry at the scheduled time 15:00", got)
-	}
-	a, tv := calTestApp(t, together)
-	a.prefs.TimeFormat = "24h"
-	calToSub(t, a, tv, calDay)
-	text := calScreenText(calScreen(a, tv, 120, 40))
-	if !strings.Contains(text, "15:00") || strings.Contains(text, "09:00") {
-		t.Errorf("day view of a merged entry should show 15:00 only:\n%s", text)
-	}
-
-	untimed := []vault.Task{{
-		ID: "c", Content: "Untimed", Status: "open",
-		Due: "2026-11-18", Scheduled: "2026-11-20", ScheduledTime: "15:00",
-	}}
-	byDay, _ = bucketCalendarEntries(untimed)
-	if got := byDay["2026-11-18"]; len(got) != 1 || got[0].clock() != "" {
-		t.Errorf("a due entry whose due has no time = %+v, want it untimed", got)
 	}
 }
 

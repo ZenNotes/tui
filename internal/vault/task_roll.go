@@ -20,19 +20,19 @@ const (
 // RollTaskInBody completes or cancels the task at targetIndex, counted in the
 // given grammar. An open, in-progress or waiting task that carries a valid
 // `repeat:` rule also gets its next occurrence: an open copy of the line and
-// its indented block is inserted directly above it, with `due:` and
-// `scheduled:` moved to the next date and the original keeping its own dates.
+// its indented block is inserted directly above it, with `due:` moved to the
+// next date and the original keeping its own dates. A `scheduled:` token is
+// plain text and stays as written.
 // Every other case is the plain toggle or cancel, with nothing inserted: no
 // rule, an invalid rule, unticking, reopening, a forwarded task, or a rule
 // with no date left to land on.
 //
-// The next date counts from `scheduled:`, else `due:`, else today, and from
-// today when the rule ends in `/done`. It is the first date of the rule after
-// that and after today that no `skip:` period covers. The other date and the
-// copied subtasks' dates move by the same number of days as the base field,
-// and each keeps its `THH:MM`. A task with neither date gets `scheduled:` on
-// the copy. now and weekStart are inputs so the caller chooses the clock and
-// the first day of the week.
+// The next date counts from `due:`, else today, and from today when the rule
+// ends in `/done`. It is the first date of the rule after that and after today
+// that no `skip:` period covers. The copied subtasks' dates move by the same
+// number of days as the task's `due:`, and each keeps its `THH:MM`. A task
+// with no `due:` gets `due:` on the copy. now and weekStart are inputs so the
+// caller chooses the clock and the first day of the week.
 //
 // Only local notes roll. A remote vault's server parses the note itself, so
 // remote toggles use ToggleTaskInBody and never insert a line.
@@ -54,7 +54,7 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 		return body, 0, false
 	}
 
-	shift, scheduled, rolled := planRoll(m, dialect, now, weekStart)
+	shift, due, rolled := planRoll(m, dialect, now, weekStart)
 	if !rolled {
 		if action == RollComplete {
 			plain, found := ToggleTaskInBody(body, targetIndex, dialect)
@@ -71,8 +71,8 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 		if cm := dialect.lineRe().FindStringSubmatch(line); cm != nil {
 			inserted++
 			line = cm[1] + " " + shift(cm[3])
-			if i == at && scheduled != "" {
-				line = withScheduled(line, scheduled)
+			if i == at && due != "" {
+				line = withDue(line, due)
 			}
 		}
 		copied = append(copied, line)
@@ -90,14 +90,14 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 	return strings.Join(out, "\n"), inserted, true
 }
 
-// withScheduled gives line the `scheduled:` date. A `scheduled:` token the
-// line already has, which holds no real date, gets its value replaced, so the
-// parser reads the new date from it; otherwise the token is appended.
-func withScheduled(line, date string) string {
-	if loc := inlineScheduledRe.FindStringSubmatchIndex(line); loc != nil {
+// withDue gives line the `due:` date. A `due:` token the line already has,
+// which holds no real date, gets its value replaced, so the parser reads the
+// new date from it; otherwise the token is appended.
+func withDue(line, date string) string {
+	if loc := inlineDueRe.FindStringSubmatchIndex(line); loc != nil {
 		return line[:loc[2]] + date + line[loc[3]:]
 	}
-	return strings.TrimRight(line, " \t") + " scheduled:" + date
+	return strings.TrimRight(line, " \t") + " due:" + date
 }
 
 // cancelMarker is the state a plain cancel gives a line: cancelled, or open
@@ -110,10 +110,10 @@ func cancelMarker(state string) string {
 }
 
 // planRoll decides whether the task line m rolls. If it does, shift moves the
-// `due:` and `scheduled:` dates in the text after a line's `[ ` (which starts
-// with its `]`) by the offset of the new occurrence, and scheduled is the
-// `scheduled:` date to add to the copy of a task that has neither date.
-func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Weekday) (shift func(string) string, scheduled string, rolled bool) {
+// `due:` date in the text after a line's `[ ` (which starts with its `]`) by
+// the offset of the new occurrence, and due is the `due:` date to add to the
+// copy of a task that has none.
+func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Weekday) (shift func(string) string, due string, rolled bool) {
 	switch m[2] {
 	case " ", "/":
 	default:
@@ -126,29 +126,25 @@ func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Wee
 	}
 	_, periods := ParseSkipItems(strings.Join(tokens.skip, ","))
 
-	field := tokens.scheduled
-	if field == "" {
-		field = tokens.due
-	}
+	field := tokens.due
 	days, following, found := nextRollDate(rule, field, periods, now, weekStart)
 	if !found {
 		return nil, "", false
 	}
 
 	shift = func(text string) string {
-		text = shiftTokenDate(text, inlineDueRe, days)
-		return shiftTokenDate(text, inlineScheduledRe, days)
+		return shiftTokenDate(text, inlineDueRe, days)
 	}
 	if field == "" {
-		scheduled = following
+		due = following
 	}
-	return shift, scheduled, true
+	return shift, due, true
 }
 
 // nextRollDate finds where a repeating task goes next. field is the date the
-// rule counts from, `scheduled:` else `due:`, or empty for a task with
-// neither. It returns that date, and how many days the task's dates move to
-// get there: the distance from field, or from today when field is empty.
+// rule counts from, `due:`, or empty for a task with none. It returns that
+// date, and how many days the task's dates move to get there: the distance
+// from field, or from today when field is empty.
 func nextRollDate(rule RepeatRule, field string, periods []SkipPeriod, now time.Time, weekStart time.Weekday) (days int, following string, found bool) {
 	today := TodayISO(now)
 	base := field

@@ -184,7 +184,7 @@ const maxTaskTokenLines = 10
 
 // taskTokenCheck lints the task tokens of the local vault at root. A warning
 // is a passing check, so it never changes the exit status: its lines ride in
-// Hint, as `path:line  token`, with a final `+N more` past the limit. It
+// Hint, as `path:line  token  reason`, with a final `+N more` past the limit. It
 // reports false when there is nothing to warn about.
 func taskTokenCheck(root string) (diagnosticCheck, bool) {
 	v, err := vault.Open(root)
@@ -210,7 +210,7 @@ func taskTokenCheck(root string) (diagnosticCheck, bool) {
 			check.Hint = append(check.Hint, fmt.Sprintf("+%d more", len(problems)-maxTaskTokenLines))
 			break
 		}
-		check.Hint = append(check.Hint, fmt.Sprintf("%s:%d  %s", p.Path, p.Line, p.Token))
+		check.Hint = append(check.Hint, fmt.Sprintf("%s:%d  %s  %s", p.Path, p.Line, p.Token, p.Reason))
 	}
 	return check, true
 }

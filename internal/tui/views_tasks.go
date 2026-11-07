@@ -561,7 +561,7 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 		}
 	}
 	if t.Scheduled != "" {
-		meta = append(meta, th.Dim.Render("scheduled "+withTaskClock(t.Scheduled, t.ScheduledTime, a.prefs.TimeFormat)))
+		meta = append(meta, th.Dim.Render("scheduled "+t.Scheduled))
 	}
 	if t.Priority != "" {
 		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority))
@@ -661,7 +661,7 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 				}
 			}
 			if c.Scheduled != "" {
-				meta = append(meta, th.Dim.Render("sch "+withTaskClock(c.Scheduled, c.ScheduledTime, a.prefs.TimeFormat)))
+				meta = append(meta, th.Dim.Render("sch "+c.Scheduled))
 			}
 			if c.Priority != "" {
 				meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))

@@ -262,3 +262,34 @@ func TestDoctorIgnoresReservedSkipNames(t *testing.T) {
 		t.Fatalf("a reserved skip name was reported:\n%s", out)
 	}
 }
+
+// doctor lists a bad time on a `due:` token with its reason, and says nothing
+// about a `scheduled:` token or key.
+func TestDoctorIgnoresScheduled(t *testing.T) {
+	root := isolatedCLI(t)
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	notes := map[string]string{
+		"plan.md": "- [ ] a scheduled:2026-11-05T25:99\n- [ ] b due:2026-11-06T25:00\n",
+		"task.md": "---\ntags: [task]\nscheduled: 2026-11-05T25:99\n---\n",
+	}
+	for name, body := range notes {
+		if err := os.WriteFile(filepath.Join(root, "inbox", name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check, found := taskTokenCheck(root)
+	if !found {
+		t.Fatal("no task token problem listed")
+	}
+	if len(check.Hint) != 1 || !strings.Contains(check.Hint[0], "due:2026-11-06T25:00") {
+		t.Fatalf("hint: %q", check.Hint)
+	}
+	if strings.Contains(strings.Join(check.Hint, "\n"), "scheduled") {
+		t.Fatalf("scheduled reported: %q", check.Hint)
+	}
+	if fields := strings.Fields(check.Hint[0]); len(fields) < 3 {
+		t.Fatalf("no reason in %q", check.Hint[0])
+	}
+}

@@ -58,11 +58,11 @@ func readRepeatNote(t *testing.T, path string) string {
 	return string(raw)
 }
 
-const repeatingLine = "- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+const repeatingLine = "- [ ] Water plants due:2026-11-02 repeat:mon,thu\n"
 
 func wantRolled(mark string) string {
-	return "- [ ] Water plants scheduled:2026-11-05 repeat:mon,thu\n" +
-		"- [" + mark + "] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	return "- [ ] Water plants due:2026-11-05 repeat:mon,thu\n" +
+		"- [" + mark + "] Water plants due:2026-11-02 repeat:mon,thu\n"
 }
 
 func TestTasksViewToggleInsertsNextOccurrence(t *testing.T) {
@@ -104,10 +104,10 @@ func TestTasksViewCancelInsertsNextOccurrence(t *testing.T) {
 		}
 	})
 	t.Run("reopening inserts nothing", func(t *testing.T) {
-		in := "- [-] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+		in := "- [-] Water plants due:2026-11-02 repeat:mon,thu\n"
 		a, path := repeatTasksApp(t, in, "2026-11-02")
 		a.setTaskCancelled(repeatTaskAt(t, path), false)
-		want := "- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+		want := "- [ ] Water plants due:2026-11-02 repeat:mon,thu\n"
 		if got := readRepeatNote(t, path); got != want {
 			t.Errorf("note = %q, want %q", got, want)
 		}
@@ -117,7 +117,7 @@ func TestTasksViewCancelInsertsNextOccurrence(t *testing.T) {
 func TestTasksViewInProgressDoesNotRoll(t *testing.T) {
 	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
 	a.setTaskInProgress(repeatTaskAt(t, path), true)
-	want := "- [/] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	want := "- [/] Water plants due:2026-11-02 repeat:mon,thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
@@ -127,7 +127,7 @@ func TestForwardingRepeatingTaskInsertsNoOccurrence(t *testing.T) {
 	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
 	a.forwardTask(repeatTaskAt(t, path))
 	got := readRepeatNote(t, path)
-	if strings.Contains(got, "scheduled:2026-11-05") {
+	if strings.Contains(got, "due:2026-11-05") {
 		t.Errorf("forwarding computed an occurrence: %q", got)
 	}
 }
@@ -138,7 +138,7 @@ func TestTasksViewToggleAdvancesRepeatingTaskNote(t *testing.T) {
 	a, path := repeatTasksApp(t, repeatingTaskNote, "2026-11-02")
 	a.toggleTask(repeatTaskAt(t, path))
 	got := readRepeatNote(t, path)
-	for _, want := range []string{"scheduled: 2026-11-05", "due: 2026-11-07", "status: open", "lastCompleted: 2026-11-02"} {
+	for _, want := range []string{"scheduled: 2026-11-02", "due: 2026-11-07", "status: open", "lastCompleted: 2026-11-02"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -152,7 +152,7 @@ func TestTasksViewCancelAdvancesRepeatingTaskNote(t *testing.T) {
 	a, path := repeatTasksApp(t, repeatingTaskNote, "2026-11-02")
 	a.setTaskCancelled(repeatTaskAt(t, path), true)
 	got := readRepeatNote(t, path)
-	for _, want := range []string{"scheduled: 2026-11-05", "due: 2026-11-07", "status: open"} {
+	for _, want := range []string{"scheduled: 2026-11-02", "due: 2026-11-07", "status: open"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -169,7 +169,7 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: "https://remote-vault.invalid"}
 	task := repeatTaskAt(t, path)
 	a.toggleTask(task)
-	want := "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	want := "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("toggle: note = %q, want %q", got, want)
 	}
@@ -177,7 +177,7 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.setTaskCancelled(task, true)
-	want = "- [-] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	want = "- [-] Water plants due:2026-11-02 repeat:mon,thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("cancel: note = %q, want %q", got, want)
 	}
@@ -221,7 +221,7 @@ func TestEditorToggleOnRemoteTargetDoesNotRoll(t *testing.T) {
 	a.opts.Backend = a.backend
 	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: "https://remote-vault.invalid"}
 	buf.ed.ToggleCheckboxAtCursor()
-	if got, want := buf.ed.Text(), "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"; got != want {
+	if got, want := buf.ed.Text(), "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"; got != want {
 		t.Errorf("buffer = %q, want %q", got, want)
 	}
 }
@@ -244,7 +244,7 @@ func TestTypedXInCheckboxDoesNotRoll(t *testing.T) {
 	buf := openRepeatBuffer(t, a)
 	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 3})
 	buf.ed.Feed("rx")
-	want := "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	want := "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"
 	if got := buf.ed.Text(); got != want {
 		t.Errorf("buffer = %q, want %q", got, want)
 	}
@@ -269,9 +269,9 @@ func TestPlainTaskChangesKeepCRLF(t *testing.T) {
 }
 
 func TestBoardDoneColumnChecksForwardedTask(t *testing.T) {
-	a, path := repeatTasksApp(t, "- [>] Water plants scheduled:2026-11-02 repeat:mon,thu\n", "2026-11-02")
+	a, path := repeatTasksApp(t, "- [>] Water plants due:2026-11-02 repeat:mon,thu\n", "2026-11-02")
 	a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
-	want := "- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\n"
+	want := "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}

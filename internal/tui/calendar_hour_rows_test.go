@@ -55,14 +55,14 @@ func requireOnlyInRow(t *testing.T, lines []string, label, text, context string)
 
 func TestDayViewPlacesTimedTaskInHalfHourRow(t *testing.T) {
 	a, tv := calHourRowApp(t, []vault.Task{
-		{ID: "n#0", SourcePath: "n.md", Content: "standup", Status: "open", Scheduled: "2026-11-05", ScheduledTime: "09:40"},
+		{ID: "n#0", SourcePath: "n.md", Content: "standup", Status: "open", Due: "2026-11-05", DueTime: "09:30"},
 	}, calDay, true)
 	requireOnlyInRow(t, calScreen(a, tv, 120, 110), "09:30", "standup", "half-hourly day view")
 }
 
 func TestDayViewPlacesTimedTaskInHourRow(t *testing.T) {
 	a, tv := calHourRowApp(t, []vault.Task{
-		{ID: "n#0", SourcePath: "n.md", Content: "standup", Status: "open", Scheduled: "2026-11-05", ScheduledTime: "09:40"},
+		{ID: "n#0", SourcePath: "n.md", Content: "standup", Status: "open", Due: "2026-11-05", DueTime: "09:40"},
 	}, calDay, false)
 	requireOnlyInRow(t, calScreen(a, tv, 120, 70), "09", "standup", "hourly day view")
 }
@@ -80,39 +80,17 @@ func TestWeekViewPlacesDueTimeInHourRow(t *testing.T) {
 	}
 }
 
-func TestTimedTaskWithBothTimesOnOneDayUsesScheduledRowOnly(t *testing.T) {
-	a, tv := calHourRowApp(t, []vault.Task{
-		{ID: "n#0", SourcePath: "n.md", Content: "report", Status: "open",
-			Scheduled: "2026-11-05", ScheduledTime: "08:00", Due: "2026-11-05", DueTime: "17:00"},
-	}, calDay, false)
-	requireOnlyInRow(t, calScreen(a, tv, 120, 70), "08", "report", "task with both times on one day")
-}
-
 func TestWeekViewPlacesEachEntryByItsOwnTime(t *testing.T) {
 	a, tv := calHourRowApp(t, []vault.Task{
-		{ID: "n#0", SourcePath: "n.md", Content: "both", Status: "open",
-			Scheduled: "2026-11-05", ScheduledTime: "09:00", Due: "2026-11-10", DueTime: "17:00"},
-		{ID: "n#1", SourcePath: "n.md", Content: "split", Status: "open",
-			Scheduled: "2026-11-06", ScheduledTime: "07:00", Due: "2026-11-09"},
+		{ID: "n#0", SourcePath: "n.md", Content: "both", Status: "open", Due: "2026-11-10", DueTime: "17:00"},
+		{ID: "n#1", SourcePath: "n.md", Content: "split", Status: "open", Due: "2026-11-09"},
 	}, calWeek, false)
 	// The week of 2026-11-05 runs Monday the 2nd to Sunday the 8th.
-	lines := calScreen(a, tv, 160, 70)
-	cols := requireWeekHeader(t, lines, calWeekdayNames, "first week")
-	row, ok := calRowLine(lines, calLabel24, "09")
-	if !ok || !strings.Contains(row, "both") {
-		t.Fatalf("scheduled entry is not in the 09 row:\n%s", calScreenText(lines))
-	}
-	if x := calCellOf(row, "both"); x < cols[3]-1 || x >= cols[4]-1 {
-		t.Errorf("scheduled entry starts at cell %d, want inside the Thursday column:\n%s", x, calScreenText(lines))
-	}
-	if row, ok := calRowLine(lines, calLabel24, "07"); !ok || !strings.Contains(row, "split") {
-		t.Errorf("scheduled entry of the second task is not in the 07 row:\n%s", calScreenText(lines))
-	}
 	calPress(a, tv, calRunes("lllll")...)
 	requireDay(t, tv, "2026-11-10", "five l presses")
-	lines = calScreen(a, tv, 160, 70)
-	cols = requireWeekHeader(t, lines, calWeekdayNames, "next week")
-	row, ok = calRowLine(lines, calLabel24, "17")
+	lines := calScreen(a, tv, 160, 70)
+	cols := requireWeekHeader(t, lines, calWeekdayNames, "next week")
+	row, ok := calRowLine(lines, calLabel24, "17")
 	if !ok || !strings.Contains(row, "both") {
 		t.Fatalf("due entry is not in the 17 row:\n%s", calScreenText(lines))
 	}

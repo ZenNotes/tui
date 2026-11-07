@@ -7,15 +7,15 @@ import (
 
 // RollTaskFileInBody completes or cancels a task note. A note whose `repeat`
 // rule is valid and that is not already finished does not stay done: its
-// `scheduled` and `due` dates move to the next date, `status` goes back to
-// `open`, and `lastCompleted` records today. The rest of the frontmatter,
+// `due` date moves to the next date, `status` goes back to `open`, and
+// `lastCompleted` records today. The rest of the frontmatter,
 // `skip` lines included, and the whole body stay as they are. A stale
 // `completedDate` is removed, because an open note has none.
 //
 // The next date and the offset follow the rules of RollTaskInBody: the rule
-// counts from `scheduled`, else `due`, else today, and from today when it ends
-// in `/done`. The other date moves by the same number of days, each keeps its
-// `THH:MM`, and a note with neither date gets `scheduled`.
+// counts from `due`, else today, and from today when it ends in `/done`. The
+// date keeps its `THH:MM`, and a note with no date gets `due`. A `scheduled`
+// key is not read and stays as written.
 //
 // Every other case is the plain status change, SetTaskFileStatus or
 // SetTaskFileCancelled: no rule, an invalid rule, unticking a finished note,
@@ -37,14 +37,9 @@ func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart
 
 	block, _, _ := Frontmatter(body)
 	fields := ParseFrontmatterFields(block)
-	scheduled := Unquote(strings.TrimSpace(firstScalar(fields["scheduled"])))
 	due := Unquote(strings.TrimSpace(firstScalar(fields["due"])))
 
-	field := task.Scheduled
-	if field == "" {
-		field = task.Due
-	}
-	days, following, found := nextRollDate(rule, field, periods, now, weekStart)
+	days, following, found := nextRollDate(rule, task.Due, periods, now, weekStart)
 	if !found {
 		return plainTaskFileRoll(body, action, false, false, now), false
 	}
@@ -53,16 +48,10 @@ func RollTaskFileInBody(body string, action RollAction, now time.Time, weekStart
 		{key: "status", value: StrPtr("open")},
 		{key: "completedDate"},
 	}
-	switch {
-	case task.Scheduled == "" && task.Due == "":
-		updates = append(updates, frontmatterLine{key: "scheduled", value: StrPtr(following)})
-	default:
-		if task.Scheduled != "" {
-			updates = append(updates, frontmatterLine{key: "scheduled", value: StrPtr(shiftDateTime(scheduled, days))})
-		}
-		if task.Due != "" {
-			updates = append(updates, frontmatterLine{key: "due", value: StrPtr(shiftDateTime(due, days))})
-		}
+	if task.Due == "" {
+		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(following)})
+	} else {
+		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(shiftDateTime(due, days))})
 	}
 	updates = append(updates, frontmatterLine{key: "lastCompleted", value: StrPtr(TodayISO(now))})
 	return setFrontmatterLines(body, updates), true

@@ -60,7 +60,7 @@ func TestParseRepeatRuleRejectsOutOfRangeRules(t *testing.T) {
 }
 
 func TestParseTasksReadsRepeatRule(t *testing.T) {
-	got := scanOne(t, "- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu", DialectApp)
+	got := scanOne(t, "- [ ] Water plants due:2026-11-02 repeat:mon,thu", DialectApp)
 	if got.Repeat != "mon,thu" {
 		t.Fatalf("Repeat: %q", got.Repeat)
 	}
@@ -68,14 +68,14 @@ func TestParseTasksReadsRepeatRule(t *testing.T) {
 	if cli.Repeat != "3d/done" {
 		t.Fatalf("CLI Repeat: %q", cli.Repeat)
 	}
-	upper := scanOne(t, "- [ ] T scheduled:2026-11-02 REPEAT:3D", DialectApp)
+	upper := scanOne(t, "- [ ] T due:2026-11-02 REPEAT:3D", DialectApp)
 	if upper.Repeat != "3d" {
 		t.Fatalf("upper-case Repeat: %q", upper.Repeat)
 	}
 }
 
 func TestParseTaskFileReadsRepeat(t *testing.T) {
-	body := "---\ntags: [task]\nscheduled: 2026-11-02\nrepeat: 3d\n---\n\n# Report\n"
+	body := "---\ntags: [task]\ndue: 2026-11-02\nrepeat: 3d\n---\n\n# Report\n"
 	tasks := ParseTasks("inbox/r.md", "Report", FolderInbox, body, ParseTasksOptions{})
 	if len(tasks) != 1 || tasks[0].Repeat != "3d" {
 		t.Fatalf("got %+v", tasks)
@@ -98,7 +98,7 @@ func TestParseTasksIgnoresInvalidRepeatButStripsIt(t *testing.T) {
 		}
 	}
 	for _, rule := range []string{"0d", "1000d", "1m:5-tue", "1m:32", "1y:02-30", "1q:mid"} {
-		if got := scanOne(t, "- [ ] T scheduled:2026-11-02 repeat:"+rule, DialectApp); got.Repeat != "" {
+		if got := scanOne(t, "- [ ] T due:2026-11-02 repeat:"+rule, DialectApp); got.Repeat != "" {
 			t.Errorf("repeat:%s read as %q", rule, got.Repeat)
 		}
 	}

@@ -74,15 +74,6 @@ func TestTasksListRowShowsDueTime(t *testing.T) {
 	}
 }
 
-func TestTasksListRowShowsScheduledTime(t *testing.T) {
-	a, path := repeatTasksApp(t, "- [ ] Draft report scheduled:2026-11-05T09:30\n", "2026-11-02")
-	a.prefs.TimeFormat = "24h"
-	got := rowText(t, a, path)
-	if !strings.Contains(got, "2026-11-05 09:30") || strings.Contains(got, "scheduled:") {
-		t.Fatalf("row: %q", got)
-	}
-}
-
 func TestTasksBoardCardShowsDueTime(t *testing.T) {
 	a, path := repeatTasksApp(t, "- [ ] Call Ana due:2026-11-03T14:00\n", "2026-11-02")
 	a.prefs.TimeFormat = "24h"

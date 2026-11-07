@@ -140,10 +140,10 @@ type Task struct {
 	Status string            `json:"status,omitempty"`
 	Tags   []string          `json:"tags"`
 	// Kind is "file" for a whole-note task; empty means an inline checkbox.
-	Kind      string `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	// Scheduled carries the `scheduled` value that a remote server sends. A
+	// local scan never sets it.
 	Scheduled string `json:"scheduled,omitempty"`
-	// ScheduledTime is the `HH:MM` of a timed `scheduled:` value.
-	ScheduledTime string `json:"scheduledTime,omitempty"`
 	// Repeat is the lower-cased `repeat:` rule, empty when the task has none or
 	// the rule does not parse.
 	Repeat string `json:"repeat,omitempty"`
@@ -254,7 +254,6 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		Tags          []string          `json:"tags"`
 		Kind          string            `json:"kind,omitempty"`
 		Scheduled     string            `json:"scheduled,omitempty"`
-		ScheduledTime string            `json:"scheduledTime,omitempty"`
 		Repeat        string            `json:"repeat,omitempty"`
 		Skip          []string          `json:"skip,omitempty"`
 		CompletedDate string            `json:"completedDate,omitempty"`
@@ -265,7 +264,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		LineNumber: t.LineNumber, TaskIndex: t.TaskIndex, RawText: t.RawText, Content: t.Content,
 		Checked: t.Checked, Cancelled: t.Cancelled, InProgress: t.InProgress, Due: t.Due, Priority: t.Priority,
 		Waiting: t.Waiting, Fields: t.Fields, Status: t.Status, Tags: t.Tags, Kind: t.Kind,
-		DueTime: t.DueTime, Scheduled: t.Scheduled, ScheduledTime: t.ScheduledTime, Repeat: t.Repeat, Skip: t.Skip, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
+		DueTime: t.DueTime, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
 	}
 	if t.Kind != "file" {
 		forwarded := t.Forwarded

@@ -28,31 +28,14 @@ func TestParseTasksReadsTimeOnDue(t *testing.T) {
 	}
 }
 
-func TestParseTasksReadsScheduledWithAndWithoutTime(t *testing.T) {
-	for _, dialect := range []TaskDialect{DialectApp, DialectCLI} {
-		timed := scanOne(t, "- [ ] Draft report scheduled:2026-11-05T09:30", dialect)
-		if timed.Scheduled != "2026-11-05" || timed.ScheduledTime != "09:30" {
-			t.Fatalf("timed scheduled: got %q %q", timed.Scheduled, timed.ScheduledTime)
-		}
-		plain := scanOne(t, "- [ ] Draft report scheduled:2026-11-05", dialect)
-		if plain.Scheduled != "2026-11-05" || plain.ScheduledTime != "" {
-			t.Fatalf("date-only scheduled: got %q %q", plain.Scheduled, plain.ScheduledTime)
-		}
-		both := scanOne(t, "- [ ] Draft report due:2026-11-10 scheduled:2026-11-05T09:30", dialect)
-		if both.Due != "2026-11-10" || both.DueTime != "" || both.Scheduled != "2026-11-05" || both.ScheduledTime != "09:30" {
-			t.Fatalf("both: %+v", both)
-		}
-	}
-}
-
 func TestParseTaskFileReadsFrontmatterTimes(t *testing.T) {
-	body := "---\ntags: [task]\ndue: 2026-11-03T14:00\nscheduled: 2026-11-05T09:30\n---\n\n# Report\n"
+	body := "---\ntags: [task]\ndue: 2026-11-03T14:00\n---\n\n# Report\n"
 	tasks := ParseTasks("inbox/r.md", "Report", FolderInbox, body, ParseTasksOptions{})
 	if len(tasks) != 1 {
 		t.Fatalf("got %d tasks", len(tasks))
 	}
 	got := tasks[0]
-	if got.Due != "2026-11-03" || got.DueTime != "14:00" || got.Scheduled != "2026-11-05" || got.ScheduledTime != "09:30" {
+	if got.Due != "2026-11-03" || got.DueTime != "14:00" || got.Scheduled != "" {
 		t.Fatalf("file task: %+v", got)
 	}
 }
@@ -66,24 +49,39 @@ func TestParseTasksCarriesTimedFrontmatterDueToCheckboxes(t *testing.T) {
 }
 
 func TestParseTasksKeepsDateWhenTimeIsInvalid(t *testing.T) {
-	for _, tc := range []struct{ line, due, sched string }{
-		{"- [ ] Call Ana due:2026-11-03T25:00", "2026-11-03", ""},
-		{"- [ ] Call Ana due:2026-11-03T14:60", "2026-11-03", ""},
-		{"- [ ] Call Ana due:2026-11-03T14", "2026-11-03", ""},
-		{"- [ ] Draft report scheduled:2026-11-05T9:30", "", "2026-11-05"},
+	for _, tc := range []struct{ line, due string }{
+		{"- [ ] Call Ana due:2026-11-03T25:00", "2026-11-03"},
+		{"- [ ] Call Ana due:2026-11-03T14:60", "2026-11-03"},
+		{"- [ ] Call Ana due:2026-11-03T14", "2026-11-03"},
 	} {
 		got := scanOne(t, tc.line, DialectApp)
-		if got.Due != tc.due || got.DueTime != "" || got.Scheduled != tc.sched || got.ScheduledTime != "" {
+		if got.Due != tc.due || got.DueTime != "" {
 			t.Errorf("%q: %+v", tc.line, got)
 		}
 	}
 }
 
-func TestParseTasksStripsScheduledFromContent(t *testing.T) {
+// A `scheduled:` token is plain text: it stays in the content and sets no date.
+func TestParseTasksLeavesScheduledTokenInContent(t *testing.T) {
 	for _, dialect := range []TaskDialect{DialectApp, DialectCLI} {
-		got := scanOne(t, "- [ ] Draft scheduled:2026-11-05 the report", dialect)
-		if got.Content != "Draft the report" {
+		got := scanOne(t, "- [ ] Draft scheduled:2026-11-05T09:30 the report", dialect)
+		if got.Content != "Draft scheduled:2026-11-05T09:30 the report" {
 			t.Errorf("dialect %d: content %q", dialect, got.Content)
+		}
+		if got.Scheduled != "" || got.Due != "" {
+			t.Errorf("dialect %d: scheduled token set a date: %+v", dialect, got)
+		}
+	}
+}
+
+// A task note never gets a scheduled date from its frontmatter, with or
+// without a time.
+func TestParseTaskFileIgnoresScheduledKey(t *testing.T) {
+	for _, value := range []string{"2026-11-05", "2026-11-05T09:30"} {
+		body := "---\ntags: [task]\nscheduled: " + value + "\n---\n\n# Report\n"
+		tasks := ParseTasks("inbox/r.md", "Report", FolderInbox, body, ParseTasksOptions{})
+		if len(tasks) != 1 || tasks[0].Scheduled != "" || tasks[0].Due != "" {
+			t.Fatalf("%s: %+v", value, tasks)
 		}
 	}
 }

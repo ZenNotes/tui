@@ -20,7 +20,6 @@ func TestTaskTokenProblemsFindsBadTimesRulesAndSkipItems(t *testing.T) {
 		"# Plan",
 		"- [ ] fine due:2026-11-03T14:00 repeat:2w skip:2027-03-13..2027-03-21",
 		"- [ ] late due:2026-11-03T25:00",
-		"- [ ] soon scheduled:2026-11-03T9:00 #x",
 		"- [ ] often repeat:every-day",
 		"- [ ] away skip:2027-03-21..2027-03-13,2027-02-30,2027-04-01",
 		"```",
@@ -31,10 +30,9 @@ func TestTaskTokenProblemsFindsBadTimesRulesAndSkipItems(t *testing.T) {
 	got := problemSummary(TaskTokenProblems("n.md", body))
 	want := []string{
 		"n.md:3 due:2026-11-03T25:00",
-		"n.md:4 scheduled:2026-11-03T9:00",
-		"n.md:5 repeat:every-day",
-		"n.md:6 skip:2027-03-21..2027-03-13",
-		"n.md:6 skip:2027-02-30",
+		"n.md:4 repeat:every-day",
+		"n.md:5 skip:2027-03-21..2027-03-13",
+		"n.md:5 skip:2027-02-30",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("problems\n got %q\nwant %q", got, want)
@@ -53,7 +51,6 @@ func TestTaskTokenProblemsReadsFrontmatterLines(t *testing.T) {
 		"---",
 		"tags: [task]",
 		"due: 2026-11-03T25:00",
-		"scheduled: \"2026-11-04T08:30\"",
 		"repeat: nonsense",
 		"skip:",
 		"  - 2027-03-13",
@@ -65,9 +62,9 @@ func TestTaskTokenProblemsReadsFrontmatterLines(t *testing.T) {
 	got := problemSummary(TaskTokenProblems("t.md", body))
 	want := []string{
 		"t.md:3 due:2026-11-03T25:00",
-		"t.md:5 repeat:nonsense",
-		"t.md:8 skip:2027-13-01",
-		"t.md:11 due:2026-11-03T99:00",
+		"t.md:4 repeat:nonsense",
+		"t.md:7 skip:2027-13-01",
+		"t.md:10 due:2026-11-03T99:00",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("problems\n got %q\nwant %q", got, want)
@@ -75,5 +72,34 @@ func TestTaskTokenProblemsReadsFrontmatterLines(t *testing.T) {
 	plain := "---\ndue: 2026-11-03T25:00\n---\n"
 	if got := TaskTokenProblems("p.md", plain); len(got) != 0 {
 		t.Fatalf("a note that is not a task note was linted: %+v", got)
+	}
+}
+
+// A `scheduled` token or key is plain text, so no value of it is a problem.
+func TestTaskTokenProblemsIgnoresScheduled(t *testing.T) {
+	body := strings.Join([]string{
+		"---",
+		"tags: [task]",
+		"scheduled: 2026-11-04T25:99",
+		"---",
+		"- [ ] soon scheduled:2026-11-03T9:00 #x",
+		"- [ ] later scheduled:2026-11-03T99:99 due:2026-11-04",
+	}, "\n")
+	if got := TaskTokenProblems("n.md", body); len(got) != 0 {
+		t.Fatalf("scheduled values reported: %+v", got)
+	}
+}
+
+// Each problem says why the token is set aside.
+func TestTaskTokenProblemsGiveAReason(t *testing.T) {
+	body := "- [ ] a due:2026-11-03T25:00 repeat:often skip:2027-02-30\n"
+	got := TaskTokenProblems("n.md", body)
+	if len(got) != 3 {
+		t.Fatalf("problems: %+v", got)
+	}
+	for _, p := range got {
+		if strings.TrimSpace(p.Reason) == "" {
+			t.Errorf("%s has no reason", p.Token)
+		}
 	}
 }

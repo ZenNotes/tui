@@ -15,16 +15,8 @@ type calEntry struct {
 }
 
 // clock is the entry's time of day as `HH:MM`, or "" when it is untimed. An
-// entry shows the time of the field that placed it. When both dates fall on
-// one day the task has a single entry, and its scheduled time wins over the
-// due time.
+// entry shows the due time of its task.
 func (e calEntry) clock() string {
-	if e.scheduled {
-		return e.task.ScheduledTime
-	}
-	if e.task.Scheduled == e.task.Due && e.task.ScheduledTime != "" {
-		return e.task.ScheduledTime
-	}
 	return e.task.DueTime
 }
 

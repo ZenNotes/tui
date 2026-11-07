@@ -111,7 +111,7 @@ func TestStructuredFilterScheduledValues(t *testing.T) {
 	today := queryDay(t, "2026-11-05")
 	t.Run("today", func(t *testing.T) {
 		tasks := []vault.Task{
-			{ID: "A", Content: "A", Scheduled: "2026-11-05", ScheduledTime: "09:30"},
+			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
 			{ID: "B", Content: "B", Scheduled: "2026-11-06"},
 		}
 		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:today", today), []string{"A"})

@@ -43,33 +43,25 @@ func TestGroupTasksJudgesOverdueByDateOnly(t *testing.T) {
 	}
 }
 
-func TestGroupTasksPutsScheduledTodayOrEarlierInToday(t *testing.T) {
+// A `scheduled:` token places nothing: the task stays undated, or follows its
+// due date alone.
+func TestGroupTasksIgnoresScheduled(t *testing.T) {
 	today := groupingToday("2026-11-04")
 	g := GroupTasks(groupingTasks(t, "- [ ] A scheduled:2026-11-04"), today)
-	if len(g.Today) != 1 || g.OverdueCount != 0 || len(g.Undated) != 0 {
+	if len(g.Undated) != 1 || len(g.Today) != 0 || g.OverdueCount != 0 {
 		t.Fatalf("scheduled today: %+v", g)
 	}
 	g = GroupTasks(groupingTasks(t, "- [ ] A scheduled:2026-11-02 due:2026-11-20"), today)
-	if len(g.Today) != 1 || g.OverdueCount != 0 || len(g.Upcoming) != 0 {
+	if len(g.Upcoming) != 1 || len(g.Today) != 0 {
 		t.Fatalf("scheduled earlier, due later: %+v", g)
 	}
-	g = GroupTasks(groupingTasks(t, "- [ ] A scheduled:2026-11-02 due:2026-11-03"), today)
-	if len(g.Today) != 1 || g.OverdueCount != 1 {
-		t.Fatalf("overdue is judged by the due date: %+v", g)
-	}
-}
-
-func TestGroupTasksWaitingWinsOverScheduled(t *testing.T) {
-	g := GroupTasks(groupingTasks(t, "- [ ] A @waiting scheduled:2026-11-02"), groupingToday("2026-11-04"))
-	if len(g.Waiting) != 1 || len(g.Today) != 0 {
-		t.Fatalf("waiting: %+v", g)
-	}
-}
-
-func TestGroupTasksFutureScheduledWithoutDueStaysUndated(t *testing.T) {
-	g := GroupTasks(groupingTasks(t, "- [ ] A scheduled:2026-11-06"), groupingToday("2026-11-04"))
+	g = GroupTasks(groupingTasks(t, "- [ ] A scheduled:2026-11-06"), today)
 	if len(g.Undated) != 1 || len(g.Today) != 0 {
 		t.Fatalf("future scheduled: %+v", g)
+	}
+	g = GroupTasks(groupingTasks(t, "- [ ] A @waiting scheduled:2026-11-02"), today)
+	if len(g.Waiting) != 1 || len(g.Today) != 0 {
+		t.Fatalf("waiting: %+v", g)
 	}
 }
 
@@ -96,19 +88,18 @@ func TestPriorityOrderSortsTimedBeforeUntimed(t *testing.T) {
 	}
 }
 
-func TestPriorityOrderInTodayUsesScheduledTimeThenDueTime(t *testing.T) {
+func TestPriorityOrderInTodayUsesDueTime(t *testing.T) {
 	today := groupingToday("2026-11-05")
 	tasks := groupingTasks(t,
 		"- [ ] W !high due:2026-11-05",
 		"- [ ] X !high due:2026-11-05T15:00",
-		"- [ ] Y !high scheduled:2026-11-05T08:00 due:2026-11-05T17:00",
 		"- [ ] Z !high due:2026-11-05T09:00",
 	)
 	g := OrderTaskGroups(GroupTasks(tasks, today), "priority")
-	if got := taskNames(g.Today); got != "Y Z X W" {
+	if got := taskNames(g.Today); got != "Z X W" {
 		t.Fatalf("today order: %s", got)
 	}
-	if got := taskNames(GroupTasks(tasks, today).Today); got != "Y Z X W" {
+	if got := taskNames(GroupTasks(tasks, today).Today); got != "Z X W" {
 		t.Fatalf("grouping order: %s", got)
 	}
 	prio := groupingTasks(t,
@@ -118,21 +109,6 @@ func TestPriorityOrderInTodayUsesScheduledTimeThenDueTime(t *testing.T) {
 	g = OrderTaskGroups(GroupTasks(prio, today), "priority")
 	if got := taskNames(g.Today); got != "Q P" {
 		t.Fatalf("priority beats time: %s", got)
-	}
-}
-
-func TestPriorityOrderInTodayPlacesScheduledOnlyTaskByItsOwnTime(t *testing.T) {
-	today := groupingToday("2026-11-05")
-	tasks := groupingTasks(t,
-		"- [ ] D due:2026-11-05T14:00",
-		"- [ ] S scheduled:2026-11-05T09:00",
-	)
-	g := OrderTaskGroups(GroupTasks(tasks, today), "priority")
-	if got := taskNames(g.Today); got != "S D" {
-		t.Fatalf("today order: %s", got)
-	}
-	if got := taskNames(GroupTasks(tasks, today).Today); got != "S D" {
-		t.Fatalf("grouping order: %s", got)
 	}
 }
 

@@ -9,11 +9,13 @@ import (
 // TaskTokenProblem is one task token that the parsers set aside: a time that
 // is not a valid `HH:MM`, a `repeat:` rule outside the grammar, or a `skip:`
 // item that is not a real day or a forward range. Line is 1-based, and Token
-// is the token as written, for example `due:2026-11-03T25:00`.
+// is the token as written, for example `due:2026-11-03T25:00`. Reason says
+// why the parsers ignore the token.
 type TaskTokenProblem struct {
-	Path  string
-	Line  int
-	Token string
+	Path   string
+	Line   int
+	Token  string
+	Reason string
 }
 
 // TaskTokenProblems lists the bad tokens of one note: those on checkbox lines
@@ -24,7 +26,7 @@ func TaskTokenProblems(path, body string) []TaskTokenProblem {
 	body = strings.ReplaceAll(body, "\r\n", "\n")
 	var out []TaskTokenProblem
 	add := func(line int, token string) {
-		out = append(out, TaskTokenProblem{Path: path, Line: line, Token: token})
+		out = append(out, TaskTokenProblem{Path: path, Line: line, Token: token, Reason: tokenReason(token)})
 	}
 	lines := strings.Split(body, "\n")
 	if _, _, ok := Frontmatter(body); ok {
@@ -35,6 +37,21 @@ func TaskTokenProblems(path, body string) []TaskTokenProblem {
 	lintCheckboxes(lines, add)
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })
 	return out
+}
+
+// tokenReason says why the parsers ignore the token, which has the form
+// `key:value`.
+func tokenReason(token string) string {
+	key, _, _ := strings.Cut(token, ":")
+	switch key {
+	case "due":
+		return "the time is not a valid HH:MM"
+	case "repeat":
+		return "the rule is not valid"
+	case "skip":
+		return "the item is not a real day or a forward range"
+	}
+	return "the value is not valid"
 }
 
 // badDateTime reports whether value has a real date followed by something
@@ -90,11 +107,6 @@ func lintCheckboxes(lines []string, add func(line int, token string)) {
 				add(i+1, "due:"+tm[1])
 			}
 		}
-		for _, tm := range inlineScheduledRe.FindAllStringSubmatch(tail, -1) {
-			if badDateTime(tm[1]) {
-				add(i+1, "scheduled:"+tm[1])
-			}
-		}
 		for _, tm := range inlineRepeatRe.FindAllStringSubmatch(tail, -1) {
 			if badRepeat(tm[1]) {
 				add(i+1, "repeat:"+tm[1])
@@ -108,7 +120,7 @@ func lintCheckboxes(lines []string, add func(line int, token string)) {
 	}
 }
 
-// lintFrontmatter checks the `due`, `scheduled`, `repeat` and `skip` keys of
+// lintFrontmatter checks the `due`, `repeat` and `skip` keys of
 // the frontmatter at the top of lines. A list under a key, one item per line,
 // is read as that key's values.
 func lintFrontmatter(lines []string, add func(line int, token string)) {
@@ -129,7 +141,7 @@ func lintFrontmatter(lines []string, add func(line int, token string)) {
 		value = strings.TrimSpace(value)
 		value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
 		switch key {
-		case "due", "scheduled":
+		case "due":
 			if v := Unquote(value); badDateTime(v) {
 				add(i+1, key+":"+v)
 			}

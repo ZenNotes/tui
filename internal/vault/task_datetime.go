@@ -12,7 +12,7 @@ func IsValidClockTime(s string) bool {
 	return clockTimeRe.MatchString(s)
 }
 
-// SplitDateTime splits a `due:` or `scheduled:` value into its date and its
+// SplitDateTime splits a `due:` value into its date and its
 // time. A bare date gives an empty time. A `YYYY-MM-DDTHH:MM` value gives
 // both. When the date is real but what follows `T` is not a valid `HH:MM`, the
 // date is kept and the time is empty, so a typo never hides the day. A value

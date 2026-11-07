@@ -3,7 +3,6 @@ package tui
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -258,24 +257,6 @@ func TestItemPanelEditKeysChangeDue(t *testing.T) {
 	}
 	if !strings.Contains(p.title, "Due") {
 		t.Errorf("prompt title = %q, want the due-date prompt", p.title)
-	}
-}
-
-func TestItemPanelShiftOnScheduledEntryMovesDue(t *testing.T) {
-	a, tv, root := calVaultApp(t, map[string]string{"plan.md": calPlanNote})
-	tv.selectDay(a, calDate(2026, time.November, 16))
-	calPress(a, tv, vim.KeyEnter)
-	got := tv.selectedTask()
-	if got == nil || got.SourcePath != "plan.md" {
-		t.Fatalf("selected entry on the scheduled day = %+v, want the task file", got)
-	}
-	calPress(a, tv, vim.R('>'))
-	body := calReadFile(t, root, "plan.md")
-	if !regexp.MustCompile(`(?m)^due:\s*2026-11-19\s*$`).MatchString(body) {
-		t.Errorf("due did not move one day later:\n%s", body)
-	}
-	if !regexp.MustCompile(`(?m)^scheduled:\s*2026-11-16\s*$`).MatchString(body) {
-		t.Errorf("scheduled changed:\n%s", body)
 	}
 }
 

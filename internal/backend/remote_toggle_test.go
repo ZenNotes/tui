@@ -14,7 +14,7 @@ import (
 func TestRemoteToggleNeverInsertsNextOccurrence(t *testing.T) {
 	const path = "inbox/plants.md"
 	var mu sync.Mutex
-	body := "intro\n- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\noutro\n"
+	body := "intro\n- [ ] Water plants due:2026-11-02 repeat:mon,thu\noutro\n"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -47,7 +47,7 @@ func TestRemoteToggleNeverInsertsNextOccurrence(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	want := "intro\n- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\noutro\n"
+	want := "intro\n- [x] Water plants due:2026-11-02 repeat:mon,thu\noutro\n"
 	if body != want {
 		t.Fatalf("remote note:\n%s\nwant:\n%s", body, want)
 	}

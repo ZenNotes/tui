@@ -102,7 +102,7 @@ func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "plants.md")
-	note := "intro\n- [ ] Water plants scheduled:2026-11-02 repeat:mon,thu\noutro\n"
+	note := "intro\n- [ ] Water plants due:2026-11-02 repeat:mon,thu\noutro\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -114,8 +114,8 @@ func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "intro\n- [ ] Water plants scheduled:2026-11-05 repeat:mon,thu\n" +
-		"- [x] Water plants scheduled:2026-11-02 repeat:mon,thu\noutro\n"
+	want := "intro\n- [ ] Water plants due:2026-11-05 repeat:mon,thu\n" +
+		"- [x] Water plants due:2026-11-02 repeat:mon,thu\noutro\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)

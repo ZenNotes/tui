@@ -110,9 +110,9 @@ func TestTaskListJSONUnchangedForNotesWithoutSchedulingSyntax(t *testing.T) {
 	}
 }
 
-// A `scheduled:` token is read as a date, so it leaves the content instead of
-// lingering in the task text.
-func TestTaskListJSONStripsScheduledFromContent(t *testing.T) {
+// A `scheduled:` token is plain text, so it stays in the content and sets no
+// date.
+func TestTaskListJSONKeepsScheduledTokenInContent(t *testing.T) {
 	isolatedCLI(t)
 	root := t.TempDir()
 	note := "- [ ] Draft scheduled:2026-11-05 the report\n"
@@ -125,15 +125,88 @@ func TestTaskListJSONStripsScheduledFromContent(t *testing.T) {
 			t.Errorf("zn %v exited %d", args, code)
 		}
 	})
-	var tasks []struct {
-		Content   string `json:"content"`
-		Scheduled string `json:"scheduled"`
-	}
+	var tasks []map[string]any
 	if err := json.Unmarshal([]byte(out), &tasks); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if len(tasks) != 1 || tasks[0].Content != "Draft the report" || tasks[0].Scheduled != "2026-11-05" {
+	if len(tasks) != 1 || tasks[0]["content"] != "Draft scheduled:2026-11-05 the report" {
 		t.Fatalf("got %+v", tasks)
+	}
+	for _, key := range []string{"scheduled", "scheduledTime", "due"} {
+		if _, present := tasks[0][key]; present {
+			t.Errorf("key %q present: %+v", key, tasks[0])
+		}
+	}
+}
+
+// A vault with checkbox `scheduled:` tokens, prose that mentions `when:` and
+// no new syntax lists the same bytes as released zn v0.14.0. The files were
+// made by running `zn task list --json`, `zn task list --json --all` and
+// `zn task list` with zn v0.14.0 over testdata/released-tasks.
+func TestTaskListMatchesReleasedOutputForNotesWithoutNewSyntax(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("testdata", "released-tasks"))); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		golden string
+		flags  []string
+	}{
+		{"released-tasks.json", []string{"--json"}},
+		{"released-tasks-all.json", []string{"--json", "--all"}},
+		{"released-tasks.txt", nil},
+	} {
+		want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := append([]string{"task", "list", "--vault", root}, tc.flags...)
+		out := captureOutput(t, func() {
+			if code := Main(args); code != 0 {
+				t.Errorf("zn %v exited %d", args, code)
+			}
+		})
+		if out != string(want) {
+			t.Errorf("zn %v differs from testdata/%s:\n%s", args, tc.golden, out)
+		}
+	}
+}
+
+// A task note's `scheduled` key gives no JSON key and does not move on a roll:
+// the date counts from `due`.
+func TestTaskNoteScheduledKeyIsNotRead(t *testing.T) {
+	for _, value := range []string{"2026-11-05", "2026-11-05T09:30"} {
+		fixClock(t, "2026-11-10")
+		note := "---\ntags: [task]\nstatus: open\nscheduled: " + value + "\ndue: 2026-11-10\nrepeat: 1w\n---\n\n# Class\n"
+		root := isolatedCLI(t)
+		if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "inbox", "note.md"), []byte(note), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		args := []string{"task", "list", "--json", "--vault", root}
+		out := captureOutput(t, func() {
+			if code := Main(args); code != 0 {
+				t.Errorf("zn %v exited %d", args, code)
+			}
+		})
+		var tasks []map[string]any
+		if err := json.Unmarshal([]byte(out), &tasks); err != nil || len(tasks) != 1 {
+			t.Fatalf("%v\n%s", err, out)
+		}
+		for _, key := range []string{"scheduled", "scheduledTime"} {
+			if _, present := tasks[0][key]; present {
+				t.Errorf("%s: key %q present: %+v", value, key, tasks[0])
+			}
+		}
+		got, _ := toggleNoteIn(t, root, note, "task")
+		for _, want := range []string{"due: 2026-11-17", "lastCompleted: 2026-11-10", "scheduled: " + value} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: missing %q in:\n%s", value, want, got)
+			}
+		}
 	}
 }
 
@@ -159,13 +232,12 @@ func listTaskJSON(t *testing.T, note string) []map[string]any {
 
 // The JSON reports a task's time of day and repeat rule next to its dates.
 func TestTaskListJSONCarriesTimesAndRepeat(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] Water plants due:2026-11-03T14:00 scheduled:2026-11-02T09:30 repeat:Mon,Thu\n")
+	tasks := listTaskJSON(t, "- [ ] Water plants due:2026-11-03T14:00 repeat:Mon,Thu\n")
 	if len(tasks) != 1 {
 		t.Fatalf("got %+v", tasks)
 	}
 	got := tasks[0]
 	if got["due"] != "2026-11-03" || got["dueTime"] != "14:00" ||
-		got["scheduled"] != "2026-11-02" || got["scheduledTime"] != "09:30" ||
 		got["repeat"] != "mon,thu" || got["content"] != "Water plants" {
 		t.Fatalf("got %+v", got)
 	}
@@ -177,7 +249,7 @@ func TestTaskListJSONOmitsSchedulingKeysWhenUnset(t *testing.T) {
 	if len(tasks) != 1 {
 		t.Fatalf("got %+v", tasks)
 	}
-	for _, key := range []string{"dueTime", "scheduledTime", "repeat"} {
+	for _, key := range []string{"dueTime", "repeat"} {
 		if _, present := tasks[0][key]; present {
 			t.Errorf("key %q present: %+v", key, tasks[0])
 		}
