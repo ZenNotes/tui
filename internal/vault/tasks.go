@@ -306,6 +306,8 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 		}
 		checkedChar := m[2]
 		tail := strings.TrimPrefix(m[3], "]")
+		// A block id that ends the line is not part of the text.
+		tail, blockID := splitBlockID(tail)
 		tokens := extractTaskTokens(tail, opts.Dialect)
 		due, dueTime, dueEnd := tokens.due, tokens.dueTime, tokens.dueEnd
 		if due == "" {
@@ -356,9 +358,10 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 			Status:     status,
 			Tags:       tokens.tags,
 
-			Repeat: tokens.repeat,
-			Skip:   tokens.skip,
-			Until:  tokens.until,
+			Repeat:  tokens.repeat,
+			Skip:    tokens.skip,
+			Until:   tokens.until,
+			BlockID: blockID,
 		})
 		taskIndex++
 	}
@@ -796,7 +799,9 @@ func taskBlockEnd(lines []string, start, baseIndent int) int {
 // ForwardTaskSubtree flips the task at taskIndex to `[>]`, appends linkToken
 // to it, and flips its open subtasks to `[>]` too. childLines is the subtree
 // as it read before the flip, re-based to the parent's indent, so the caller
-// can place it under a copy in the destination note.
+// can place it under a copy in the destination note. The record loses
+// a block id that ends the task line or any line of its subtree; the copy
+// keeps them.
 func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body string, childLines []string) {
 	if taskIndex < 0 {
 		return markdown, nil
@@ -813,6 +818,8 @@ func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body 
 		return markdown, nil
 	}
 	tail := trailingWsRe.ReplaceAllString(m[3][1:], "")
+	// The record leaves its block id to the open copy.
+	tail = stripBlockID(tail)
 	nextTail := tail
 	if linkToken != "" && !strings.Contains(tail, linkToken) {
 		nextTail = tail + " " + linkToken
@@ -837,6 +844,8 @@ func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body 
 		if cm := taskLineRe.FindStringSubmatch(lines[i]); cm != nil && (cm[2] == " " || cm[2] == "/") {
 			lines[i] = cm[1] + ">" + cm[3]
 		}
+		// Every line of the subtree leaves its block id to the copy.
+		lines[i] = stripBlockID(lines[i])
 	}
 	return strings.Join(lines, "\n"), childLines
 }

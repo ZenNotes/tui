@@ -156,7 +156,10 @@ type Task struct {
 	Skip []string `json:"skip,omitempty"`
 	// Until is the last date a repeating task may land on, as `YYYY-MM-DD`.
 	// It is empty unless the task has a valid rule and a valid date.
-	Until         string `json:"until,omitempty"`
+	Until string `json:"until,omitempty"`
+	// BlockID is the Obsidian block id that ends a checkbox line, without the
+	// `^`. It is empty when the line has none.
+	BlockID       string `json:"blockId,omitempty"`
 	CompletedDate string `json:"completedDate,omitempty"`
 	// DueInferred marks a due date derived from the containing daily note
 	// rather than written on the line. Set by the TUI, never by a scan.
@@ -264,6 +267,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		Repeat        string            `json:"repeat,omitempty"`
 		Skip          []string          `json:"skip,omitempty"`
 		Until         string            `json:"until,omitempty"`
+		BlockID       string            `json:"blockId,omitempty"`
 		CompletedDate string            `json:"completedDate,omitempty"`
 		DueInferred   bool              `json:"dueInferred,omitempty"`
 	}
@@ -272,7 +276,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		LineNumber: t.LineNumber, TaskIndex: t.TaskIndex, RawText: t.RawText, Content: t.Content,
 		Checked: t.Checked, Cancelled: t.Cancelled, InProgress: t.InProgress, Due: t.Due, Priority: t.Priority,
 		Waiting: t.Waiting, Fields: t.Fields, Status: t.Status, Tags: t.Tags, Kind: t.Kind,
-		DueTime: t.DueTime, DueEnd: t.DueEnd, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, Until: t.Until, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
+		DueTime: t.DueTime, DueEnd: t.DueEnd, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, Until: t.Until, BlockID: t.BlockID, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
 	}
 	if t.Kind != "file" {
 		forwarded := t.Forwarded

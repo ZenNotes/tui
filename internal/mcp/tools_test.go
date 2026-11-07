@@ -147,3 +147,28 @@ func TestToggleTaskToolStopsAtUntil(t *testing.T) {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
 	}
 }
+
+// toggle_task takes a block id in place of an index.
+func TestToggleTaskToolAcceptsBlockId(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "inbox", "Work.md")
+	note := "- [ ] One\n- [ ] Two\n- [ ] Write report due:2026-11-06 ^ab12cd\n"
+	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := runServerWith(t, backend.Options{}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/Work.md#^ab12cd"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	want := "- [ ] One\n- [ ] Two\n- [x] Write report due:2026-11-06 ^ab12cd\n"
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != want {
+		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
+	}
+}

@@ -332,3 +332,18 @@ func TestTaskListJSONCarriesUntil(t *testing.T) {
 		t.Errorf("C: %+v", tasks[2])
 	}
 }
+
+// The JSON gives a task's block id as `blockId` and leaves the key out for a
+// task without one.
+func TestTaskListJSONCarriesBlockId(t *testing.T) {
+	tasks := listTaskJSON(t, "- [ ] A ^ab12cd\n- [ ] B\n")
+	if len(tasks) != 2 {
+		t.Fatalf("got %+v", tasks)
+	}
+	if tasks[0]["blockId"] != "ab12cd" || tasks[0]["content"] != "A" {
+		t.Fatalf("A: %+v", tasks[0])
+	}
+	if _, present := tasks[1]["blockId"]; present {
+		t.Errorf("blockId key present: %+v", tasks[1])
+	}
+}

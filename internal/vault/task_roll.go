@@ -32,7 +32,9 @@ const (
 // ends in `/done`. It is the first date of the rule after that and after today
 // that no `skip:` period covers and that is not past the `until:` date. The copied subtasks' dates move by the same
 // number of days as the task's `due:`, and each keeps its `THH:MM`. A task
-// with no `due:` gets `due:` on the copy. now and weekStart are inputs so the
+// with no `due:` gets `due:` on the copy. The copies drop a block id that
+// ends their line, and the originals keep theirs, so an id stays on one line.
+// now and weekStart are inputs so the
 // caller chooses the clock and the first day of the week.
 //
 // Only local notes roll. A remote vault's server parses the note itself, so
@@ -72,6 +74,7 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 		if cm := dialect.lineRe().FindStringSubmatch(line); cm != nil {
 			inserted++
 			line = cm[1] + " " + shift(cm[3])
+			line = stripBlockID(line)
 			if i == at && due != "" {
 				line = withDue(line, due)
 			}

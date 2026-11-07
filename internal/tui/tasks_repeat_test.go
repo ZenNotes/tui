@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -343,4 +344,37 @@ func TestTasksViewBoardAndEditorStopAtUntil(t *testing.T) {
 			t.Errorf("note:\n%s", got)
 		}
 	})
+}
+
+// Forwarding a task with a block id moves the id to the open copy and leaves
+// the record without one.
+func TestForwardingMovesBlockIdToTheCopy(t *testing.T) {
+	a, path := repeatTasksApp(t, "- [ ] Write report due:2026-11-06 ^ab12cd\n  - [ ] Draft ^sub1\n  - [x] Outline ^sub2\n", "2026-11-02")
+	a.idx.settings.DailyNotes.Enabled = true
+	a.forwardTask(repeatTaskAt(t, path))
+
+	record := readRepeatNote(t, path)
+	if strings.Contains(record, "^") || !strings.HasPrefix(record, "- [>] Write report due:2026-11-06 [[") {
+		t.Errorf("record = %q, want forwarded lines without any id", record)
+	}
+	_, _, title, _ := a.periodicLocation(periodic.Daily, time.Now())
+	var daily string
+	err := filepath.WalkDir(filepath.Dir(filepath.Dir(path)), func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == title+".md" {
+			daily = p
+		}
+		return err
+	})
+	if err != nil || daily == "" {
+		t.Fatalf("no daily note %q (%v)", title, err)
+	}
+	raw, err := os.ReadFile(daily)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"- [ ] Write report due:2026-11-06 ^ab12cd\n", "  - [ ] Draft ^sub1\n", "  - [x] Outline ^sub2"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("copy lacks %q:\n%s", want, raw)
+		}
+	}
 }

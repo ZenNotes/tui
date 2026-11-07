@@ -1181,8 +1181,21 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 		}
 		return nil, nil
 	}
-	targetIndex, err := ParseTaskIndex(taskID, indexStr)
-	if err != nil {
+	var targetIndex int
+	if id, byBlockID := strings.CutPrefix(indexStr, "^"); byBlockID {
+		// The id names a line by the block id that ends it. No such line is
+		// the same as an index that no task has.
+		targetIndex = -1
+		for _, t := range ParseTasks(relPosix, title, folder, string(body), opts) {
+			if t.Kind == "" && t.BlockID == id && id != "" {
+				targetIndex = t.TaskIndex
+				break
+			}
+		}
+		if targetIndex < 0 {
+			return nil, nil
+		}
+	} else if targetIndex, err = ParseTaskIndex(taskID, indexStr); err != nil {
 		return nil, err
 	}
 	next, inserted, found := RollTaskInBody(string(body), targetIndex, dialect, RollComplete, v.now(), v.WeekStart)

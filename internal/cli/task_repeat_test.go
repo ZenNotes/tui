@@ -399,3 +399,13 @@ func TestTaskToggleStopsAtUntil(t *testing.T) {
 		}
 	})
 }
+
+// A task id can end in the block id of the line instead of an index.
+func TestTaskToggleByBlockId(t *testing.T) {
+	fixClock(t, "2026-11-02")
+	in := "- [ ] One\n- [ ] Two\n- [ ] Write report due:2026-11-06 ^ab12cd\n"
+	got, _ := toggleNote(t, in, "^ab12cd")
+	if want := "- [ ] One\n- [ ] Two\n- [x] Write report due:2026-11-06 ^ab12cd\n"; got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
