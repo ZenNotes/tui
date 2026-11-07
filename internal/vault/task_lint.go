@@ -45,7 +45,7 @@ func tokenReason(token string) string {
 	key, _, _ := strings.Cut(token, ":")
 	switch key {
 	case "due":
-		return "the time is not a valid HH:MM"
+		return dueReason(token)
 	case "repeat":
 		return "the rule is not valid"
 	case "skip":
@@ -54,11 +54,28 @@ func tokenReason(token string) string {
 	return "the value is not valid"
 }
 
+// dueReason says why a `due:` token is set aside. The token has the form
+// `due:value`.
+func dueReason(token string) string {
+	_, value, _ := strings.Cut(token, ":")
+	date, start, _ := SplitDateTime(value)
+	switch {
+	case strings.HasPrefix(value[len(date):], ".."):
+		return "a due value holds one day, so only its start date is used"
+	case start == "" && strings.HasPrefix(value[len(date):], "-"),
+		start == "" && strings.HasPrefix(value[len(date):], "T-"):
+		return "an end time needs a start time, so the time is ignored"
+	case start != "" && strings.Contains(value[len(date):], "-"):
+		return "the end time is not a valid HH:MM later than the start time, so it is ignored"
+	}
+	return "the time is not a valid HH:MM"
+}
+
 // badDateTime reports whether value has a real date followed by something
-// that is not a valid `HH:MM` time.
+// that is not a valid time or a valid time range.
 func badDateTime(value string) bool {
-	date, clock := SplitDateTime(value)
-	return date != "" && len(value) > len(date) && clock == ""
+	date, _, _, ok := parseDateTimeRange(value)
+	return date != "" && !ok
 }
 
 func badRepeat(value string) bool {

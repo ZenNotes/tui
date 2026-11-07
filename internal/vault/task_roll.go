@@ -177,7 +177,7 @@ func shiftTokenDate(text string, re *regexp.Regexp, days int) string {
 // keeps whatever follows the date as written. A value whose date is not real
 // is returned unchanged.
 func shiftDateTime(value string, days int) string {
-	date, _ := SplitDateTime(value)
+	date, _, _ := SplitDateTime(value)
 	if date == "" {
 		return value
 	}

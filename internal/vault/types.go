@@ -131,7 +131,10 @@ type Task struct {
 	Due       string `json:"due,omitempty"`
 	// DueTime is the `HH:MM` of a `due:2026-11-03T14:00` value, empty when the
 	// due date carries no valid time. Due itself stays date-only.
-	DueTime  string `json:"dueTime,omitempty"`
+	DueTime string `json:"dueTime,omitempty"`
+	// DueEnd is the `HH:MM` end of a `due:2026-11-03T14:00-15:30` value, empty
+	// when the value has no valid end later than its start.
+	DueEnd   string `json:"dueEnd,omitempty"`
 	Priority string `json:"priority,omitempty"`
 	Waiting  bool   `json:"waiting"`
 	// Fields holds inline `@key:value` tokens (lower-cased), the note's
@@ -247,6 +250,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		Forwarded     *bool             `json:"forwarded,omitempty"`
 		Due           string            `json:"due,omitempty"`
 		DueTime       string            `json:"dueTime,omitempty"`
+		DueEnd        string            `json:"dueEnd,omitempty"`
 		Priority      string            `json:"priority,omitempty"`
 		Waiting       bool              `json:"waiting"`
 		Fields        map[string]string `json:"fields,omitempty"`
@@ -264,7 +268,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		LineNumber: t.LineNumber, TaskIndex: t.TaskIndex, RawText: t.RawText, Content: t.Content,
 		Checked: t.Checked, Cancelled: t.Cancelled, InProgress: t.InProgress, Due: t.Due, Priority: t.Priority,
 		Waiting: t.Waiting, Fields: t.Fields, Status: t.Status, Tags: t.Tags, Kind: t.Kind,
-		DueTime: t.DueTime, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
+		DueTime: t.DueTime, DueEnd: t.DueEnd, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
 	}
 	if t.Kind != "file" {
 		forwarded := t.Forwarded

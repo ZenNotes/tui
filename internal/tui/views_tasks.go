@@ -1528,7 +1528,7 @@ func parseDueInput(text string, now time.Time) (string, error) {
 	if vault.IsValidISODate(text) {
 		return text, nil
 	}
-	if date, clock := vault.SplitDateTime(strings.ToUpper(text)); date != "" && clock != "" {
+	if date, clock, _ := vault.SplitDateTime(strings.ToUpper(text)); date != "" && clock != "" {
 		return date + "T" + clock, nil
 	}
 	return "", fmt.Errorf("not a date: %s", text)

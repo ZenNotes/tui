@@ -113,6 +113,7 @@ func NoteTasksMode(val string) string {
 type noteDefaults struct {
 	Due       string
 	DueTime   string
+	DueEnd    string
 	Priority  string
 	Status    string
 	TasksMode string
@@ -137,8 +138,8 @@ func parseNoteDefaults(body string) noteDefaults {
 		val := Unquote(strings.TrimSpace(trimmed[colon+1:]))
 		switch key {
 		case "due":
-			if date, clock := SplitDateTime(val); date != "" {
-				d.Due, d.DueTime = date, clock
+			if date, clock, end := SplitDateTime(val); date != "" {
+				d.Due, d.DueTime, d.DueEnd = date, clock, end
 			}
 		case "priority":
 			if p := NormalizePriority(val); p != "" {
@@ -220,7 +221,7 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 	if t := strings.TrimSpace(firstScalar(fm["title"])); t != "" {
 		content = t
 	}
-	due, dueTime := splitFrontmatterDateTime(firstScalar(fm["due"]))
+	due, dueTime, dueEnd := splitFrontmatterDateTime(firstScalar(fm["due"]))
 	task := Task{
 		ID:            path + "#task",
 		SourcePath:    path,
@@ -235,6 +236,7 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		InProgress:    inProgressStatuses[status],
 		Due:           due,
 		DueTime:       dueTime,
+		DueEnd:        dueEnd,
 		Priority:      NormalizePriority(firstScalar(fm["priority"])),
 		Waiting:       status == "waiting",
 		Fields:        fields,
@@ -301,9 +303,9 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 		checkedChar := m[2]
 		tail := strings.TrimPrefix(m[3], "]")
 		tokens := extractTaskTokens(tail, opts.Dialect)
-		due, dueTime := tokens.due, tokens.dueTime
+		due, dueTime, dueEnd := tokens.due, tokens.dueTime, tokens.dueEnd
 		if due == "" {
-			due, dueTime = defaults.Due, defaults.DueTime
+			due, dueTime, dueEnd = defaults.Due, defaults.DueTime, defaults.DueEnd
 		}
 		priority := tokens.priority
 		if priority == "" {
@@ -343,6 +345,7 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 			Forwarded:  checkedChar == ">",
 			Due:        due,
 			DueTime:    dueTime,
+			DueEnd:     dueEnd,
 			Priority:   priority,
 			Waiting:    tokens.waiting,
 			Fields:     fields,
@@ -358,13 +361,13 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 }
 
 type taskTokens struct {
-	due, dueTime, priority string
-	repeat                 string
-	skip                   []string
-	waiting                bool
-	fields                 map[string]string
-	tags                   []string
-	stripped               string
+	due, dueTime, dueEnd, priority string
+	repeat                         string
+	skip                           []string
+	waiting                        bool
+	fields                         map[string]string
+	tags                           []string
+	stripped                       string
 }
 
 // inlineStatus is the `@status:` a checkbox line carries, or the note's
@@ -383,7 +386,7 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 	t := taskTokens{fields: map[string]string{}, tags: []string{}}
 	stripped := tail
 	if dm := inlineDueRe.FindStringSubmatch(stripped); dm != nil {
-		t.due, t.dueTime = SplitDateTime(dm[1])
+		t.due, t.dueTime, t.dueEnd = SplitDateTime(dm[1])
 		stripped = inlineDueRe.ReplaceAllString(stripped, " ")
 	}
 	// Every repeat token leaves the content, valid or not. Only the first one
@@ -649,8 +652,9 @@ func SetTaskPriority(markdown string, taskIndex int, priority string) string {
 }
 
 // SetTaskDue replaces, inserts or removes the `due:` token. A date-only value
-// keeps the time the task already has, a `YYYY-MM-DDTHH:MM` value replaces
-// date and time together, and an empty value removes the token and its time.
+// keeps the time and the end time the task already has, a `YYYY-MM-DDTHH:MM`
+// value replaces date and times together, and an empty value removes the token
+// and its times.
 func SetTaskDue(markdown string, taskIndex int, due string) string {
 	out, _ := editTaskAtIndex(markdown, taskIndex, func(m []string) (string, bool) {
 		tail, ok := taskTail(m)
@@ -658,8 +662,8 @@ func SetTaskDue(markdown string, taskIndex int, due string) string {
 			return "", false
 		}
 		if sm := inlineDueRe.FindStringSubmatch(tail); sm != nil {
-			_, existing := SplitDateTime(sm[1])
-			due = dueKeepingTime(due, existing)
+			_, start, end := SplitDateTime(sm[1])
+			due = dueKeepingTime(due, start, end)
 		}
 		cleaned := multiSpaceRe.ReplaceAllString(dueTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
@@ -671,22 +675,26 @@ func SetTaskDue(markdown string, taskIndex int, due string) string {
 	return out
 }
 
-// dueKeepingTime appends the existing time to a date-only value. A value that
-// already carries a time, or is empty, is returned as it is.
-func dueKeepingTime(due, existingTime string) string {
-	if due == "" || existingTime == "" || len(due) != len("2006-01-02") {
+// dueKeepingTime appends the existing start time, and the end time when there
+// is one, to a date-only value. A value that already carries a time, or is
+// empty, is returned as it is.
+func dueKeepingTime(due, start, end string) string {
+	if due == "" || start == "" || len(due) != len("2006-01-02") {
 		return due
 	}
-	return due + "T" + existingTime
+	if end != "" {
+		return due + "T" + start + "-" + end
+	}
+	return due + "T" + start
 }
 
 // SetTaskNoteDue sets the frontmatter `due` of a task note with the same time
-// rules as SetTaskDue: a date-only value keeps the note's current time, a
+// rules as SetTaskDue: a date-only value keeps the note's current times, a
 // date-time value replaces it, and an empty value removes the key.
 func SetTaskNoteDue(body, due string) string {
 	if block, _, ok := Frontmatter(body); ok {
-		_, existing := splitFrontmatterDateTime(firstScalar(ParseFrontmatterFields(block)["due"]))
-		due = dueKeepingTime(due, existing)
+		_, start, end := splitFrontmatterDateTime(firstScalar(ParseFrontmatterFields(block)["due"]))
+		due = dueKeepingTime(due, start, end)
 	}
 	var value *string
 	if due != "" {

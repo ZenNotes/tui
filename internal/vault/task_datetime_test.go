@@ -88,8 +88,8 @@ func TestParseTaskFileIgnoresScheduledKey(t *testing.T) {
 
 func TestSplitDateTimeRejectsMalformedValues(t *testing.T) {
 	for _, in := range []string{"", "2026-11-0", "2026-02-30", "2026-11-03x", "2026-11-03 14:00", "2026-11-03t14:00"} {
-		if d, c := SplitDateTime(in); d != "" || c != "" {
-			t.Errorf("%q: got %q %q", in, d, c)
+		if d, c, e := SplitDateTime(in); d != "" || c != "" || e != "" {
+			t.Errorf("%q: got %q %q %q", in, d, c, e)
 		}
 	}
 }

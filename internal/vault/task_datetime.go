@@ -12,30 +12,53 @@ func IsValidClockTime(s string) bool {
 	return clockTimeRe.MatchString(s)
 }
 
-// SplitDateTime splits a `due:` value into its date and its
-// time. A bare date gives an empty time. A `YYYY-MM-DDTHH:MM` value gives
-// both. When the date is real but what follows `T` is not a valid `HH:MM`, the
-// date is kept and the time is empty, so a typo never hides the day. A value
-// whose date is not a real `YYYY-MM-DD` gives an empty date.
-func SplitDateTime(s string) (date, clock string) {
+// SplitDateTime splits a `due:` value into its date, its start time and its
+// end time. A bare date gives empty times. A `YYYY-MM-DDTHH:MM` value gives
+// the date and the start. A `YYYY-MM-DDTHH:MM-HH:MM` value also gives the end,
+// but only when the end is a valid `HH:MM` later than the start. Otherwise the
+// end is empty and the start is kept. When the date is real but what follows
+// `T` is not a valid `HH:MM`, the date is kept and the times are empty, so a
+// typo never hides the day. A value that goes on past the date with `-` or
+// `..` keeps its date only. A value whose date is not a real `YYYY-MM-DD`
+// gives an empty date.
+func SplitDateTime(s string) (date, start, end string) {
+	date, start, end, _ = parseDateTimeRange(s)
+	return date, start, end
+}
+
+// parseDateTimeRange reads a value as SplitDateTime does and also says whether
+// the whole value is well formed: a date, a date with a start time, or a date
+// with a start time and a later end time.
+func parseDateTimeRange(s string) (date, start, end string, ok bool) {
 	if len(s) < 10 || !IsValidISODate(s[:10]) {
-		return "", ""
+		return "", "", "", false
 	}
 	date = s[:10]
-	if len(s) == 10 {
-		return date, ""
+	rest := s[10:]
+	switch {
+	case rest == "":
+		return date, "", "", true
+	case strings.HasPrefix(rest, "-") || strings.HasPrefix(rest, ".."):
+		return date, "", "", false
+	case rest[0] != 'T':
+		return "", "", "", false
 	}
-	if s[10] != 'T' {
-		return "", ""
+	rest = rest[1:]
+	if IsValidClockTime(rest) {
+		return date, rest, "", true
 	}
-	if rest := s[11:]; IsValidClockTime(rest) {
-		return date, rest
+	if len(rest) >= 6 && IsValidClockTime(rest[:5]) && rest[5] == '-' {
+		start = rest[:5]
+		if tail := rest[6:]; IsValidClockTime(tail) && tail > start {
+			return date, start, tail, true
+		}
+		return date, start, "", false
 	}
-	return date, ""
+	return date, "", "", false
 }
 
 // splitFrontmatterDateTime reads a frontmatter scalar, which may be quoted,
-// as a date and an optional time.
-func splitFrontmatterDateTime(raw string) (date, clock string) {
+// as a date, a start time and an end time.
+func splitFrontmatterDateTime(raw string) (date, start, end string) {
 	return SplitDateTime(Unquote(strings.TrimSpace(raw)))
 }
