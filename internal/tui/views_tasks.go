@@ -130,14 +130,14 @@ func (v *tasksView) refresh(a *App) {
 }
 
 // filterTasks applies the cross-view filter: free words match content and
-// note title, `key:value` terms match tag, note, due, scheduled, priority,
-// status, folder or any custom field.
+// note title, `key:value` terms match tag, note, due, priority, status,
+// folder or any custom field.
 func filterTasks(tasks []vault.Task, filter string) []vault.Task {
 	return filterTasksOn(tasks, filter, time.Now())
 }
 
 // filterTasksOn is filterTasks with "today" given, so `due:today`,
-// `due:overdue` and the `scheduled:` values judge against that day.
+// and `due:overdue` judge against that day.
 func filterTasksOn(tasks []vault.Task, filter string, today time.Time) []vault.Task {
 	terms := strings.Fields(strings.ToLower(strings.TrimSpace(filter)))
 	if len(terms) == 0 {
@@ -188,19 +188,6 @@ func taskMatchesTerm(t vault.Task, term string, today time.Time) bool {
 				match = t.Due != ""
 			default:
 				match = strings.HasPrefix(t.Due, val)
-			}
-		case "scheduled":
-			switch val {
-			case "today":
-				match = t.Scheduled == vault.TodayISO(today)
-			case "overdue":
-				match = vault.IsTaskOpen(t) && t.Scheduled != "" && t.Scheduled < vault.TodayISO(today)
-			case "none":
-				match = t.Scheduled == ""
-			case "any":
-				match = t.Scheduled != ""
-			default:
-				match = strings.HasPrefix(t.Scheduled, val)
 			}
 		case "priority", "prio", "p":
 			match = t.Priority == val || (val == "none" && t.Priority == "")
@@ -560,9 +547,6 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 			meta = append(meta, th.Dim.Render(due))
 		}
 	}
-	if t.Scheduled != "" {
-		meta = append(meta, th.Dim.Render("scheduled "+t.Scheduled))
-	}
 	if t.Priority != "" {
 		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority))
 	}
@@ -659,9 +643,6 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 				} else {
 					meta = append(meta, th.Dim.Render(withTaskClock(c.Due, c.DueTime, a.prefs.TimeFormat)))
 				}
-			}
-			if c.Scheduled != "" {
-				meta = append(meta, th.Dim.Render("sch "+c.Scheduled))
 			}
 			if c.Priority != "" {
 				meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))

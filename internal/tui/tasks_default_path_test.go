@@ -129,11 +129,7 @@ func tasksViewReport(t *testing.T, a *App, now time.Time) string {
 		for _, day := range keys {
 			fmt.Fprintf(&b, "%s\n", relativeDay(day, now))
 			for _, entry := range byDay[day] {
-				marker := ""
-				if entry.scheduled {
-					marker = " (scheduled)"
-				}
-				fmt.Fprintf(&b, "  %s%s\n", entry.task.Content, marker)
+				fmt.Fprintf(&b, "  %s\n", entry.task.Content)
 			}
 		}
 		b.WriteString("no date\n")
@@ -251,5 +247,89 @@ func TestNewTaskNoteFallsBackToTagForUnknownMarker(t *testing.T) {
 	got := newTaskNoteWithMarker(t, `task_note_marker = "foo"`)
 	if want := "---\ntags: [task]\nstatus: open\n---\n\n# Buy milk\n\n"; got != want {
 		t.Fatalf("new task note = %q, want %q", got, want)
+	}
+}
+
+// writeTaskVault writes the given notes, by relative path, into a new vault.
+func writeTaskVault(t *testing.T, notes map[string]string) string {
+	t.Helper()
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	root := t.TempDir()
+	for rel, body := range notes {
+		abs := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+// A `scheduled:` token on a checkbox line is plain text: the row shows it, the
+// task has no date and the calendar has no entry for it.
+func TestCheckboxScheduledShowsInTaskText(t *testing.T) {
+	root := writeTaskVault(t, map[string]string{
+		"inbox/plans.md": "- [ ] Draft scheduled:2026-11-05T09:30 the report\n",
+	})
+	a := newSessionParityApp(t, root)
+	loadTasksForTest(t, a)
+	if len(a.idx.tasks) != 1 {
+		t.Fatalf("scanned %d tasks, want 1", len(a.idx.tasks))
+	}
+	task := a.idx.tasks[0]
+	if want := "Draft scheduled:2026-11-05T09:30 the report"; task.Content != want {
+		t.Fatalf("content = %q, want %q", task.Content, want)
+	}
+	byDay, undated := bucketCalendarEntries(a.idx.tasks)
+	if len(byDay) != 0 || len(undated) != 1 {
+		t.Fatalf("calendar = %v with %d undated, want no entry and 1 undated", byDay, len(undated))
+	}
+	v := newTasksView(a)
+	row := stripAnsi(v.taskLine(a, task, 120, false))
+	if !strings.Contains(row, "scheduled:2026-11-05T09:30") {
+		t.Errorf("row = %q, want the token in the task text", row)
+	}
+}
+
+// A `scheduled` key in a task note, with a date or with a date and a time,
+// places nothing: the note stays on its due day only and the calendar draws no
+// mark for the other day.
+func TestTaskNoteScheduledKeyPlacesNothing(t *testing.T) {
+	day := time.Date(2026, time.November, 5, 8, 0, 0, 0, time.Local)
+	for _, value := range []string{"2026-11-05", "2026-11-05T09:30"} {
+		root := writeTaskVault(t, map[string]string{
+			"inbox/class.md": "---\ntags: [task]\nstatus: open\nscheduled: " + value + "\ndue: 2026-11-10\n---\n\n# Class\n",
+			"inbox/only.md":  "---\ntags: [task]\nstatus: open\nscheduled: " + value + "\n---\n\n# Only\n",
+		})
+		a := newSessionParityApp(t, root)
+		loadTasksForTest(t, a)
+		byDay, undated := bucketCalendarEntries(a.idx.tasks)
+		if got := byDay["2026-11-05"]; len(got) != 0 {
+			t.Errorf("%s: 2026-11-05 lists %d entries, want none", value, len(got))
+		}
+		if got := byDay["2026-11-10"]; len(got) != 1 || got[0].task.NoteTitle != "class" {
+			t.Errorf("%s: 2026-11-10 lists %+v, want the class entry", value, got)
+		}
+		if len(undated) != 1 || undated[0].NoteTitle != "only" {
+			t.Errorf("%s: undated = %+v, want the note with only a scheduled key", value, undated)
+		}
+		groups := vault.GroupTasks(a.idx.tasks, day)
+		if len(groups.Today) != 0 || len(groups.Undated) != 1 {
+			t.Errorf("%s: Today has %d tasks and Undated has %d, want 0 and 1", value, len(groups.Today), len(groups.Undated))
+		}
+
+		prev := calendarNow
+		calendarNow = func() time.Time { return day }
+		a.prefs.TasksViewMode = "calendar"
+		v := newTasksView(a)
+		v.month = time.Date(2026, time.November, 1, 0, 0, 0, 0, time.Local)
+		v.day = time.Date(2026, time.November, 10, 0, 0, 0, 0, time.Local)
+		screen := stripAnsi(v.render(a, 120, 40, true))
+		calendarNow = prev
+		if strings.Contains(screen, "»") {
+			t.Errorf("%s: the calendar draws a mark for a scheduled key:\n%s", value, screen)
+		}
 	}
 }

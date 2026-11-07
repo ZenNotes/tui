@@ -39,10 +39,6 @@ var calMin = map[calSub][2]int{
 	calDay:   {40, 10},
 }
 
-// calScheduledMark prefixes an entry placed by its scheduled date. It must
-// stay one cell wide.
-const calScheduledMark = "»"
-
 // calRect is a region of the calendar body, in body cells.
 type calRect struct{ x, y, w, h int }
 
@@ -733,11 +729,7 @@ func (c *taskCalendar) columnLine(a *App, b calDayBox, li int, focusedDay bool, 
 	case li < shown:
 		idx := first + li
 		e := entries[idx]
-		lead := " "
-		if e.scheduled {
-			lead = calScheduledMark
-		}
-		text := padRight(lead+truncateCells(e.label(a.prefs.TimeFormat), w-2), w)
+		text := padRight(" "+truncateCells(e.label(a.prefs.TimeFormat), w-2), w)
 		if focusedDay && c.focus == calFocusItems && idx == c.cursor {
 			return th.SelectedFocus.Render(text)
 		}
@@ -758,10 +750,6 @@ func (c *taskCalendar) hourLine(a *App, b calDayBox, row int, focusedDay bool) s
 		return strings.Repeat(" ", w)
 	}
 	e := c.dayEntries(b.day)[idx]
-	lead := " "
-	if e.scheduled {
-		lead = calScheduledMark
-	}
 	more := ""
 	if n > 1 {
 		more = fmt.Sprintf(" +%d more", n-1)
@@ -770,7 +758,7 @@ func (c *taskCalendar) hourLine(a *App, b calDayBox, row int, focusedDay bool) s
 		}
 	}
 	moreW := cellWidth(more)
-	text := padRight(lead+truncateCells(e.label(a.prefs.TimeFormat), max(0, w-2-moreW)), w-moreW)
+	text := padRight(" "+truncateCells(e.label(a.prefs.TimeFormat), max(0, w-2-moreW)), w-moreW)
 	if focusedDay && c.focus == calFocusItems && idx == c.cursor {
 		return th.SelectedFocus.Render(text + more)
 	}
@@ -894,11 +882,7 @@ func (c *taskCalendar) boxLine(a *App, box calDayBox, li int, selected, today, o
 		switch {
 		case li-1 < shown:
 			e := entries[li-1]
-			lead := " "
-			if e.scheduled {
-				lead = calScheduledMark
-			}
-			text = lead + truncateCells(e.label(a.prefs.TimeFormat), w-1)
+			text = " " + truncateCells(e.label(a.prefs.TimeFormat), w-1)
 		case li-1 == shown && shown < len(entries):
 			text = calMoreLabel(len(entries)-shown, w)
 			if !selected {
@@ -941,11 +925,7 @@ func (c *taskCalendar) itemPanel(a *App, day time.Time, lay calLayout, focused b
 		switch {
 		case idx < len(entries):
 			e := entries[idx]
-			lead := " "
-			if e.scheduled {
-				lead = calScheduledMark
-			}
-			body := " " + lead + " " + truncateCells(e.label(a.prefs.TimeFormat), pw-3-sepW)
+			body := "   " + truncateCells(e.label(a.prefs.TimeFormat), pw-3-sepW)
 			if focused && c.focus == calFocusItems && idx == c.cursor {
 				body = th.SelectedFocus.Render(padRight(body, pw-sepW))
 			}

@@ -266,7 +266,6 @@ func TestMonthItemPanelListsSelectedDay(t *testing.T) {
 		tasks = append(tasks, vault.Task{ID: fmt.Sprintf("n#%d", i), SourcePath: "n.md", Content: fmt.Sprintf("panel entry number %d in full", i), Due: "2026-11-18"})
 	}
 	tasks = append(tasks,
-		vault.Task{ID: "n#6", SourcePath: "n.md", Kind: "file", Content: "panel scheduled entry in full", Scheduled: "2026-11-18"},
 		vault.Task{ID: "n#7", SourcePath: "n.md", Content: "other day entry in full text", Due: "2026-11-19"},
 	)
 	a, tv := calTestApp(t, tasks)
@@ -278,41 +277,8 @@ func TestMonthItemPanelListsSelectedDay(t *testing.T) {
 			t.Errorf("item panel is missing %q:\n%s", want, text)
 		}
 	}
-	if !strings.Contains(text, "panel scheduled entry in full") {
-		t.Errorf("item panel is missing the scheduled entry:\n%s", text)
-	}
 	if strings.Contains(text, "other day entry in full text") {
 		t.Errorf("item panel lists another day's entry:\n%s", text)
-	}
-}
-
-func TestScheduledEntryCarriesMarker(t *testing.T) {
-	const text = "twin task with a long tail"
-	tasks := []vault.Task{
-		{ID: "n#0", SourcePath: "n.md", Kind: "file", Content: text, Due: "2026-11-18", Scheduled: "2026-11-16"},
-	}
-	around := func(a *App, tv *tasksView, day time.Time) string {
-		t.Helper()
-		tv.selectDay(a, day)
-		lines := calScreen(a, tv, 120, 40)
-		requireFullMonthGrid(t, lines)
-		for _, l := range lines {
-			if i := strings.Index(l, text); i >= 0 {
-				r := []rune(l[:i])
-				if len(r) > 3 {
-					r = r[len(r)-3:]
-				}
-				return string(r) + "|" + l[i:i+len(text)]
-			}
-		}
-		t.Fatalf("%s: %q not found in the item panel:\n%s", day.Format("2006-01-02"), text, calScreenText(lines))
-		return ""
-	}
-	a, tv := calTestApp(t, tasks)
-	due := around(a, tv, calDate(2026, time.November, 18))
-	sched := around(a, tv, calDate(2026, time.November, 16))
-	if due == sched {
-		t.Errorf("scheduled entry looks the same as the due entry: %q", due)
 	}
 }
 
@@ -501,12 +467,12 @@ func TestMonthRendersInVeryLargeBody(t *testing.T) {
 
 func TestCalendarRenderLeavesNotesUnchanged(t *testing.T) {
 	a, root := newFeatureTestApp(t)
-	body := []byte("---\ntags: [task]\nscheduled: 2026-11-16\n---\n# Plan the move\n")
+	body := []byte("---\ntags: [task]\ndue: 2026-11-16\nscheduled: 2026-11-15\n---\n# Plan the move\n")
 	path := filepath.Join(root, "plan.md")
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a.idx.tasks = []vault.Task{{ID: "plan.md#task", SourcePath: "plan.md", Kind: "file", Content: "Plan the move", Scheduled: "2026-11-16"}}
+	a.idx.tasks = []vault.Task{{ID: "plan.md#task", SourcePath: "plan.md", Kind: "file", Content: "Plan the move", Due: "2026-11-16", Scheduled: "2026-11-15"}}
 	a.prefs.CalendarWeekStart = "monday"
 	a.prefs.CalendarShowWeekNumbers = true
 	a, tv := calOpen(t, a)
@@ -514,7 +480,7 @@ func TestCalendarRenderLeavesNotesUnchanged(t *testing.T) {
 	lines := calScreen(a, tv, 120, 40)
 	requireFullMonthGrid(t, lines)
 	if !strings.Contains(calScreenText(lines), "Plan the move") {
-		t.Fatalf("the scheduled task is not shown on its day:\n%s", calScreenText(lines))
+		t.Fatalf("the task is not shown on its due day:\n%s", calScreenText(lines))
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
@@ -522,11 +488,5 @@ func TestCalendarRenderLeavesNotesUnchanged(t *testing.T) {
 	}
 	if string(got) != string(body) {
 		t.Errorf("note changed by rendering:\n%s", got)
-	}
-}
-
-func TestScheduledMarkIsOneCellWide(t *testing.T) {
-	if w := cellWidth(calScheduledMark); w != 1 {
-		t.Errorf("scheduled marker %q is %d cells wide, want 1", calScheduledMark, w)
 	}
 }

@@ -7,11 +7,9 @@ import (
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
-// calEntry is one task placed on a calendar day. scheduled is true when the
-// task's scheduled date placed it rather than its due date.
+// calEntry is one task placed on a calendar day by its due date.
 type calEntry struct {
-	task      vault.Task
-	scheduled bool
+	task vault.Task
 }
 
 // clock is the entry's time of day as `HH:MM`, or "" when it is untimed. An
@@ -39,38 +37,24 @@ func calRank(priority string) int {
 	return len(calPriorityRank)
 }
 
-// bucketCalendarEntries places open tasks on the days of their due and
-// scheduled dates. A task whose two dates are the same day appears once, as a
-// due entry. On each day due entries come before scheduled ones, and each
-// group keeps the input order; timed entries then move ahead of the untimed
-// ones, earliest first, ties keeping that order. Tasks with neither date are returned as
-// undated, ordered by priority and then by lower-cased text, ties keeping
-// the input order. Closed, cancelled and forwarded tasks are left out.
+// bucketCalendarEntries places open tasks on the day of their due date. Each
+// day keeps the input order, except that timed entries move ahead of the
+// untimed ones, earliest first, ties keeping that order. Tasks with no due date
+// are returned as undated, ordered by priority and then by lower-cased text,
+// ties keeping the input order. Closed, cancelled and forwarded tasks are left
+// out.
 func bucketCalendarEntries(tasks []vault.Task) (map[string][]calEntry, []vault.Task) {
-	due := map[string][]calEntry{}
-	sched := map[string][]calEntry{}
+	byDay := map[string][]calEntry{}
 	var undated []vault.Task
 	for _, t := range tasks {
 		if !vault.IsTaskOpen(t) || t.Forwarded {
 			continue
 		}
-		if t.Due == "" && t.Scheduled == "" {
+		if t.Due == "" {
 			undated = append(undated, t)
 			continue
 		}
-		if t.Due != "" {
-			due[t.Due] = append(due[t.Due], calEntry{task: t})
-		}
-		if t.Scheduled != "" && t.Scheduled != t.Due {
-			sched[t.Scheduled] = append(sched[t.Scheduled], calEntry{task: t, scheduled: true})
-		}
-	}
-	byDay := make(map[string][]calEntry, len(due)+len(sched))
-	for day, entries := range due {
-		byDay[day] = append(byDay[day], entries...)
-	}
-	for day, entries := range sched {
-		byDay[day] = append(byDay[day], entries...)
+		byDay[t.Due] = append(byDay[t.Due], calEntry{task: t})
 	}
 	for _, entries := range byDay {
 		sort.SliceStable(entries, func(i, j int) bool {

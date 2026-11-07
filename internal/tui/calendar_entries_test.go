@@ -28,7 +28,7 @@ func TestCalendarEntriesDueOnly(t *testing.T) {
 	tasks := []vault.Task{{ID: "a", Content: "a", Due: "2026-11-18"}}
 	byDay, undated := bucketCalendarEntries(tasks)
 	got := byDay["2026-11-18"]
-	if len(got) != 1 || got[0].task.ID != "a" || got[0].scheduled {
+	if len(got) != 1 || got[0].task.ID != "a" {
 		t.Errorf("entries on 2026-11-18 = %+v, want one due entry for a", got)
 	}
 	if len(undated) != 0 {
@@ -44,7 +44,7 @@ func TestCalendarEntriesInferredDailyDue(t *testing.T) {
 	tasks := vault.InferDailyTaskDueDates(raw, map[string]string{"inbox/2026-11-18.md": "2026-11-18"})
 	byDay, undated := bucketCalendarEntries(tasks)
 	got := byDay["2026-11-18"]
-	if len(got) != 1 || got[0].task.ID != "daily#0" || got[0].scheduled {
+	if len(got) != 1 || got[0].task.ID != "daily#0" {
 		t.Errorf("entries on 2026-11-18 = %+v, want one due entry for daily#0", got)
 	}
 	if len(undated) != 0 {
@@ -52,19 +52,17 @@ func TestCalendarEntriesInferredDailyDue(t *testing.T) {
 	}
 }
 
-func TestCalendarEntriesDueAndScheduledOnTwoDays(t *testing.T) {
+func TestCalendarEntriesScheduledPlacesNoSecondEntry(t *testing.T) {
 	tasks := []vault.Task{{ID: "a", Content: "a", Due: "2026-11-18", Scheduled: "2026-11-16"}}
 	byDay, undated := bucketCalendarEntries(tasks)
-	due := byDay["2026-11-18"]
-	if len(due) != 1 || due[0].task.ID != "a" || due[0].scheduled {
-		t.Errorf("entries on 2026-11-18 = %+v, want one due entry", due)
+	if got := entryIDs(byDay["2026-11-18"]); !reflect.DeepEqual(got, []string{"a"}) {
+		t.Errorf("entries on 2026-11-18 = %v, want [a]", got)
 	}
-	sched := byDay["2026-11-16"]
-	if len(sched) != 1 || sched[0].task.ID != "a" || !sched[0].scheduled {
-		t.Errorf("entries on 2026-11-16 = %+v, want one scheduled entry", sched)
+	if got := byDay["2026-11-16"]; len(got) != 0 {
+		t.Errorf("entries on 2026-11-16 = %+v, want none", got)
 	}
-	if len(undated) != 0 {
-		t.Errorf("undated = %v, want none", taskIDs(undated))
+	if len(byDay) != 1 || len(undated) != 0 {
+		t.Errorf("days = %v and undated = %v, want one day and no undated task", byDay, taskIDs(undated))
 	}
 }
 
@@ -77,15 +75,14 @@ func TestCalendarEntriesSameDayShowsOnce(t *testing.T) {
 	}
 }
 
-func TestCalendarEntriesScheduledOnly(t *testing.T) {
+func TestCalendarEntriesScheduledOnlyIsUndated(t *testing.T) {
 	tasks := []vault.Task{{ID: "a", Content: "a", Scheduled: "2026-11-16"}}
 	byDay, undated := bucketCalendarEntries(tasks)
-	got := byDay["2026-11-16"]
-	if len(got) != 1 || got[0].task.ID != "a" || !got[0].scheduled {
-		t.Errorf("entries on 2026-11-16 = %+v, want one scheduled entry", got)
+	if len(byDay) != 0 {
+		t.Errorf("days with entries = %v, want none", byDay)
 	}
-	if len(undated) != 0 {
-		t.Errorf("undated = %v, want none: a scheduled task is placed", taskIDs(undated))
+	if got := taskIDs(undated); !reflect.DeepEqual(got, []string{"a"}) {
+		t.Errorf("undated = %v, want [a]", got)
 	}
 }
 
@@ -94,7 +91,6 @@ func TestCalendarEntriesHideClosedTasks(t *testing.T) {
 		{ID: "checked", Checked: true, Due: "2026-11-18"},
 		{ID: "cancelled", Cancelled: true, Due: "2026-11-18"},
 		{ID: "forwarded", Forwarded: true, Due: "2026-11-18"},
-		{ID: "closed-sched", Checked: true, Scheduled: "2026-11-16"},
 		{ID: "closed-undated", Cancelled: true},
 	}
 	byDay, undated := bucketCalendarEntries(tasks)
@@ -124,16 +120,15 @@ func TestCalendarEntriesUndatedGoToStrip(t *testing.T) {
 	}
 }
 
-func TestCalendarEntriesDueBeforeScheduled(t *testing.T) {
-	// Scan order interleaves scheduled and due entries for one day.
+func TestCalendarEntriesScheduledDoesNotMoveDueEntries(t *testing.T) {
+	// A scheduled value neither adds an entry nor changes the order of a day.
 	tasks := []vault.Task{
 		{ID: "s1", Scheduled: "2026-11-18"},
-		{ID: "d1", Due: "2026-11-18"},
-		{ID: "s2", Scheduled: "2026-11-18"},
+		{ID: "d1", Due: "2026-11-18", Scheduled: "2026-11-17"},
 		{ID: "d2", Due: "2026-11-18"},
 	}
 	byDay, _ := bucketCalendarEntries(tasks)
-	if got, want := entryIDs(byDay["2026-11-18"]), []string{"d1", "d2", "s1", "s2"}; !reflect.DeepEqual(got, want) {
+	if got, want := entryIDs(byDay["2026-11-18"]), []string{"d1", "d2"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("order on 2026-11-18 = %v, want %v", got, want)
 	}
 }
@@ -144,8 +139,8 @@ func TestCalendarEntriesKeepScanOrderWithinGroup(t *testing.T) {
 		{ID: "z", Content: "zulu", Due: "2026-11-18"},
 		{ID: "m", Content: "mike", Due: "2026-11-18"},
 		{ID: "a", Content: "alpha", Due: "2026-11-18"},
-		{ID: "y", Content: "yankee", Scheduled: "2026-11-18"},
-		{ID: "b", Content: "bravo", Scheduled: "2026-11-18"},
+		{ID: "y", Content: "yankee", Due: "2026-11-18"},
+		{ID: "b", Content: "bravo", Due: "2026-11-18"},
 	}
 	byDay, _ := bucketCalendarEntries(tasks)
 	if got, want := entryIDs(byDay["2026-11-18"]), []string{"z", "m", "a", "y", "b"}; !reflect.DeepEqual(got, want) {

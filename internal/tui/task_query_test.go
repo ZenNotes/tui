@@ -107,46 +107,19 @@ func TestStructuredFilterDueTodayMatchesTimedTask(t *testing.T) {
 	assertTaskQueryIDs(t, got, []string{"timed"})
 }
 
-func TestStructuredFilterScheduledValues(t *testing.T) {
+// A `scheduled:` term in the filter is the `@field` match it has always been:
+// it compares a custom field of that name and reads no date of the task.
+func TestWhereScheduledMatchesFieldAsReleased(t *testing.T) {
 	today := queryDay(t, "2026-11-05")
-	t.Run("today", func(t *testing.T) {
-		tasks := []vault.Task{
-			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
-			{ID: "B", Content: "B", Scheduled: "2026-11-06"},
-		}
-		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:today", today), []string{"A"})
-	})
-	t.Run("none and any", func(t *testing.T) {
-		tasks := []vault.Task{
-			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
-			{ID: "B", Content: "B", Due: "2026-11-05"},
-		}
-		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:none", today), []string{"B"})
-		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:any", today), []string{"A"})
-	})
-	t.Run("date prefix", func(t *testing.T) {
-		tasks := []vault.Task{
-			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
-			{ID: "B", Content: "B", Scheduled: "2026-12-01"},
-		}
-		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:2026-11", today), []string{"A"})
-	})
-	t.Run("overdue", func(t *testing.T) {
-		tasks := []vault.Task{
-			{ID: "A", Content: "A", Scheduled: "2026-11-04"},
-			{ID: "B", Content: "B", Scheduled: "2026-11-04", Checked: true},
-			{ID: "C", Content: "C", Scheduled: "2026-11-05"},
-			{ID: "D", Content: "D", Due: "2026-11-01"},
-		}
-		assertTaskQueryIDs(t, filterTasksOn(tasks, "scheduled:overdue", today), []string{"A"})
-	})
-	t.Run("through the where prefix", func(t *testing.T) {
-		tasks := []vault.Task{
-			{ID: "A", Content: "A", Scheduled: "2026-11-05"},
-			{ID: "B", Content: "B", Scheduled: "2026-11-06"},
-		}
-		assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "where: scheduled:today", today), []string{"A"})
-		// Without the prefix the words stay a plain substring search.
-		assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "scheduled:today", today), nil)
-	})
+	tasks := []vault.Task{
+		{ID: "A", Content: "A", Fields: map[string]string{"scheduled": "2026-11-05"}},
+		{ID: "B", Content: "B", Scheduled: "2026-11-05"},
+		{ID: "C", Content: "C"},
+	}
+	assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "where: scheduled:2026-11-05", today), []string{"A"})
+	for _, value := range []string{"today", "any", "none", "overdue"} {
+		assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "where: scheduled:"+value, today), nil)
+	}
+	// Without the prefix the words stay a plain substring search.
+	assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "scheduled:today", today), nil)
 }
