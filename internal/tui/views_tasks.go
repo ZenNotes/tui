@@ -962,6 +962,8 @@ func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
 		a.shiftTaskDue(*t, -1)
 	case k.IsRune('y'):
 		a.copyText(t.RawText)
+	case k.IsRune('W'):
+		a.scheduleSession(*t)
 	default:
 		return false
 	}
@@ -1605,6 +1607,7 @@ func (a *App) taskMenu(t vault.Task) {
 		{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},
 		{key: "e", label: "Edit text", run: func(a *App) { a.taskTextPrompt(t) }},
 		{key: "s", label: "Set field", run: func(a *App) { a.taskFieldPrompt(t) }},
+		{key: "W", label: "Schedule a work session", run: func(a *App) { a.scheduleSession(t) }},
 		{key: "f", label: "Forward to today's daily note", run: func(a *App) { a.forwardTask(t) }},
 		{key: "y", label: "Copy line", run: func(a *App) { a.copyText(t.RawText) }},
 	})
