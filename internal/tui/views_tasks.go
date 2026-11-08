@@ -126,6 +126,7 @@ func (v *tasksView) refresh(a *App) {
 		v.list.cursor++
 	}
 	v.buildColumns(a)
+	v.calc().setSources(all, a.idx.events, a.taskWeekStart())
 	v.calc().rebuild(v.tasks, v.day)
 }
 

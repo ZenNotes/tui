@@ -7,24 +7,71 @@ import (
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
-// calEntry is one task placed on a calendar day by its due date.
+// calEntryKind tells what a calendar entry is.
+type calEntryKind int
+
+const (
+	// calDue is a task placed on the day of its due date.
+	calDue calEntryKind = iota
+	// calEvent is one occurrence of an event.
+	calEvent
+	// calSession is one occurrence of a work session of a task.
+	calSession
+)
+
+// calEntry is one item on a calendar day: a task by its due date, an event, or
+// a work session.
 type calEntry struct {
+	// task is the task of a due entry. For a session it is the task that the
+	// session names, and it is empty when the link dangles.
 	task vault.Task
+	kind calEntryKind
+	// mark leads the label of an event or a session. A due entry has none.
+	mark string
+	// done says that the entry is drawn in the done style.
+	done bool
+	// text is the own text of an event or a session.
+	text string
+	// start and end are the times of day of the block of an event or a session
+	// on this day. An end of 24:00 is the end of the day. An entry with no
+	// start covers the day whole.
+	start, end string
+	// continued says that the block carries on from the day before, so its
+	// start is midnight and not a time the user wrote.
+	continued bool
 }
 
-// clock is the entry's time of day as `HH:MM`, or "" when it is untimed. An
+// hasTask reports whether the entry stands for a task that a key or a click
+// can act on. An event and a dangling session do not.
+func (e calEntry) hasTask() bool {
+	return e.kind == calDue || (e.kind == calSession && e.task.SourcePath != "")
+}
+
+// clock is the entry's time of day as `HH:MM`, or "" when it is untimed. A due
 // entry shows the due time of its task.
 func (e calEntry) clock() string {
-	return e.task.DueTime
+	if e.kind == calDue {
+		return e.task.DueTime
+	}
+	return e.start
 }
 
-// label is the entry's text in the calendar: the task's content, led by its
-// time of day when it has one, in the `time_format` the user chose.
-func (e calEntry) label(timeFormat string) string {
-	if c := e.clock(); c != "" {
-		return formatTaskClock(c, timeFormat) + " " + e.task.Content
+// content is the text of the entry without its mark and time.
+func (e calEntry) content() string {
+	if e.kind == calDue {
+		return e.task.Content
 	}
-	return e.task.Content
+	return e.text
+}
+
+// label is the entry's text in the calendar: its mark and its text, with the
+// time of day between them when it has one, in the `time_format` the user
+// chose.
+func (e calEntry) label(timeFormat string) string {
+	if c := e.clock(); c != "" && !e.continued {
+		return e.mark + formatTaskClock(c, timeFormat) + " " + e.content()
+	}
+	return e.mark + e.content()
 }
 
 // calPriorityRank orders the strip: high, medium, low, then none.

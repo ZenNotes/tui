@@ -97,6 +97,7 @@ type taskCalendar struct {
 
 	byDay   map[string][]calEntry
 	undated []vault.Task
+	src     calSources
 	layout  calLayout
 }
 
@@ -127,7 +128,7 @@ func (c *taskCalendar) rebuild(tasks []vault.Task, day time.Time) {
 // hour rows, so there the untimed entries come first and the timed ones
 // follow in time order.
 func (c *taskCalendar) dayEntries(day time.Time) []calEntry {
-	stored := c.byDay[day.Format("2006-01-02")]
+	stored := c.dayStored(day)
 	if c.sub == calMonth {
 		return stored
 	}
@@ -186,7 +187,7 @@ func (c *taskCalendar) selected(day time.Time) *vault.Task {
 	switch c.focus {
 	case calFocusItems:
 		entries := c.dayEntries(day)
-		if c.cursor < len(entries) {
+		if c.cursor < len(entries) && entries[c.cursor].hasTask() {
 			t := entries[c.cursor].task
 			return &t
 		}
@@ -358,7 +359,7 @@ func (c *taskCalendar) columnDays(a *App, day time.Time) []time.Time {
 // week or day column, are untimed and so belong to the all-day band.
 func (c *taskCalendar) untimedCount(day time.Time) int {
 	n := 0
-	for _, e := range c.byDay[day.Format("2006-01-02")] {
+	for _, e := range c.dayStored(day) {
 		if e.clock() == "" {
 			n++
 		}
@@ -733,6 +734,9 @@ func (c *taskCalendar) columnLine(a *App, b calDayBox, li int, focusedDay bool, 
 		if focusedDay && c.focus == calFocusItems && idx == c.cursor {
 			return th.SelectedFocus.Render(text)
 		}
+		if e.done {
+			return th.Done.Render(text)
+		}
 		return text
 	case li == shown && shown < len(rest):
 		return more(len(rest) - shown)
@@ -761,6 +765,9 @@ func (c *taskCalendar) hourLine(a *App, b calDayBox, row int, focusedDay bool) s
 	text := padRight(" "+truncateCells(e.label(a.prefs.TimeFormat), max(0, w-2-moreW)), w-moreW)
 	if focusedDay && c.focus == calFocusItems && idx == c.cursor {
 		return th.SelectedFocus.Render(text + more)
+	}
+	if e.done {
+		return th.Done.Render(text) + th.Dim.Render(more)
 	}
 	return text + th.Dim.Render(more)
 }
@@ -883,6 +890,9 @@ func (c *taskCalendar) boxLine(a *App, box calDayBox, li int, selected, today, o
 		case li-1 < shown:
 			e := entries[li-1]
 			text = " " + truncateCells(e.label(a.prefs.TimeFormat), w-1)
+			if e.done {
+				style = th.Done
+			}
 		case li-1 == shown && shown < len(entries):
 			text = calMoreLabel(len(entries)-shown, w)
 			if !selected {
@@ -928,6 +938,8 @@ func (c *taskCalendar) itemPanel(a *App, day time.Time, lay calLayout, focused b
 			body := "   " + truncateCells(e.label(a.prefs.TimeFormat), pw-3-sepW)
 			if focused && c.focus == calFocusItems && idx == c.cursor {
 				body = th.SelectedFocus.Render(padRight(body, pw-sepW))
+			} else if e.done {
+				body = th.Done.Render(body)
 			}
 			line += body
 		case len(entries) == 0 && i == 1:
@@ -1033,7 +1045,9 @@ func (c *taskCalendar) click(a *App, v *tasksView, x, y int, right, double bool)
 				}
 				c.focus = calFocusItems
 				c.cursor = idx
-				c.pressTask(a, c.dayEntries(b.day)[idx].task, right, double)
+				if e := c.dayEntries(b.day)[idx]; e.hasTask() {
+					c.pressTask(a, e.task, right, double)
+				}
 				return
 			}
 		}
@@ -1050,7 +1064,9 @@ func (c *taskCalendar) click(a *App, v *tasksView, x, y int, right, double bool)
 		if idx < len(entries) {
 			c.focus = calFocusItems
 			c.cursor = idx
-			c.pressTask(a, entries[idx].task, right, double)
+			if entries[idx].hasTask() {
+				c.pressTask(a, entries[idx].task, right, double)
+			}
 		}
 	}
 }
