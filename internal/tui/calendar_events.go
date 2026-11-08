@@ -91,7 +91,8 @@ func buildEventEntries(tasks []vault.Task, events []vault.Event, from, to string
 				if day < from || day > to {
 					continue
 				}
-				entry := calEntry{kind: calEvent, mark: "◆", text: e.Text, path: e.Path, line: e.Line, inline: e.Kind == vault.EventKindInline}
+				entry := calEntry{kind: calEvent, mark: "◆", text: e.Text, path: e.Path, line: e.Line, inline: e.Kind == vault.EventKindInline,
+					occ: occ, repeat: e.Repeat, until: e.Until, note: e.NoteTitle, link: e.TaskLink}
 				if e.TaskLink != "" {
 					entry.kind = calSession
 					entry.mark, entry.done = sessionMark(task, linked, occ.StartDate)

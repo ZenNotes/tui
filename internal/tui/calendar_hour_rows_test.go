@@ -168,7 +168,12 @@ func TestSelectedTimedTaskScrollsIntoView(t *testing.T) {
 		t.Fatal("the 21 row is already on screen before the list scrolls")
 	}
 	calPress(a, tv, vim.KeyTab)
-	requireOnlyInRow(t, calScreen(a, tv, 120, 20), "21", "late call", "selected timed entry in a short body")
+	// The footer describes the selected entry too, so the text shows twice.
+	lines := calScreen(a, tv, 120, 20)
+	row, ok := calRowLine(lines, calLabel24, "21")
+	if !ok || !strings.Contains(row, "late call") {
+		t.Errorf("selected timed entry in a short body: the 21 row is %q:\n%s", row, calScreenText(lines))
+	}
 }
 
 func TestAllDayFocusStaysInTheBand(t *testing.T) {

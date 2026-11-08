@@ -45,6 +45,15 @@ type calEntry struct {
 	path   string
 	line   int
 	inline bool
+	// occ is the whole occurrence of an event or a session, with the dates and
+	// times that the user wrote, not the part that falls on this day.
+	occ vault.EventOccurrence
+	// repeat and until are the repeat rule of the event, and its last date.
+	repeat, until string
+	// note is the title of the note that holds the event or the session.
+	note string
+	// link is the `task:` link of a session as written.
+	link string
 }
 
 // hasTask reports whether the entry stands for a task that a key or a click

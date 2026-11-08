@@ -66,8 +66,11 @@ type calLayout struct {
 	compact bool
 	items   calRect
 	// pane is the all-day pane of the day view, with its left rule.
-	pane      calRect
-	strip     calRect
+	pane  calRect
+	strip calRect
+	// footer is the description of the selected entries, above the strip. Only
+	// the week and day views have one.
+	footer    calRect
 	boxes     []calDayBox
 	itemStart int
 	stripRows int
@@ -568,9 +571,11 @@ func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 	stripH := 1 + stripRows
 	lay.stripRows = stripRows
 	lay.strip = calRect{x: 0, y: h - stripH, w: w, h: stripH}
+	footH := footerHeight(h)
+	lay.footer = calRect{x: 0, y: lay.strip.y - footH, w: w, h: footH}
 	lay.gutter = hourLabelWidth(a, c.half) + 2
 	lay.hourTotal = c.hourRowCount()
-	body := h - stripH - headRows
+	body := h - stripH - footH - headRows
 	if c.sub == calDay {
 		paneW := clampInt(w*30/100, 24, 40)
 		gridW := w - paneW
@@ -659,9 +664,10 @@ func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h 
 			rows = append(rows, padRight(sb.String(), w))
 		}
 	}
-	for len(rows) < lay.strip.y {
+	for len(rows) < lay.footer.y {
 		rows = append(rows, strings.Repeat(" ", w))
 	}
+	rows = append(rows, c.footerLines(a, day, w, lay.footer.h)...)
 	rows = append(rows, c.stripLines(a, lay, w, focused)...)
 	return fitBlock(strings.Join(rows, "\n"), w, h)
 }

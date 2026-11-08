@@ -22,8 +22,15 @@ type colView struct {
 const colScrollTotal = 80
 
 // calColumnView reads the zq entries and the `+N more` lines of one render.
+// The footer under the grid repeats the selected entry, so it is left out.
 func calColumnView(t *testing.T, lines []string) colView {
 	t.Helper()
+	for i, l := range lines {
+		if n := footerHeight(len(lines) - 1); strings.Contains(l, "No date") && i >= n {
+			lines = append(append([]string{}, lines[:i-n]...), lines[i:]...)
+			break
+		}
+	}
 	v := colView{above: -1, below: -1}
 	first, last := -1, -1
 	for i, l := range lines {
