@@ -157,7 +157,7 @@ func TestRollAddsDueWhenTaskHasNoDate(t *testing.T) {
 func TestRollWithoutRepeatOnlyTicks(t *testing.T) {
 	for _, line := range []string{
 		"- [ ] Pay rent due:2026-11-03",
-		"- [ ] A due:2027-03-15 skip:2027-03-13..2027-03-21",
+		"- [ ] A due:2027-03-15 @skip:2027-03-13/2027-03-21",
 	} {
 		got, inserted := rollLines(t, []string{line}, 0, RollComplete, "2026-11-02")
 		equalLines(t, got, []string{strings.Replace(line, "[ ]", "[x]", 1)})
@@ -189,9 +189,9 @@ func TestRollKeepsTimes(t *testing.T) {
 		t.Fatalf("got %q", got[0])
 	}
 
-	in := "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21"
+	in := "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21"
 	got, _ = rollLines(t, []string{in}, 0, RollComplete, "2027-03-08")
-	want := "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w skip:2027-03-13..2027-03-21"
+	want := "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21"
 	if got[0] != want {
 		t.Fatalf("got %q\nwant %q", got[0], want)
 	}
@@ -199,11 +199,11 @@ func TestRollKeepsTimes(t *testing.T) {
 
 func TestRollKeepsSkipTokensOnInsertedLine(t *testing.T) {
 	cases := []struct{ line, next string }{
-		{"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-21..2027-03-13", "- [ ] A due:2027-03-15 @repeat:1w skip:2027-03-21..2027-03-13"},
-		{"- [ ] A due:2027-03-08 @repeat:1w skip:2027-02-30", "- [ ] A due:2027-03-15 @repeat:1w skip:2027-02-30"},
-		{"- [ ] A due:2027-03-08 @repeat:1w skip:2026-12-21..2027-01-03", "- [ ] A due:2027-03-15 @repeat:1w skip:2026-12-21..2027-01-03"},
-		{"- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break", "- [ ] A due:2027-03-15 @repeat:1w skip:@spring-break"},
-		{"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-21..2027-03-13,2027-03-15", "- [ ] A due:2027-03-22 @repeat:1w skip:2027-03-21..2027-03-13,2027-03-15"},
+		{"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-21/2027-03-13", "- [ ] A due:2027-03-15 @repeat:1w @skip:2027-03-21/2027-03-13"},
+		{"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-02-30", "- [ ] A due:2027-03-15 @repeat:1w @skip:2027-02-30"},
+		{"- [ ] A due:2027-03-08 @repeat:1w @skip:2026-12-21/2027-01-03", "- [ ] A due:2027-03-15 @repeat:1w @skip:2026-12-21/2027-01-03"},
+		{"- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break", "- [ ] A due:2027-03-15 @repeat:1w @skip:spring-break"},
+		{"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-21/2027-03-13 @skip:2027-03-15", "- [ ] A due:2027-03-22 @repeat:1w @skip:2027-03-21/2027-03-13 @skip:2027-03-15"},
 	}
 	for _, c := range cases {
 		got, _ := rollLines(t, []string{c.line}, 0, RollComplete, "2027-03-08")

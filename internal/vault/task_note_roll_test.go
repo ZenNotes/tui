@@ -86,7 +86,7 @@ func TestTaskNoteCancelAdvancesLikeCompletion(t *testing.T) {
 }
 
 func TestTaskNoteRollPassesOverSkipAndKeepsSkipLine(t *testing.T) {
-	skip := "skip: [2027-03-13..2027-03-21, 2027-04-02]"
+	skip := "skip: [2027-03-13/2027-03-21, 2027-04-02]"
 	in := rollNote("due: 2027-03-08T09:00", "repeat: 1w", skip)
 	want := rollNote("due: 2027-03-22T09:00", "repeat: 1w", skip, "lastCompleted: 2027-03-08")
 	if got := rollNoteAt(t, in, RollComplete, "2027-03-08"); got != want {
@@ -199,5 +199,42 @@ func TestTaskNoteRepeatValues(t *testing.T) {
 		if got := rollNoteAt(t, in, RollComplete, "2026-11-02"); !strings.Contains(got, "status: done") || strings.Contains(got, "lastCompleted") {
 			t.Errorf("repeat: %s rolled; got %q, want a plain tick like %q", value, got, want)
 		}
+	}
+}
+
+func TestTaskNoteSkipAndUntil(t *testing.T) {
+	skip := "skip: [2027-03-13/2027-03-21]"
+	in := rollNote("due: 2027-03-08", "repeat: weekly", skip)
+	want := rollNote("due: 2027-03-22", "repeat: weekly", skip, "lastCompleted: 2027-03-08")
+	if got := rollNoteAt(t, in, RollComplete, "2027-03-08"); got != want {
+		t.Fatalf("skip range:\n got %q\nwant %q", got, want)
+	}
+
+	// The date after the range lies past the until date, so the note only
+	// ends.
+	ended := rollNote("due: 2027-03-08", "repeat: weekly", skip, "until: 2027-03-20")
+	got := rollNoteAt(t, ended, RollComplete, "2027-03-08")
+	for _, wantLine := range []string{"status: done", "completedDate: 2027-03-08", "due: 2027-03-08"} {
+		if !strings.Contains(got, wantLine) {
+			t.Errorf("ended note lacks %q:\n%s", wantLine, got)
+		}
+	}
+	if strings.Contains(got, "lastCompleted") {
+		t.Errorf("ended note rolled:\n%s", got)
+	}
+
+	// A list holds names without @, and a name that answers nothing skips
+	// nothing.
+	named := rollNote("due: 2027-03-08", "repeat: weekly", "skip: [2027-03-15, easter]")
+	want = rollNote("due: 2027-03-22", "repeat: weekly", "skip: [2027-03-15, easter]", "lastCompleted: 2027-03-08")
+	if got := rollNoteAt(t, named, RollComplete, "2027-03-08"); got != want {
+		t.Fatalf("named skip:\n got %q\nwant %q", got, want)
+	}
+
+	// The dots are no range separator.
+	dots := rollNote("due: 2027-03-08", "repeat: weekly", "skip: 2027-03-13..2027-03-21")
+	want = rollNote("due: 2027-03-15", "repeat: weekly", "skip: 2027-03-13..2027-03-21", "lastCompleted: 2027-03-08")
+	if got := rollNoteAt(t, dots, RollComplete, "2027-03-08"); got != want {
+		t.Fatalf("dots:\n got %q\nwant %q", got, want)
 	}
 }

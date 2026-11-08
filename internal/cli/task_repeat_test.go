@@ -179,8 +179,8 @@ func TestTaskToggleRepeatKeyInAnyCase(t *testing.T) {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 	fixClock(t, "2027-03-08")
-	got, _ = toggleNote(t, "- [ ] A due:2027-03-08 @repeat:1w SKIP:2027-03-13..2027-03-21\n", "0")
-	want = "- [ ] A due:2027-03-22 @repeat:1w SKIP:2027-03-13..2027-03-21\n- [x] A due:2027-03-08 @repeat:1w SKIP:2027-03-13..2027-03-21\n"
+	got, _ = toggleNote(t, "- [ ] A due:2027-03-08 @repeat:1w @SKIP:2027-03-13/2027-03-21\n", "0")
+	want = "- [ ] A due:2027-03-22 @repeat:1w @SKIP:2027-03-13/2027-03-21\n- [x] A due:2027-03-08 @repeat:1w @SKIP:2027-03-13/2027-03-21\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -212,7 +212,7 @@ func TestTaskToggleWithoutRepeatOnlyTicks(t *testing.T) {
 	fixClock(t, "2026-11-02")
 	for _, line := range []string{
 		"- [ ] Pay rent due:2026-11-03",
-		"- [ ] A due:2027-03-15 skip:2027-03-13..2027-03-21",
+		"- [ ] A due:2027-03-15 @skip:2027-03-13/2027-03-21",
 	} {
 		got, _ := toggleNote(t, line+"\n", "0")
 		if want := strings.Replace(line, "[ ]", "[x]", 1) + "\n"; got != want {
@@ -232,44 +232,44 @@ func TestTaskToggleWithoutDatesAddsDue(t *testing.T) {
 func TestTaskToggleHonoursSkipPeriods(t *testing.T) {
 	for _, tc := range []struct{ name, today, line, open string }{
 		{"break is passed over", "2027-03-08",
-			"- [ ] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21",
-			"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w skip:2027-03-13..2027-03-21"},
+			"- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21",
+			"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21"},
 		{"back to back ranges", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-13..2027-03-21,2027-03-22..2027-03-28",
-			"- [ ] A due:2027-03-29 @repeat:1w skip:2027-03-13..2027-03-21,2027-03-22..2027-03-28"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-13/2027-03-21 @skip:2027-03-22/2027-03-28",
+			"- [ ] A due:2027-03-29 @repeat:1w @skip:2027-03-13/2027-03-21 @skip:2027-03-22/2027-03-28"},
 		{"range over several cycles", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-13..2027-04-04",
-			"- [ ] A due:2027-04-05 @repeat:1w skip:2027-03-13..2027-04-04"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-13/2027-04-04",
+			"- [ ] A due:2027-04-05 @repeat:1w @skip:2027-03-13/2027-04-04"},
 		{"counted from completion", "2027-03-12",
-			"- [ ] A due:2027-03-10 @repeat:after-3d skip:2027-03-14..2027-03-20",
-			"- [ ] A due:2027-03-21 @repeat:after-3d skip:2027-03-14..2027-03-20"},
+			"- [ ] A due:2027-03-10 @repeat:after-3d @skip:2027-03-14/2027-03-20",
+			"- [ ] A due:2027-03-21 @repeat:after-3d @skip:2027-03-14/2027-03-20"},
 		{"single date", "2027-03-12",
-			"- [ ] A due:2027-03-12 @repeat:1d skip:2027-03-13",
-			"- [ ] A due:2027-03-14 @repeat:1d skip:2027-03-13"},
+			"- [ ] A due:2027-03-12 @repeat:1d @skip:2027-03-13",
+			"- [ ] A due:2027-03-14 @repeat:1d @skip:2027-03-13"},
 		{"date and range in one token", "2027-03-12",
-			"- [ ] A due:2027-03-12 @repeat:1d skip:2027-03-13,2027-03-14..2027-03-16",
-			"- [ ] A due:2027-03-17 @repeat:1d skip:2027-03-13,2027-03-14..2027-03-16"},
+			"- [ ] A due:2027-03-12 @repeat:1d @skip:2027-03-13 @skip:2027-03-14/2027-03-16",
+			"- [ ] A due:2027-03-17 @repeat:1d @skip:2027-03-13 @skip:2027-03-14/2027-03-16"},
 		{"reversed range is ignored", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-21..2027-03-13",
-			"- [ ] A due:2027-03-15 @repeat:1w skip:2027-03-21..2027-03-13"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-21/2027-03-13",
+			"- [ ] A due:2027-03-15 @repeat:1w @skip:2027-03-21/2027-03-13"},
 		{"impossible date is ignored", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-02-30",
-			"- [ ] A due:2027-03-15 @repeat:1w skip:2027-02-30"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-02-30",
+			"- [ ] A due:2027-03-15 @repeat:1w @skip:2027-02-30"},
 		{"bad item beside a good one", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-21..2027-03-13,2027-03-15",
-			"- [ ] A due:2027-03-22 @repeat:1w skip:2027-03-21..2027-03-13,2027-03-15"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-21/2027-03-13 @skip:2027-03-15",
+			"- [ ] A due:2027-03-22 @repeat:1w @skip:2027-03-21/2027-03-13 @skip:2027-03-15"},
 		{"past period stays on the line", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2026-12-21..2027-01-03",
-			"- [ ] A due:2027-03-15 @repeat:1w skip:2026-12-21..2027-01-03"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2026-12-21/2027-01-03",
+			"- [ ] A due:2027-03-15 @repeat:1w @skip:2026-12-21/2027-01-03"},
 		{"today inside a break", "2027-03-16",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-13..2027-03-21",
-			"- [ ] A due:2027-03-22 @repeat:1w skip:2027-03-13..2027-03-21"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-13/2027-03-21",
+			"- [ ] A due:2027-03-22 @repeat:1w @skip:2027-03-13/2027-03-21"},
 		{"named period is ignored", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break",
-			"- [ ] A due:2027-03-15 @repeat:1w skip:@spring-break"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break",
+			"- [ ] A due:2027-03-15 @repeat:1w @skip:spring-break"},
 		{"named period beside a date", "2027-03-08",
-			"- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break,2027-03-15",
-			"- [ ] A due:2027-03-22 @repeat:1w skip:@spring-break,2027-03-15"},
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break @skip:2027-03-15",
+			"- [ ] A due:2027-03-22 @repeat:1w @skip:spring-break @skip:2027-03-15"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixClock(t, tc.today)
@@ -291,7 +291,7 @@ func TestTaskListNeverRewritesTaskInsideSkipPeriod(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "note.md")
-	note := "- [ ] A due:2027-03-15 @repeat:1w skip:2027-03-13..2027-03-21\n"
+	note := "- [ ] A due:2027-03-15 @repeat:1w @skip:2027-03-13/2027-03-21\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -314,9 +314,9 @@ func TestTaskListNeverRewritesTaskInsideSkipPeriod(t *testing.T) {
 func TestTaskToggleAdvancesRepeatingTaskNote(t *testing.T) {
 	t.Run("plain date", func(t *testing.T) {
 		fixClock(t, "2027-03-08")
-		in := "---\ntags: [task]\nstatus: open\ndue: 2027-03-08T09:00\nrepeat: 1w\nskip: [2027-03-13..2027-03-21, 2027-04-02]\n---\n\n# Class\n"
+		in := "---\ntags: [task]\nstatus: open\ndue: 2027-03-08T09:00\nrepeat: 1w\nskip: [2027-03-13/2027-03-21, 2027-04-02]\n---\n\n# Class\n"
 		got, _ := toggleNote(t, in, "task")
-		for _, want := range []string{"due: 2027-03-22T09:00", "status: open", "lastCompleted: 2027-03-08", "skip: [2027-03-13..2027-03-21, 2027-04-02]"} {
+		for _, want := range []string{"due: 2027-03-22T09:00", "status: open", "lastCompleted: 2027-03-08", "skip: [2027-03-13/2027-03-21, 2027-04-02]"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("missing %q in:\n%s", want, got)
 			}
@@ -378,30 +378,30 @@ func TestTaskToggleJSONReportsTheTickedTask(t *testing.T) {
 func TestTaskToggleStopsAtUntil(t *testing.T) {
 	t.Run("copy before the end", func(t *testing.T) {
 		fixClock(t, "2026-11-02")
-		got, _ := toggleNote(t, "- [ ] T due:2026-11-02 @repeat:1d until:2026-11-03\n", "0")
-		want := "- [ ] T due:2026-11-03 @repeat:1d until:2026-11-03\n- [x] T due:2026-11-02 @repeat:1d until:2026-11-03\n"
+		got, _ := toggleNote(t, "- [ ] T due:2026-11-02 @repeat:1d @until:2026-11-03\n", "0")
+		want := "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n- [x] T due:2026-11-02 @repeat:1d @until:2026-11-03\n"
 		if got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
 	})
 	t.Run("last date", func(t *testing.T) {
 		fixClock(t, "2026-11-03")
-		got, _ := toggleNote(t, "- [ ] T due:2026-11-03 @repeat:1d until:2026-11-03\n", "0")
-		if want := "- [x] T due:2026-11-03 @repeat:1d until:2026-11-03\n"; got != want {
+		got, _ := toggleNote(t, "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n", "0")
+		if want := "- [x] T due:2026-11-03 @repeat:1d @until:2026-11-03\n"; got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
 	})
 	t.Run("skip reaches past the end", func(t *testing.T) {
 		fixClock(t, "2026-11-02")
-		in := "- [ ] T due:2026-11-02 @repeat:1d skip:2026-11-03 until:2026-11-03\n"
+		in := "- [ ] T due:2026-11-02 @repeat:1d @skip:2026-11-03 @until:2026-11-03\n"
 		got, _ := toggleNote(t, in, "0")
-		if want := "- [x] T due:2026-11-02 @repeat:1d skip:2026-11-03 until:2026-11-03\n"; got != want {
+		if want := "- [x] T due:2026-11-02 @repeat:1d @skip:2026-11-03 @until:2026-11-03\n"; got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
 	})
 	t.Run("json reports the ticked task", func(t *testing.T) {
 		fixClock(t, "2026-11-03")
-		_, out := toggleNote(t, "- [ ] T due:2026-11-03 @repeat:1d until:2026-11-03\n", "0", "--json")
+		_, out := toggleNote(t, "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n", "0", "--json")
 		var task struct {
 			ID      string `json:"id"`
 			Checked bool   `json:"checked"`
@@ -464,8 +464,8 @@ func writeEventNote(t *testing.T, root, folder, title, front string) {
 // title. A name that no single live event note answers skips nothing.
 func TestTaskToggleResolvesNamedSkip(t *testing.T) {
 	const spring = "when: 2027-03-13..2027-03-21\n"
-	const task = "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break"
-	const later = "- [ ] Assignment due:2028-03-08T23:59 @repeat:1w skip:@spring-break"
+	const task = "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break"
+	const later = "- [ ] Assignment due:2028-03-08T23:59 @repeat:1w @skip:spring-break"
 	for _, tc := range []struct {
 		name, today, line, due string
 		prepare                func(t *testing.T, root string)
@@ -513,7 +513,7 @@ func TestTaskToggleResolvesNamedSkip(t *testing.T) {
 			}
 			tc.prepare(t, root)
 			got, _ := toggleNoteIn(t, root, tc.line+"\n", "0")
-			open := "- [ ] Assignment due:" + tc.due + " @repeat:1w skip:@spring-break"
+			open := "- [ ] Assignment due:" + tc.due + " @repeat:1w @skip:spring-break"
 			done := strings.Replace(tc.line, "[ ]", "[x]", 1)
 			if want := open + "\n" + done + "\n"; got != want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
@@ -527,9 +527,61 @@ func TestTaskToggleNamedSkipStopsAtUntil(t *testing.T) {
 	fixClock(t, "2027-03-08")
 	root := isolatedCLI(t)
 	writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13..2027-03-21\n")
-	line := "- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break until:2027-03-20"
+	line := "- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break @until:2027-03-20"
 	got, _ := toggleNoteIn(t, root, line+"\n", "0")
 	if want := strings.Replace(line, "[ ]", "[x]", 1) + "\n"; got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
+}
+
+// `@skip:` and `@until:` are fields: one item for each `@skip:`, a range with
+// a slash, and a name that starts with a letter. A bare `skip:` or `until:` is
+// plain text.
+func TestTaskToggleSkipAndUntilFields(t *testing.T) {
+	for _, tc := range []struct {
+		name, today, in, want string
+	}{
+		{"range", "2027-03-08",
+			"- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:2027-03-13/2027-03-21\n",
+			"- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:2027-03-13/2027-03-21\n" +
+				"- [x] Assignment due:2027-03-08T23:59 @repeat:1w @skip:2027-03-13/2027-03-21\n"},
+		{"fields add up", "2027-03-08",
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-15 @skip:2027-03-22\n",
+			"- [ ] A due:2027-03-29 @repeat:1w @skip:2027-03-15 @skip:2027-03-22\n" +
+				"- [x] A due:2027-03-08 @repeat:1w @skip:2027-03-15 @skip:2027-03-22\n"},
+		{"dots end the value", "2027-03-08",
+			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-13..2027-03-21\n",
+			"- [ ] A due:2027-03-15 @repeat:1w @skip:2027-03-13..2027-03-21\n" +
+				"- [x] A due:2027-03-08 @repeat:1w @skip:2027-03-13..2027-03-21\n"},
+		{"until on the last date", "2026-12-14",
+			"- [ ] Lab due:2026-12-14 @repeat:1w @until:2026-12-14\n",
+			"- [x] Lab due:2026-12-14 @repeat:1w @until:2026-12-14\n"},
+		{"until after the next date", "2026-12-14",
+			"- [ ] Lab due:2026-12-14 @repeat:1w @until:2026-12-21\n",
+			"- [ ] Lab due:2026-12-21 @repeat:1w @until:2026-12-21\n" +
+				"- [x] Lab due:2026-12-14 @repeat:1w @until:2026-12-21\n"},
+		{"bare tokens", "2027-03-08",
+			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-15 until:2027-03-01\n",
+			"- [ ] A due:2027-03-15 @repeat:1w skip:2027-03-15 until:2027-03-01\n" +
+				"- [x] A due:2027-03-08 @repeat:1w skip:2027-03-15 until:2027-03-01\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixClock(t, tc.today)
+			got, _ := toggleNote(t, tc.in, "0")
+			if got != tc.want {
+				t.Fatalf("got:\n%s\nwant:\n%s", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("a name", func(t *testing.T) {
+		fixClock(t, "2027-03-08")
+		root := isolatedCLI(t)
+		writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13..2027-03-21\n")
+		in := "- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break\n"
+		got, _ := toggleNoteIn(t, root, in, "0")
+		if want := "- [ ] A due:2027-03-22 @repeat:1w @skip:spring-break\n- [x] A due:2027-03-08 @repeat:1w @skip:spring-break\n"; got != want {
+			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+		}
+	})
 }

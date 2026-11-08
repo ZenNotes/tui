@@ -23,8 +23,6 @@ var (
 	taskLineRe       = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[)( |x|X|>|-|/)(\].*)$`)
 	cliFenceRe       = regexp.MustCompile("^(\\s{0,3})(`{3,}|~{3,})")
 	inlineDueRe      = regexp.MustCompile(`(?i)(?:^|\s)due:\s*(\S+)`)
-	inlineSkipRe     = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
-	inlineUntilRe    = regexp.MustCompile(`(?i)(?:^|\s)until:(\S+)`)
 	inlinePriorityRe = regexp.MustCompile(`(?i)(?:^|\s)!(high|med|medium|low|h|m|l)\b`)
 	inlineWaitingRe  = regexp.MustCompile(`(?i)(?:^|\s)@waiting\b`)
 	inlineFieldRe    = regexp.MustCompile(`(?i)(?:^|\s)@([a-z][a-z0-9_-]*):([\p{L}\d][\p{L}\d/_-]*)`)
@@ -411,23 +409,17 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 			t.repeat = strings.ToLower(rm[1])
 		}
 	}
-	// Several skip tokens add up. Like repeat, every token leaves the content
-	// and only its valid items are kept.
-	if sm := inlineSkipRe.FindAllStringSubmatch(stripped, -1); sm != nil {
-		for _, m := range sm {
-			items, _, names := ParseSkipItems(m[1])
-			t.skip = append(t.skip, items...)
-			t.skipNames = append(t.skipNames, names...)
-		}
-		stripped = inlineSkipRe.ReplaceAllString(stripped, " ")
+	// Several `@skip:` fields add up, and only their valid items are kept. The
+	// fields stay in the text here, as `@repeat:` does.
+	for _, m := range skipFieldRe.FindAllStringSubmatch(tail, -1) {
+		items, _, names := ParseSkipItems(m[1])
+		t.skip = append(t.skip, items...)
+		t.skipNames = append(t.skipNames, names...)
 	}
-	// Every until token leaves the content. Only the first one can set the end
-	// date, and only for a task with a valid rule and a date without a time.
-	if um := inlineUntilRe.FindStringSubmatch(stripped); um != nil {
-		if t.repeat != "" {
-			t.until = validUntil(um[1])
-		}
-		stripped = inlineUntilRe.ReplaceAllString(stripped, " ")
+	// Only the first `@until:` field can set the end date, and only for a task
+	// with a valid rule and a date without a time.
+	if um := untilFieldRe.FindStringSubmatch(tail); um != nil && t.repeat != "" {
+		t.until = validUntil(um[1])
 	}
 	if pm := inlinePriorityRe.FindStringSubmatch(stripped); pm != nil {
 		t.priority = NormalizePriority(pm[1])

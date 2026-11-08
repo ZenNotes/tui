@@ -21,7 +21,7 @@ type TaskRollInput struct {
 	Now     time.Time
 	// WeekStart is the first day of the week.
 	WeekStart time.Weekday
-	// Names resolves the `@name` items of a `skip:` token. It can be nil.
+	// Names resolves the names in `@skip:` fields. It can be nil.
 	Names SkipResolver
 	// Tasks and Events are every task and every event of the vault. They tell
 	// the roll which sessions the task has.
@@ -70,7 +70,7 @@ type TaskRollPlan struct {
 // `due`, else from today. The `due` date and each session move by the same
 // number of days. A session is copied directly below its original, with its
 // `when:` moved and its `task:` link on the new occurrence. A link to a whole
-// note stays as it is. The copy has no `until:` and no block id of its own.
+// note stays as it is. The copy has no `@until:` and no block id of its own.
 // The inserted open line gets a new block id only when the task has current
 // sessions.
 //
@@ -243,7 +243,7 @@ func sessionsOfTask(target Task, tasks []Task, events []Event) (current []Event,
 
 // sessionCopyLine makes the copy of a session line. The `when:` value moves
 // by days. The link moves to newID when newID is not empty and the link names
-// a block. The copy loses `until:` tokens and a block id. It gives false when
+// a block. The copy loses `@until:` fields and a block id. It gives false when
 // the line is no longer the session that when names.
 func sessionCopyLine(line, when string, days int, newID string) (string, bool) {
 	line = strings.TrimRight(line, "\r")

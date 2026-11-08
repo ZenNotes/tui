@@ -68,7 +68,7 @@ func TestEventNoteIsReadFromFrontmatter(t *testing.T) {
 }
 
 func TestEventNoteKeepsRuleSkipAndLink(t *testing.T) {
-	body := "---\npage-type: event\nwhen: 2026-11-02T09:00-10:30\nrepeat: after-1W\nuntil: 2027-01-01\nskip: [2026-11-16, @easter]\ntask: \"[[Work#^ab12cd]]\"\n---\n"
+	body := "---\npage-type: event\nwhen: 2026-11-02T09:00-10:30\nrepeat: after-1W\nuntil: 2027-01-01\nskip: [2026-11-16, easter]\ntask: \"[[Work#^ab12cd]]\"\n---\n"
 	e := oneEvent(t, body)
 	if e.Repeat != "1w" || e.Until != "2027-01-01" || e.TaskLink != "[[Work#^ab12cd]]" {
 		t.Errorf("got %+v", e)
@@ -122,11 +122,11 @@ func TestEventNoteBodyKeepsTasksAndInlineEvents(t *testing.T) {
 }
 
 func TestInlineEventTextAndTokens(t *testing.T) {
-	e := oneEvent(t, "- Lecture #uni when:2026-11-03T09:00-10:30 @repeat:1w skip:2026-12-21..2027-01-03 until:2027-06-01 task:[[Work#^ab12cd]] ^lec1\n")
+	e := oneEvent(t, "- Lecture #uni when:2026-11-03T09:00-10:30 @repeat:1w @skip:2026-12-21/2027-01-03 @until:2027-06-01 task:[[Work#^ab12cd]] ^lec1\n")
 	if e.Text != "Lecture #uni" || e.Repeat != "1w" || e.Until != "2027-06-01" || e.BlockID != "lec1" {
 		t.Errorf("got %+v", e)
 	}
-	if !reflect.DeepEqual(e.Skip, []string{"2026-12-21..2027-01-03"}) || e.TaskLink != "[[Work#^ab12cd]]" {
+	if !reflect.DeepEqual(e.Skip, []string{"2026-12-21/2027-01-03"}) || e.TaskLink != "[[Work#^ab12cd]]" {
 		t.Errorf("got %+v", e)
 	}
 	if e.Kind != EventKindInline || e.Path != "Plans.md" || e.NoteTitle != "Plans" {
@@ -140,7 +140,7 @@ func TestInlineEventTextAndTokens(t *testing.T) {
 	if got := oneEvent(t, "- Gym when:2026-11-02T07:00 @repeat:after-1w\n"); got.Repeat != "1w" {
 		t.Errorf("repeat = %q, want the after- prefix dropped", got.Repeat)
 	}
-	if got := oneEvent(t, "- Gym when:2026-11-02 until:2027-01-01\n"); got.Until != "" {
+	if got := oneEvent(t, "- Gym when:2026-11-02 @until:2027-01-01\n"); got.Until != "" {
 		t.Errorf("until = %q, want none without a rule", got.Until)
 	}
 	if got := oneEvent(t, "- Gym  when:2026-11-02   `a  b`\n"); got.Text != "Gym `a b`" {

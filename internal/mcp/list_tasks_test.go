@@ -96,7 +96,7 @@ func TestListTasksCarriesValidSkipItems(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	note := "- [ ] Assignment @repeat:1w skip:2027-03-13..2027-03-21,2027-04-02,2027-03-21..2027-03-13\n- [ ] Pay rent\n"
+	note := "- [ ] Assignment @repeat:1w @skip:2027-03-13/2027-03-21 @skip:2027-04-02 @skip:2027-03-21/2027-03-13\n- [ ] Pay rent\n"
 	if err := os.WriteFile(filepath.Join(root, "inbox", "todo.md"), []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -115,11 +115,11 @@ func TestListTasksCarriesValidSkipItems(t *testing.T) {
 	for _, task := range tasks {
 		byContent[task["content"].(string)] = task
 	}
-	assignment, rent := byContent["Assignment @repeat:1w"], byContent["Pay rent"]
+	assignment, rent := byContent["Assignment @repeat:1w @skip:2027-03-13/2027-03-21 @skip:2027-04-02 @skip:2027-03-21/2027-03-13"], byContent["Pay rent"]
 	if assignment == nil || rent == nil {
 		t.Fatalf("got %s", text)
 	}
-	if got, _ := assignment["skip"].([]any); !reflect.DeepEqual(got, []any{"2027-03-13..2027-03-21", "2027-04-02"}) {
+	if got, _ := assignment["skip"].([]any); !reflect.DeepEqual(got, []any{"2027-03-13/2027-03-21", "2027-04-02"}) {
 		t.Fatalf("assignment: %+v", assignment)
 	}
 	if _, present := rent["skip"]; present {
@@ -172,7 +172,7 @@ func TestListTasksCarriesUntil(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	note := "- [ ] Assignment @repeat:1w until:2027-03-21\n- [ ] Pay rent\n"
+	note := "- [ ] Assignment @repeat:1w @until:2027-03-21\n- [ ] Pay rent\n"
 	if err := os.WriteFile(filepath.Join(root, "inbox", "todo.md"), []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestListTasksCarriesUntil(t *testing.T) {
 	for _, task := range tasks {
 		byContent[task["content"].(string)] = task
 	}
-	assignment, rent := byContent["Assignment @repeat:1w"], byContent["Pay rent"]
+	assignment, rent := byContent["Assignment @repeat:1w @until:2027-03-21"], byContent["Pay rent"]
 	if assignment == nil || rent == nil {
 		t.Fatalf("got %s", text)
 	}

@@ -105,9 +105,9 @@ func TestTaskToggleCopiesWorkSessions(t *testing.T) {
 		},
 		{
 			name: "skip period", today: "2027-03-08",
-			work:      "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
+			work:      "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd\n",
 			plans:     "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n",
-			wantWork:  "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^{ID}\n- [x] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
+			wantWork:  "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^{ID}\n- [x] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd\n",
 			wantPlans: "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n- Assignment task:[[Work#^{ID}]] when:2027-03-22T09:00-11:00\n",
 		},
 		{
@@ -140,17 +140,17 @@ func TestTaskToggleCopiesWorkSessions(t *testing.T) {
 		},
 		{
 			name: "at the until date", today: "2026-12-14",
-			work:      "- [ ] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
+			work:      "- [ ] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n",
 			plans:     "- Lab task:[[Work#^ab12cd]] when:2026-12-14T09:00\n",
-			wantWork:  "- [x] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
+			wantWork:  "- [x] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n",
 			wantPlans: "- Lab task:[[Work#^ab12cd]] when:2026-12-14T09:00\n",
 		},
 		{
 			name: "copy carries no until", today: "2026-12-07",
-			work:      "- [ ] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
-			plans:     "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 until:2026-12-20\n",
-			wantWork:  "- [ ] Lab @repeat:1w until:2026-12-14 ^{ID}\n- [x] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
-			wantPlans: "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 until:2026-12-20\n- Lab task:[[Work#^{ID}]] when:2026-12-14T09:00\n",
+			work:      "- [ ] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n",
+			plans:     "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 @until:2026-12-20\n",
+			wantWork:  "- [ ] Lab @repeat:1w @until:2026-12-14 ^{ID}\n- [x] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n",
+			wantPlans: "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 @until:2026-12-20\n- Lab task:[[Work#^{ID}]] when:2026-12-14T09:00\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

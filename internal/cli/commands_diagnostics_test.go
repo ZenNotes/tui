@@ -240,26 +240,15 @@ func TestDoctorScansOnlySelectedWorkspace(t *testing.T) {
 func TestDoctorListsBadSkipItems(t *testing.T) {
 	isolatedCLI(t)
 	root := t.TempDir()
-	writeVaultFile(t, root, "s.md", "- [ ] away @repeat:1w skip:2027-03-21..2027-03-13,2027-02-30,2027-04-01\n")
+	writeVaultFile(t, root, "s.md", "- [ ] away @repeat:1w @skip:2027-03-21/2027-03-13 @skip:2027-02-30 @skip:2027-04-01\n")
 	out, _ := doctorText(t, root)
-	for _, want := range []string{"s.md:1", "skip:2027-03-21..2027-03-13", "skip:2027-02-30"} {
+	for _, want := range []string{"s.md:1", "@skip:2027-03-21/2027-03-13", "@skip:2027-02-30"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output lacks %q:\n%s", want, out)
 		}
 	}
 	if strings.Contains(out, "2027-04-01") {
 		t.Fatalf("a valid skip day was reported:\n%s", out)
-	}
-}
-
-// A reserved skip name is never a warning.
-func TestDoctorIgnoresReservedSkipNames(t *testing.T) {
-	isolatedCLI(t)
-	root := t.TempDir()
-	writeVaultFile(t, root, "s.md", "- [ ] away @repeat:1w skip:@holidays,@school\n")
-	out, _ := doctorText(t, root)
-	if strings.Contains(out, "WARN") || strings.Contains(out, "@holidays") {
-		t.Fatalf("a reserved skip name was reported:\n%s", out)
 	}
 }
 
@@ -291,5 +280,23 @@ func TestDoctorIgnoresScheduled(t *testing.T) {
 	}
 	if fields := strings.Fields(check.Hint[0]); len(fields) < 3 {
 		t.Fatalf("no reason in %q", check.Hint[0])
+	}
+}
+
+// A skip name that no single event note answers is listed with the reason. A
+// name that one event note answers is not.
+func TestDoctorListsUnresolvedSkipName(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	writeVaultFile(t, root, "s.md", "- [ ] a @repeat:1w @skip:holidays @skip:spring-break\n")
+	writeVaultFile(t, root, "events/Spring Break.md", "---\npage-type: event\nwhen: 2027-03-13\n---\n")
+	out, _ := doctorText(t, root)
+	for _, want := range []string{"s.md:1", "@skip:holidays", "no event note"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "@skip:spring-break") {
+		t.Fatalf("a name that an event note answers was reported:\n%s", out)
 	}
 }

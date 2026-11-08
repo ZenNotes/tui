@@ -133,7 +133,7 @@ func TestToggleTaskToolStopsAtUntil(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "plants.md")
-	note := "- [ ] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
+	note := "- [ ] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestToggleTaskToolStopsAtUntil(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "- [x] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
+	want := "- [x] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -189,7 +189,7 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "work.md")
-	note := "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break\n"
+	note := "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -201,8 +201,8 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w skip:@spring-break\n" +
-		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break\n"
+	want := "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:spring-break\n" +
+		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)

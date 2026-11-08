@@ -212,8 +212,8 @@ func TestFooterShowsDanglingLink(t *testing.T) {
 
 func TestFooterShowsRepeatUntil(t *testing.T) {
 	files := map[string]string{
-		"Work.md":  "- [ ] Standup due:2026-11-03T14:00 @repeat:1w until:2026-12-14\n",
-		"Plans.md": "- Review when:2026-11-03T16:00 @repeat:1w until:2026-11-23\n",
+		"Work.md":  "- [ ] Standup due:2026-11-03T14:00 @repeat:1w @until:2026-12-14\n",
+		"Plans.md": "- Review when:2026-11-03T16:00 @repeat:1w @until:2026-11-23\n",
 	}
 	a, tv, _ := calCursorApp(t, files, calDay, false)
 	calDownTo(a, tv, 14)

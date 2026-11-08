@@ -25,12 +25,12 @@ const (
 // plain text and stays as written.
 // Every other case is the plain toggle or cancel, with nothing inserted: no
 // rule, an invalid rule, unticking, reopening, a forwarded task, or a rule
-// with no date left to land on, such as one that has reached its `until:`
+// with no date left to land on, such as one that has reached its `@until:`
 // date.
 //
 // The next date counts from `due:`, else today, and from today when the rule
 // starts with `after-`. It is the first date of the rule after that and after
-// today that no `skip:` period covers and that is not past the `until:` date.
+// today that no `@skip:` period covers and that is not past the `@until:` date.
 // The copied subtasks' dates move by the same number of days as the task's
 // `due:`, and each keeps its `THH:MM`. A task with no `due:` gets `due:` on the
 // copy. The copies drop a block id that ends their line, and the originals
@@ -48,9 +48,9 @@ func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action Ro
 	return RollTaskInBodyWith(body, targetIndex, dialect, action, now, weekStart, nil)
 }
 
-// RollTaskInBodyWith is RollTaskInBody with a resolver for the `@name` items of
-// a `skip:` token. The days that names gives for a name count as skip periods.
-// A nil names leaves these items without effect.
+// RollTaskInBodyWith is RollTaskInBody with a resolver for the names in
+// `@skip:` fields. The days that names gives for a name count as skip periods.
+// A nil names leaves these names without effect.
 func RollTaskInBodyWith(body string, targetIndex int, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver) (next string, inserted int, ok bool) {
 	res := rollTaskLines(body, targetIndex, dialect, action, now, weekStart, names, rollSessions{})
 	return res.next, res.inserted, res.ok

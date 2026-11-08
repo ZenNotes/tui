@@ -183,9 +183,9 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 		t.Errorf("cancel: note = %q, want %q", got, want)
 	}
 
-	// A task with a work session and a `skip:@` item is only ticked: the
+	// A task with a work session and a `@skip:` item is only ticked: the
 	// session note stays as it was.
-	line := "- [ ] Water plants due:2026-11-02 @repeat:mon/thu skip:@Holiday ^ab12cd\n"
+	line := "- [ ] Water plants due:2026-11-02 @repeat:mon/thu @skip:Holiday ^ab12cd\n"
 	session := "- Water plants task:[[note#^ab12cd]] when:2026-11-03T09:00-09:15\n"
 	plans := filepath.Join(filepath.Dir(path), "Plans.md")
 	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
@@ -195,7 +195,7 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.toggleTask(repeatTaskAt(t, path))
-	want = "- [x] Water plants due:2026-11-02 @repeat:mon/thu skip:@Holiday ^ab12cd\n"
+	want = "- [x] Water plants due:2026-11-02 @repeat:mon/thu @skip:Holiday ^ab12cd\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("session toggle: note = %q, want %q", got, want)
 	}
@@ -299,15 +299,15 @@ func TestBoardDoneColumnChecksForwardedTask(t *testing.T) {
 }
 
 const (
-	untilLine = "- [ ] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
+	untilLine = "- [ ] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
 	untilNote = "---\ntags: [task]\nstatus: open\ndue: 2026-11-03\nrepeat: 1d\nuntil: 2026-11-03\n---\n"
 )
 
 // On the last date the Tasks view, the board, the editor and a cancel only
 // change the one line, and a task note is finished for good.
 func TestTasksViewBoardAndEditorStopAtUntil(t *testing.T) {
-	ticked := "- [x] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
-	cancelled := "- [-] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
+	ticked := "- [x] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
+	cancelled := "- [-] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
 
 	t.Run("tasks view toggle", func(t *testing.T) {
 		a, path := repeatTasksApp(t, untilLine, "2026-11-03")

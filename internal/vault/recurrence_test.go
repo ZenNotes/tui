@@ -237,7 +237,7 @@ func TestNextOccurrenceFromCompletionDate(t *testing.T) {
 	if !ok || got != "2026-11-07" {
 		t.Errorf("got %q, %v; want 2026-11-07", got, ok)
 	}
-	got, ok = nextFrom(t, "after-3d", "2027-03-12", "2027-03-12", time.Monday, "2027-03-14..2027-03-20")
+	got, ok = nextFrom(t, "after-3d", "2027-03-12", "2027-03-12", time.Monday, "2027-03-14/2027-03-20")
 	if !ok || got != "2027-03-21" {
 		t.Errorf("with a break: got %q, %v; want 2027-03-21", got, ok)
 	}
@@ -248,19 +248,19 @@ func TestNextOccurrencePassesOverSkipPeriods(t *testing.T) {
 		name, rule, base, today, want string
 		skip                          []string
 	}{
-		{"range", "1w", "2027-03-08", "2027-03-08", "2027-03-22", []string{"2027-03-13..2027-03-21"}},
+		{"range", "1w", "2027-03-08", "2027-03-08", "2027-03-22", []string{"2027-03-13/2027-03-21"}},
 		{"back to back ranges", "1w", "2027-03-08", "2027-03-08", "2027-03-29",
-			[]string{"2027-03-13..2027-03-21", "2027-03-22..2027-03-28"}},
-		{"range over several cycles", "1w", "2027-03-08", "2027-03-08", "2027-04-05", []string{"2027-03-13..2027-04-04"}},
+			[]string{"2027-03-13/2027-03-21", "2027-03-22/2027-03-28"}},
+		{"range over several cycles", "1w", "2027-03-08", "2027-03-08", "2027-04-05", []string{"2027-03-13/2027-04-04"}},
 		{"single day", "1d", "2027-03-12", "2027-03-12", "2027-03-14", []string{"2027-03-13"}},
 		{"day and range", "1d", "2027-03-12", "2027-03-12", "2027-03-17",
-			[]string{"2027-03-13", "2027-03-14..2027-03-16"}},
-		{"ignored reversed range", "1w", "2027-03-08", "2027-03-08", "2027-03-15", []string{"2027-03-21..2027-03-13"}},
+			[]string{"2027-03-13", "2027-03-14/2027-03-16"}},
+		{"ignored reversed range", "1w", "2027-03-08", "2027-03-08", "2027-03-15", []string{"2027-03-21/2027-03-13"}},
 		{"ignored unreal day", "1w", "2027-03-08", "2027-03-08", "2027-03-15", []string{"2027-02-30"}},
 		{"reversed range beside a valid day", "1w", "2027-03-08", "2027-03-08", "2027-03-22",
-			[]string{"2027-03-21..2027-03-13", "2027-03-15"}},
-		{"today inside the break", "1w", "2027-03-08", "2027-03-16", "2027-03-22", []string{"2027-03-13..2027-03-21"}},
-		{"anchored rule", "mon/thu", "2027-03-08", "2027-03-08", "2027-03-22", []string{"2027-03-09..2027-03-21"}},
+			[]string{"2027-03-21/2027-03-13", "2027-03-15"}},
+		{"today inside the break", "1w", "2027-03-08", "2027-03-16", "2027-03-22", []string{"2027-03-13/2027-03-21"}},
+		{"anchored rule", "mon/thu", "2027-03-08", "2027-03-08", "2027-03-22", []string{"2027-03-09/2027-03-21"}},
 		{"reserved name", "1w", "2027-03-08", "2027-03-08", "2027-03-15", []string{"@spring-break"}},
 		{"reserved name beside a day", "1w", "2027-03-08", "2027-03-08", "2027-03-22",
 			[]string{"@spring-break,2027-03-15"}},
@@ -275,7 +275,7 @@ func TestNextOccurrencePassesOverSkipPeriods(t *testing.T) {
 }
 
 func TestNextOccurrenceIgnoresPastSkipPeriods(t *testing.T) {
-	got, ok := nextFrom(t, "1w", "2027-03-08", "2027-03-08", time.Monday, "2026-12-21..2027-01-03")
+	got, ok := nextFrom(t, "1w", "2027-03-08", "2027-03-08", time.Monday, "2026-12-21/2027-01-03")
 	if !ok || got != "2027-03-15" {
 		t.Errorf("got %q, %v; want 2027-03-15", got, ok)
 	}
@@ -283,7 +283,7 @@ func TestNextOccurrenceIgnoresPastSkipPeriods(t *testing.T) {
 
 func TestNextOccurrenceStopsAtSearchCap(t *testing.T) {
 	for _, rule := range []string{"1d", "mon", "monthly-15", "yearly-03-15", "monthly-last-fri"} {
-		got, ok := nextFrom(t, rule, "2027-03-08", "2027-03-08", time.Monday, "2027-03-09..2999-12-31")
+		got, ok := nextFrom(t, rule, "2027-03-08", "2027-03-08", time.Monday, "2027-03-09/2999-12-31")
 		if ok {
 			t.Errorf("@repeat:%s found %q inside a skip range of centuries", rule, got)
 		}
@@ -348,11 +348,11 @@ func TestNextOccurrenceStopsAtUntil(t *testing.T) {
 		t.Errorf("past until = %q, want no occurrence", got)
 	}
 	// A skipped date comes first, and the date after it lies past until.
-	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-04", "2026-11-03..2026-11-05"); ok {
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-04", "2026-11-03/2026-11-05"); ok {
 		t.Errorf("skip up to past until = %q, want no occurrence", got)
 	}
 	// A skip period before until leaves the later date inside until.
-	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-06", "2026-11-03..2026-11-04"); !ok || got != "2026-11-05" {
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2026-11-06", "2026-11-03/2026-11-04"); !ok || got != "2026-11-05" {
 		t.Errorf("skip then until = %q, %v; want 2026-11-05", got, ok)
 	}
 	// An until date before the base date leaves no occurrence.
@@ -369,7 +369,7 @@ func TestNextOccurrenceStopsAtUntil(t *testing.T) {
 	}
 	// A skip that covers everything up to a far until date ends the search.
 	start := time.Now()
-	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2099-12-31", "2026-11-03..2099-12-31"); ok {
+	if got, ok := nextUntil(t, "1d", "2026-11-02", "2026-11-02", "2099-12-31", "2026-11-03/2099-12-31"); ok {
 		t.Errorf("skip to until = %q, want no occurrence", got)
 	}
 	if time.Since(start) > 5*time.Second {

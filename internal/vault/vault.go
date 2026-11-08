@@ -1284,7 +1284,7 @@ func (v *Vault) LoadRollContext(in *TaskRollInput) {
 	v.loadRollContext(in, ParseTasksOptions{IncludeExcluded: true, Dialect: in.Dialect})
 }
 
-// SkipResolverAt gives the resolver for the `@name` items of a `skip:` token,
+// SkipResolverAt gives the resolver for the names in `@skip:` fields,
 // for a roll at the time now. Events are read at the first name only.
 func (v *Vault) SkipResolverAt(now time.Time) SkipResolver { return v.skipResolver(now) }
 

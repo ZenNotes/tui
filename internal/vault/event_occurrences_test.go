@@ -19,7 +19,7 @@ func occurrenceDays(t *testing.T, body, from, to string) []string {
 }
 
 func TestRepeatingEventSkipsItsSkipDates(t *testing.T) {
-	got := occurrenceDays(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:1w skip:2026-11-16", "2026-11-01", "2026-11-30")
+	got := occurrenceDays(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:1w @skip:2026-11-16", "2026-11-01", "2026-11-30")
 	want := []string{"2026-11-02", "2026-11-09", "2026-11-23", "2026-11-30"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
@@ -58,12 +58,12 @@ func TestMultiDayEventRepeatsWithItsLength(t *testing.T) {
 }
 
 func TestEventStopsAtUntil(t *testing.T) {
-	got := occurrenceDays(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:1w until:2026-11-23", "2026-11-01", "2026-11-30")
+	got := occurrenceDays(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:1w @until:2026-11-23", "2026-11-01", "2026-11-30")
 	want := []string{"2026-11-02", "2026-11-09", "2026-11-16", "2026-11-23"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	got = occurrenceDays(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:1w until:2026-11-23 skip:2026-11-16", "2026-11-01", "2026-11-30")
+	got = occurrenceDays(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:1w @until:2026-11-23 @skip:2026-11-16", "2026-11-01", "2026-11-30")
 	want = []string{"2026-11-02", "2026-11-09", "2026-11-23"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("with skip: got %v, want %v", got, want)
@@ -74,7 +74,7 @@ func TestEventStopsAtUntil(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("note: got %v, want %v", got, want)
 	}
-	e := oneEvent(t, "- Trip when:2026-11-06..2026-11-08 @repeat:1w until:2026-11-13")
+	e := oneEvent(t, "- Trip when:2026-11-06..2026-11-08 @repeat:1w @until:2026-11-13")
 	var starts, ends []string
 	for _, o := range EventOccurrences(e, "2026-11-01", "2026-12-31", time.Monday, nil) {
 		starts, ends = append(starts, o.StartDate), append(ends, o.EndDate)
@@ -86,14 +86,14 @@ func TestEventStopsAtUntil(t *testing.T) {
 }
 
 func TestEventUntilWithoutRepeatShowsOnlyItsDate(t *testing.T) {
-	got := occurrenceDays(t, "- E when:2026-11-03 until:2026-12-01", "2026-11-01", "2026-12-31")
+	got := occurrenceDays(t, "- E when:2026-11-03 @until:2026-12-01", "2026-11-01", "2026-12-31")
 	if want := []string{"2026-11-03"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
 func TestEventUntilBeforeStartShowsOnlyFirstDate(t *testing.T) {
-	got := occurrenceDays(t, "- E when:2026-11-10 @repeat:1w until:2026-11-01", "2026-11-01", "2026-12-31")
+	got := occurrenceDays(t, "- E when:2026-11-10 @repeat:1w @until:2026-11-01", "2026-11-01", "2026-12-31")
 	if want := []string{"2026-11-10"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}

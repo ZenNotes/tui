@@ -147,12 +147,12 @@ type Task struct {
 	// Scheduled carries the `scheduled` value that a remote server sends. A
 	// local scan never sets it.
 	Scheduled string `json:"scheduled,omitempty"`
-	// Repeat is the lower-cased `repeat:` rule, empty when the task has none or
+	// Repeat is the lower-cased `@repeat:` rule, empty when the task has none or
 	// the rule does not parse.
 	Repeat string `json:"repeat,omitempty"`
-	// Skip holds the valid `skip:` items in their written form: days and
-	// inclusive ranges that a repeating task passes over. Reserved `@name`
-	// items and invalid ones are not here.
+	// Skip holds the valid `@skip:` items in their written form: days and
+	// inclusive ranges that a repeating task passes over.
+	// Names and invalid items are not here.
 	Skip []string `json:"skip,omitempty"`
 	// Until is the last date a repeating task may land on, as `YYYY-MM-DD`.
 	// It is empty unless the task has a valid rule and a valid date.

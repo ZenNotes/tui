@@ -89,8 +89,8 @@ func TestPlanRollCountsFromEarliestSession(t *testing.T) {
 			"- [ ] T due:2026-11-07T17:00-17:30 @repeat:3d ^" + id, "when:2026-11-05T09:30-10:00"},
 		{"from completion", "2026-11-04", "- [ ] T due:2026-11-03 @repeat:after-3d ^ab12cd", "when:2026-11-02",
 			"- [ ] T due:2026-11-08 @repeat:after-3d ^" + id, "when:2026-11-07"},
-		{"skip period", "2027-03-08", "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd", "when:2027-03-08T09:00-11:00",
-			"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^" + id, "when:2027-03-22T09:00-11:00"},
+		{"skip period", "2027-03-08", "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd", "when:2027-03-08T09:00-11:00",
+			"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^" + id, "when:2027-03-22T09:00-11:00"},
 		{"across midnight", "2026-11-02", "- [ ] T @repeat:1w ^ab12cd", "when:2026-11-02T22:00..2026-11-03T02:00",
 			"- [ ] T @repeat:1w ^" + id, "when:2026-11-09T22:00..2026-11-10T02:00"},
 	} {
@@ -178,20 +178,20 @@ func TestPlanRollWithoutDueOrSessionAddsDue(t *testing.T) {
 }
 
 func TestPlanRollAtUntilCopiesNothing(t *testing.T) {
-	work := sessionNote{"Work.md", "Work", "- [ ] Lab @repeat:1w until:2026-12-14 ^ab12cd\n"}
+	work := sessionNote{"Work.md", "Work", "- [ ] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n"}
 	plans := sessionNote{"Plans.md", "Plans", "- Lab task:[[Work#^ab12cd]] when:2026-12-14T09:00\n"}
 	plan, ok := planRollOf(t, "2026-12-14", "Work.md", 0, false, RollComplete, work, plans)
-	if !ok || plan.Rolled || plan.Body != "- [x] Lab @repeat:1w until:2026-12-14 ^ab12cd\n" || len(plan.Copies) != 0 {
+	if !ok || plan.Rolled || plan.Body != "- [x] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n" || len(plan.Copies) != 0 {
 		t.Fatalf("plan: %+v, %v", plan, ok)
 	}
 }
 
 func TestPlanRollSessionCopyCarriesNoUntil(t *testing.T) {
 	id := wantID()
-	work := sessionNote{"Work.md", "Work", "- [ ] Lab @repeat:1w until:2026-12-14 ^ab12cd\n"}
-	plans := sessionNote{"Plans.md", "Plans", "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 until:2026-12-20\n"}
+	work := sessionNote{"Work.md", "Work", "- [ ] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n"}
+	plans := sessionNote{"Plans.md", "Plans", "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 @until:2026-12-20\n"}
 	plan, _ := planRollOf(t, "2026-12-07", "Work.md", 0, false, RollComplete, work, plans)
-	if first := strings.Split(plan.Body, "\n")[0]; first != "- [ ] Lab @repeat:1w until:2026-12-14 ^"+id {
+	if first := strings.Split(plan.Body, "\n")[0]; first != "- [ ] Lab @repeat:1w @until:2026-12-14 ^"+id {
 		t.Fatalf("inserted line %q", first)
 	}
 	want := "Plans.md:- Lab task:[[Work#^" + id + "]] when:2026-12-14T09:00"

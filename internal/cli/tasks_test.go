@@ -332,7 +332,7 @@ func TestTaskListShowsNoEventsOrSessions(t *testing.T) {
 	fixClock(t, "2026-11-02")
 	root := writeVaultNotes(t, map[string]string{
 		"inbox/Meeting.md": "---\npage-type: event\nwhen: 2026-11-09T14:00-15:00\nrepeat: 1w\n---\n\n# Team meeting\n",
-		"inbox/Work.md":    "- [ ] Water plants @repeat:mon/thu skip:@Holiday until:2026-12-31 ^ab12cd\n",
+		"inbox/Work.md":    "- [ ] Water plants @repeat:mon/thu @skip:Holiday @until:2026-12-31 ^ab12cd\n",
 		"inbox/Essay.md":   "---\npage-type: task\nstatus: open\ndue: 2026-11-10\n---\n\n# Essay\n",
 		"quick/Plans.md": "- Water plants task:[[Work#^ab12cd]] when:2026-11-09T09:00-09:15\n" +
 			"- Essay task:[[Essay]] when:2026-11-08T10:00\n- Lunch when:2026-11-09T12:00\n",
@@ -414,22 +414,22 @@ func TestTaskListJSONOmitsSchedulingKeysWhenUnset(t *testing.T) {
 // The JSON lists a task's valid skip items in their written form and drops
 // the reversed ones.
 func TestTaskListJSONCarriesValidSkipItems(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] A @repeat:1w skip:2027-03-13..2027-03-21,2027-04-02,2027-03-21..2027-03-13\n")
+	tasks := listTaskJSON(t, "- [ ] A @repeat:1w @skip:2027-03-13/2027-03-21 @skip:2027-04-02 @skip:2027-03-21/2027-03-13\n")
 	if len(tasks) != 1 {
 		t.Fatalf("got %+v", tasks)
 	}
 	got, _ := tasks[0]["skip"].([]any)
-	if !reflect.DeepEqual(got, []any{"2027-03-13..2027-03-21", "2027-04-02"}) {
+	if !reflect.DeepEqual(got, []any{"2027-03-13/2027-03-21", "2027-04-02"}) {
 		t.Fatalf("skip: %+v", tasks[0])
 	}
-	if tasks[0]["content"] != "A @repeat:1w" {
+	if tasks[0]["content"] != "A @repeat:1w @skip:2027-03-13/2027-03-21 @skip:2027-04-02 @skip:2027-03-21/2027-03-13" {
 		t.Fatalf("content: %+v", tasks[0])
 	}
 }
 
 // A task without a skip token has no skip key in its JSON.
 func TestTaskListJSONOmitsSkipWhenUnset(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] A @repeat:1w\n- [ ] B skip:@spring-break\n")
+	tasks := listTaskJSON(t, "- [ ] A @repeat:1w\n- [ ] B @skip:spring-break\n")
 	if len(tasks) != 2 {
 		t.Fatalf("got %+v", tasks)
 	}
@@ -471,11 +471,11 @@ func TestTaskToggleCompletesPageTypeTaskNote(t *testing.T) {
 // The JSON lists the until date of a repeating task, and leaves it out when
 // the task has none or the date does not count.
 func TestTaskListJSONCarriesUntil(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] A @repeat:1w until:2027-03-21\n- [ ] B @repeat:1w\n- [ ] C until:2027-03-21\n")
+	tasks := listTaskJSON(t, "- [ ] A @repeat:1w @until:2027-03-21\n- [ ] B @repeat:1w\n- [ ] C @until:2027-03-21\n")
 	if len(tasks) != 3 {
 		t.Fatalf("got %+v", tasks)
 	}
-	if tasks[0]["until"] != "2027-03-21" || tasks[0]["content"] != "A @repeat:1w" {
+	if tasks[0]["until"] != "2027-03-21" || tasks[0]["content"] != "A @repeat:1w @until:2027-03-21" {
 		t.Fatalf("A: %+v", tasks[0])
 	}
 	for _, task := range tasks[1:] {
@@ -483,7 +483,7 @@ func TestTaskListJSONCarriesUntil(t *testing.T) {
 			t.Errorf("until key present: %+v", task)
 		}
 	}
-	if tasks[2]["content"] != "C" {
+	if tasks[2]["content"] != "C @until:2027-03-21" {
 		t.Errorf("C: %+v", tasks[2])
 	}
 }
@@ -531,5 +531,41 @@ func TestTaskListPlainWritesDueAsInNote(t *testing.T) {
 	}
 	if !strings.HasSuffix(lines[2], "  due:2026-11-05T08:15") {
 		t.Errorf("time line %q", lines[2])
+	}
+}
+
+// A line with `@until:` and `@skip:` fields keeps them in the content, as the
+// CLI grammar does for any field, and the JSON also gives `until` and `skip`.
+func TestTaskListJSONCarriesUntilAndSkipFields(t *testing.T) {
+	tasks := listTaskJSON(t, strings.Join([]string{
+		"- [ ] Lab due:2026-11-02 @repeat:1w @until:2026-12-14 @skip:2026-11-16 @skip:2026-11-23/2026-11-29",
+		"- [ ] Dots @repeat:1w @skip:2027-03-13..2027-03-21",
+		"- [ ] Bare @repeat:1w skip:2027-03-13 until:2027-03-21",
+		"- [ ] Ended @repeat:1w @until:2026-02-30 @skip:2027-02-30",
+	}, "\n")+"\n")
+	if len(tasks) != 4 {
+		t.Fatalf("got %+v", tasks)
+	}
+	if tasks[0]["content"] != "Lab @repeat:1w @until:2026-12-14 @skip:2026-11-16 @skip:2026-11-23/2026-11-29" {
+		t.Errorf("content: %q", tasks[0]["content"])
+	}
+	if tasks[0]["until"] != "2026-12-14" || tasks[0]["repeat"] != "1w" {
+		t.Errorf("until or repeat: %+v", tasks[0])
+	}
+	if got, ok := tasks[0]["skip"].([]any); !ok || len(got) != 2 || got[0] != "2026-11-16" || got[1] != "2026-11-23/2026-11-29" {
+		t.Errorf("skip: %#v", tasks[0]["skip"])
+	}
+	if got, ok := tasks[1]["skip"].([]any); !ok || len(got) != 1 || got[0] != "2027-03-13" {
+		t.Errorf("dots: skip %#v", tasks[1]["skip"])
+	}
+	for _, task := range tasks[2:] {
+		for _, key := range []string{"until", "skip"} {
+			if _, present := task[key]; present {
+				t.Errorf("%v: key %q present: %+v", task["content"], key, task)
+			}
+		}
+	}
+	if tasks[2]["content"] != "Bare @repeat:1w skip:2027-03-13 until:2027-03-21" {
+		t.Errorf("bare content: %q", tasks[2]["content"])
 	}
 }

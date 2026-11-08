@@ -51,8 +51,7 @@ type Event struct {
 	Repeat string
 	// Until is set only when Repeat is set.
 	Until string
-	// Skip holds the date items and SkipNames the `@name` items, without the
-	// `@`.
+	// Skip holds the date items and SkipNames the names.
 	Skip      []string
 	SkipNames []string
 	TaskLink  string
@@ -64,8 +63,8 @@ var (
 	eventCheckboxRe = regexp.MustCompile(`^\[.\]`)
 	eventWhenRe     = regexp.MustCompile(`(?:^|\s)when:(\S+)`)
 	eventRepeatRe   = regexp.MustCompile(`(?i)(?:^|\s)@repeat:([\p{L}\d][\p{L}\d/_-]*)`)
-	eventSkipRe     = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
-	eventUntilRe    = regexp.MustCompile(`(?i)(?:^|\s)until:(\S+)`)
+	eventSkipRe     = skipFieldRe
+	eventUntilRe    = untilFieldRe
 	// A `task:` value that starts with `[[` ends at the first `]]`, spaces
 	// included. Any other value ends at the first space.
 	eventTaskRe = regexp.MustCompile(`(?i)(?:^|\s)task:(\[\[.*?\]\]|\S+)`)
@@ -254,21 +253,13 @@ func eventRepeat(rule string) string {
 	return strings.TrimPrefix(rule, "after-")
 }
 
-// eventSkip splits skip values into the date items and the `@name` items. A
-// value may hold several items that a comma separates.
+// eventSkip splits skip values into the date items and the names. A value
+// holds one item.
 func eventSkip(values []string) (dates, names []string) {
 	for _, v := range values {
-		for _, raw := range strings.Split(v, ",") {
-			item := strings.TrimSpace(raw)
-			if name := strings.TrimPrefix(item, "@"); name != item {
-				if name != "" {
-					names = append(names, name)
-				}
-				continue
-			}
-			items, _, _ := ParseSkipItems(item)
-			dates = append(dates, items...)
-		}
+		items, _, found := ParseSkipItems(v)
+		dates = append(dates, items...)
+		names = append(names, found...)
 	}
 	return dates, names
 }
