@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ZenNotes/tui/internal/backend"
 )
@@ -308,6 +311,56 @@ func TestScopedToggleWritesOnlyNotesInScope(t *testing.T) {
 	for _, rel := range []string{"Projects/Clients/Plan.md", "Journal/Plan.md"} {
 		if got := readNote(t, root, rel); got != session {
 			t.Fatalf("%s changed:\n%s", rel, got)
+		}
+	}
+}
+
+func remoteSession(t *testing.T, f *remoteFixture) *sdk.ClientSession {
+	t.Helper()
+	return runServerWith(t, backend.Options{}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindRemote, BaseURL: f.URL, AuthToken: "token"}, nil
+	})
+}
+
+// Against a server, toggle_task ticks the line and writes nothing else: no
+// next date and no copy of a work session.
+func TestRemoteToggleTaskToolOnlyTicks(t *testing.T) {
+	f := newRemoteFixture(t)
+	cs := remoteSession(t, f)
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/Work.md#0"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	want := []string{"inbox/Work.md\n# Work\n\n" +
+		"- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" +
+		"- [ ] Send the invoice due:2026-11-12\n"}
+	if got := f.Writes(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("writes:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// Against a server, list_tasks returns the same text as zn v0.14.0, with the
+// `scheduled` value of the server kept.
+func TestListTasksAgainstRemoteMatchesReleased(t *testing.T) {
+	f := newRemoteFixture(t)
+	cs := remoteSession(t, f)
+	for _, tc := range []struct {
+		golden string
+		args   map[string]any
+	}{
+		{"remote-list-tasks.json", nil},
+		{"remote-list-tasks-all.json", map[string]any{"status": "all"}},
+	} {
+		want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text, isErr := callTool(t, cs, "list_tasks", tc.args)
+		if isErr {
+			t.Fatalf("list_tasks: %s", text)
+		}
+		if text != string(want) {
+			t.Errorf("list_tasks %v differs from testdata/%s:\n%s", tc.args, tc.golden, text)
 		}
 	}
 }

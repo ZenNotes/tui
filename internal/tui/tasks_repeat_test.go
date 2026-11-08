@@ -182,6 +182,26 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("cancel: note = %q, want %q", got, want)
 	}
+
+	// A task with a work session and a `skip:@` item is only ticked: the
+	// session note stays as it was.
+	line := "- [ ] Water plants due:2026-11-02 repeat:mon,thu skip:@Holiday ^ab12cd\n"
+	session := "- Water plants task:[[note#^ab12cd]] when:2026-11-03T09:00-09:15\n"
+	plans := filepath.Join(filepath.Dir(path), "Plans.md")
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plans, []byte(session), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.toggleTask(repeatTaskAt(t, path))
+	want = "- [x] Water plants due:2026-11-02 repeat:mon,thu skip:@Holiday ^ab12cd\n"
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("session toggle: note = %q, want %q", got, want)
+	}
+	if got := readRepeatNote(t, plans); got != session {
+		t.Errorf("session toggle: Plans.md = %q, want %q", got, session)
+	}
 }
 
 func openRepeatBuffer(t *testing.T, a *App) *noteBuffer {

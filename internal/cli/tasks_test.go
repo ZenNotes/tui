@@ -210,6 +210,47 @@ func TestTaskNoteScheduledKeyIsNotRead(t *testing.T) {
 	}
 }
 
+// A vault with event notes and work sessions lists only checkbox lines and
+// task notes. No entry stands for an event or a session, and no entry has a
+// `scheduled`, `scheduledTime` or `scheduledEnd` key.
+func TestTaskListShowsNoEventsOrSessions(t *testing.T) {
+	isolatedCLI(t)
+	fixClock(t, "2026-11-02")
+	root := writeVaultNotes(t, map[string]string{
+		"inbox/Meeting.md": "---\npage-type: event\nwhen: 2026-11-09T14:00-15:00\nrepeat: 1w\n---\n\n# Team meeting\n",
+		"inbox/Work.md":    "- [ ] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n",
+		"inbox/Essay.md":   "---\npage-type: task\nstatus: open\ndue: 2026-11-10\n---\n\n# Essay\n",
+		"quick/Plans.md": "- Water plants task:[[Work#^ab12cd]] when:2026-11-09T09:00-09:15\n" +
+			"- Essay task:[[Essay]] when:2026-11-08T10:00\n- Lunch when:2026-11-09T12:00\n",
+	})
+	for _, flags := range [][]string{nil, {"--all"}} {
+		args := append([]string{"task", "list", "--json", "--vault", root}, flags...)
+		out := captureOutput(t, func() {
+			if code := Main(args); code != 0 {
+				t.Errorf("zn %v exited %d", args, code)
+			}
+		})
+		var tasks []map[string]any
+		if err := json.Unmarshal([]byte(out), &tasks); err != nil {
+			t.Fatalf("zn %v: %v\n%s", args, err, out)
+		}
+		ids := []string{}
+		for _, task := range tasks {
+			ids = append(ids, task["id"].(string))
+			for _, key := range []string{"scheduled", "scheduledTime", "scheduledEnd"} {
+				if _, present := task[key]; present {
+					t.Errorf("zn %v: key %q present: %+v", args, key, task)
+				}
+			}
+		}
+		slices.Sort(ids)
+		want := []string{"inbox/Essay.md#task", "inbox/Work.md#0"}
+		if !reflect.DeepEqual(ids, want) {
+			t.Errorf("zn %v: ids = %v, want %v", args, ids, want)
+		}
+	}
+}
+
 func listTaskJSON(t *testing.T, note string) []map[string]any {
 	t.Helper()
 	isolatedCLI(t)
