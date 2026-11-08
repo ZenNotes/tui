@@ -208,10 +208,11 @@ func TestHourListScrollsAtMinimumSize(t *testing.T) {
 			if got[0] != "00" {
 				t.Errorf("%s: first row = %s, want 00", ctx, got[0])
 			}
-			calPress(a, tv, vim.R('j'))
+			// The cursor leaves the rows on screen, so the list scrolls.
+			calPress(a, tv, calRunes(strings.Repeat("j", len(got)))...)
 			scrolled := calHourLabels(calScreen(a, tv, c.w, c.h), calLabel24)
 			if len(scrolled) == 0 || scrolled[0] == "00" {
-				t.Errorf("%s: j did not scroll the list: %v", ctx, scrolled)
+				t.Errorf("%s: the cursor left the rows and the list did not scroll: %v", ctx, scrolled)
 			}
 		}
 	}
@@ -243,7 +244,7 @@ func TestHalfHourlyLabels12h(t *testing.T) {
 	}
 }
 
-func TestHourListJKScrollClamped(t *testing.T) {
+func TestHourListFollowsTheCursorAndStaysClamped(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calTestApp(t, nil)
 		a.prefs.VimMode = true
@@ -258,9 +259,14 @@ func TestHourListJKScrollClamped(t *testing.T) {
 		if got := calLabels(a, tv, 120, 20); got[0] != "00" {
 			t.Errorf("layout %v: k before the first row moved the list to %s", sub, got[0])
 		}
+		// Moves inside the rows on screen leave the list where it is.
+		calPress(a, tv, calRunes(strings.Repeat("j", n-1))...)
+		if got := calLabels(a, tv, 120, 20); got[0] != "00" {
+			t.Errorf("layout %v: a move inside the rows scrolled the list to %s", sub, got[0])
+		}
 		calPress(a, tv, vim.R('j'))
 		if got := calLabels(a, tv, 120, 20); got[0] != "01" {
-			t.Errorf("layout %v: j moved the list to %s, want 01", sub, got[0])
+			t.Errorf("layout %v: a move past the last row put the list at %s, want 01", sub, got[0])
 		}
 		requireDay(t, tv, "2026-11-18", fmt.Sprintf("layout %v after j", sub))
 		for i := 0; i < 60; i++ {
@@ -268,36 +274,36 @@ func TestHourListJKScrollClamped(t *testing.T) {
 		}
 		got := calLabels(a, tv, 120, 20)
 		if len(got) != n || got[len(got)-1] != "23" || got[0] != fmt.Sprintf("%02d", 24-n) {
-			t.Errorf("layout %v: after scrolling to the end rows = %v, want %d rows ending at 23", sub, got, n)
+			t.Errorf("layout %v: after moving to the end rows = %v, want %d rows ending at 23", sub, got, n)
 		}
 		requireDay(t, tv, "2026-11-18", fmt.Sprintf("layout %v after many j", sub))
 		for i := 0; i < 60; i++ {
 			calPress(a, tv, vim.R('k'))
 		}
 		if got := calLabels(a, tv, 120, 20); got[0] != "00" {
-			t.Errorf("layout %v: after scrolling back first row = %s, want 00", sub, got[0])
+			t.Errorf("layout %v: after moving back first row = %s, want 00", sub, got[0])
 		}
 	}
 }
 
-func TestHourListArrowsScrollWithoutVimMode(t *testing.T) {
+func TestHourListFollowsArrowsWithoutVimMode(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calTestApp(t, nil)
 		a.prefs.VimMode = false
 		a.prefs.TimeFormat = "24h"
 		calToSub(t, a, tv, sub)
-		if got := calLabels(a, tv, 120, 20); len(got) >= 24 || got[0] != "00" {
-			t.Fatalf("layout %v: unexpected rows %v", sub, got)
+		n := len(calLabels(a, tv, 120, 20))
+		if n == 0 || n >= 24 {
+			t.Fatalf("layout %v: unexpected rows count %d", sub, n)
 		}
-		calPress(a, tv, vim.KeyDown)
+		for i := 0; i < n; i++ {
+			calPress(a, tv, vim.KeyDown)
+		}
 		if got := calLabels(a, tv, 120, 20); got[0] != "01" {
-			t.Errorf("layout %v: Down moved the list to %s, want 01", sub, got[0])
+			t.Errorf("layout %v: Down past the last row put the list at %s, want 01", sub, got[0])
 		}
-		calPress(a, tv, vim.KeyDown)
-		calPress(a, tv, vim.KeyUp)
-		if got := calLabels(a, tv, 120, 20); got[0] != "01" {
-			t.Errorf("layout %v: Down, Down, Up left the list at %s, want 01", sub, got[0])
-		}
+		calPress(a, tv, vim.KeyDown, vim.KeyUp)
+		requireCursor(t, tv, n*60, fmt.Sprintf("layout %v", sub))
 		requireDay(t, tv, "2026-11-18", fmt.Sprintf("layout %v", sub))
 	}
 }
@@ -308,7 +314,7 @@ func TestHourListScrollPersists(t *testing.T) {
 	a.prefs.TimeFormat = "24h"
 	calToSub(t, a, tv, calWeek)
 	calLabels(a, tv, 120, 20)
-	calPress(a, tv, calRunes("jjjjjj")...)
+	tv.calc().scrollHours(6)
 	requireFirst := func(context string) {
 		t.Helper()
 		got := calLabels(a, tv, 120, 20)
@@ -344,13 +350,13 @@ func TestHourListScrollAfterZKeepsTime(t *testing.T) {
 	if n == 0 || n >= 24 {
 		t.Fatalf("unexpected short-body row count %d", n)
 	}
-	calPress(a, tv, calRunes("jjjjjj")...)
+	tv.calc().scrollHours(6)
 	calPress(a, tv, vim.R('z'))
 	got := calLabels(a, tv, 120, 20)
 	if len(got) == 0 || got[0] != "06" {
 		t.Fatalf("hourly 06 became %v in the half-hourly variant, want first row 06", got)
 	}
-	calPress(a, tv, vim.R('j'))
+	tv.calc().scrollHours(1)
 	if got := calLabels(a, tv, 120, 20); got[0] != "06:30" {
 		t.Fatalf("one j in the half-hourly variant gave %v, want first row 06:30", got)
 	}

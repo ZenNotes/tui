@@ -96,6 +96,15 @@ type taskCalendar struct {
 	// colScroll is how many entries the selected day's all-day band has
 	// scrolled off its top.
 	colScroll int
+	// curMin is the start, in minutes of the day, of the slot that the cursor
+	// is on in the week and day views. The slot keeps its time when the zoom
+	// or the day changes.
+	curMin int
+	// pin is the key of the entry that Tab chose. It selects that entry while
+	// the cursor is on a slot that the entry covers and has not moved.
+	pin string
+	// follow says that the next layout scrolls the hour list to the cursor.
+	follow bool
 
 	byDay   map[string][]calEntry
 	undated []vault.Task
@@ -184,9 +193,28 @@ func (c *taskCalendar) cycleFocus(day time.Time) bool {
 	return true
 }
 
-// selected is the task the item panel or the strip has selected, if any.
+// lastItem is the index of the last entry that j can reach with the focus on
+// the entries. In a week or day view it is the last all-day entry, unless an
+// entry of the grid is selected, which a click can do.
+func (c *taskCalendar) lastItem(day time.Time) int {
+	last := len(c.dayEntries(day)) - 1
+	if n := c.untimedCount(day); c.sub != calMonth && c.cursor < n {
+		return n - 1
+	}
+	return last
+}
+
+// selected is the task that the cursor in the grid, the item panel or the
+// strip has selected, if any.
 func (c *taskCalendar) selected(day time.Time) *vault.Task {
 	switch c.focus {
+	case calFocusGrid:
+		if i, ok := c.gridEntry(day); ok {
+			if e := c.dayEntries(day)[i]; e.hasTask() {
+				t := e.task
+				return &t
+			}
+		}
 	case calFocusItems:
 		entries := c.dayEntries(day)
 		if c.cursor < len(entries) && entries[c.cursor].hasTask() {
@@ -475,21 +503,19 @@ func (c *taskCalendar) toggleHalf() {
 	}
 }
 
-// scrollColumns scrolls the selected day by one step: down moves the all-day
-// band or pane until it has shown everything and then the hour list, and up
-// undoes that in the opposite order.
-func (c *taskCalendar) scrollColumns(day time.Time, delta int) {
-	if delta > 0 {
-		if !c.scrollColumn(day, 1) {
-			c.scrollHours(1)
+// revealFocused scrolls the hour list to show the slot of the cursor when the
+// grid has the focus, and the selected timed entry when the entries have it.
+func (c *taskCalendar) revealFocused(day time.Time, room int) {
+	if c.focus == calFocusGrid {
+		// Only a move of the cursor scrolls the list, so the wheel can show
+		// rows that are far from the cursor.
+		if c.follow {
+			c.revealCursor(room)
+			c.follow = false
 		}
 		return
 	}
-	if room := c.visibleHourRows(); room > 0 && c.firstHourRow(room) > 0 {
-		c.scrollHours(-1)
-		return
-	}
-	c.scrollColumn(day, -1)
+	c.revealSelected(day, room)
 }
 
 // revealSelected scrolls the hour list so the selected timed entry of the day
@@ -549,7 +575,7 @@ func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 		paneW := clampInt(w*30/100, 24, 40)
 		gridW := w - paneW
 		hourRows := clampInt(body, 0, lay.hourTotal)
-		c.revealSelected(day, hourRows)
+		c.revealFocused(day, hourRows)
 		lay.hourStart = c.firstHourRow(hourRows)
 		lay.pane = calRect{x: gridW, y: headRows, w: paneW, h: body}
 		lay.boxes = []calDayBox{{
@@ -561,7 +587,7 @@ func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 	}
 	band := c.bandRowCount(days, body)
 	hourRows := clampInt(body-band, 0, lay.hourTotal)
-	c.revealSelected(day, hourRows)
+	c.revealFocused(day, hourRows)
 	lay.hourStart = c.firstHourRow(hourRows)
 	colW := (w - lay.gutter) / len(days)
 	for i, d := range days {
@@ -604,6 +630,9 @@ func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h 
 	cols := make([]calColumn, len(lay.boxes))
 	for i, b := range lay.boxes {
 		cols[i] = c.columnTable(b.day)
+		if focused && sameDay(b.day, day) {
+			c.markColumn(&cols[i])
+		}
 	}
 	if c.sub == calDay {
 		rows = append(rows, c.dayRows(a, day, lay, cols[0], w, focused)...)
@@ -625,7 +654,7 @@ func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h 
 			var sb strings.Builder
 			sb.WriteString(c.hourLabelCell(a, lay, i))
 			for j, b := range lay.boxes {
-				sb.WriteString(c.hourCell(a, cols[j], lay.hourStart+i, b.hours.w, focused && sameDay(b.day, day)))
+				sb.WriteString(c.hourCell(a, cols[j], lay.hourStart+i, b.hours.w))
 			}
 			rows = append(rows, padRight(sb.String(), w))
 		}
@@ -669,22 +698,6 @@ func (c *taskCalendar) columnShown(b calDayBox, s int) int {
 		return rest
 	}
 	return room - 1
-}
-
-// scrollColumn scrolls the selected day's all-day band by delta entries,
-// never past either end. It reports whether the band moved.
-func (c *taskCalendar) scrollColumn(day time.Time, delta int) bool {
-	if c.sub == calMonth {
-		return false
-	}
-	for _, b := range c.layout.boxes {
-		if sameDay(b.day, day) {
-			before := c.columnScroll(b)
-			c.colScroll = clampInt(before+delta, 0, c.maxColumnScroll(b))
-			return c.colScroll != before
-		}
-	}
-	return false
 }
 
 // calMoreLabel is the overflow line for n hidden entries in a w-wide cell:
@@ -1036,6 +1049,15 @@ func (c *taskCalendar) selectionCell(day time.Time) (int, int) {
 	switch c.focus {
 	case calFocusStrip:
 		return lay.strip.x + 2, lay.strip.y + 1 + c.strip - lay.stripStart
+	case calFocusGrid:
+		if c.sub != calMonth {
+			for _, b := range lay.boxes {
+				if sameDay(b.day, day) {
+					row := c.curRow() - lay.hourStart
+					return b.hours.x + 2, b.hours.y + clampInt(row, 0, max(0, b.hours.h-1))
+				}
+			}
+		}
 	case calFocusItems:
 		if c.sub == calMonth {
 			return lay.items.x + 3, lay.items.y + 1 + c.cursor - lay.itemStart

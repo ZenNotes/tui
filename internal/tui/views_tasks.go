@@ -1210,7 +1210,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		case k.IsRune(':'):
 			a.openLocalEx()
 		case k.Is("esc") || k.IsRune('h') || k.Is("left"):
-			v.calc().focus = calFocusGrid
+			v.calc().leaveItems(v.day)
 		case k.Is("tab"):
 			v.calc().cycleFocus(v.day)
 		case k.IsRune('j') || k.Is("down"):
@@ -1218,7 +1218,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				if c.strip < len(c.undated)-1 {
 					c.strip++
 				}
-			} else if c.cursor < len(c.dayEntries(v.day))-1 {
+			} else if c.cursor < c.lastItem(v.day) {
 				c.cursor++
 			}
 		case k.IsRune('k') || k.Is("up"):
@@ -1230,25 +1230,14 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				c.cursor--
 			}
 		case k.Is("enter") || k.IsRune('o'):
-			if t != nil {
+			if c := v.calc(); c.focus == calFocusItems && c.cursor < len(c.dayEntries(v.day)) {
+				a.openCalEntry(c.dayEntries(v.day)[c.cursor])
+			} else if t != nil {
 				a.openTaskSource(*t)
 			}
-		case a.bound(k, "nav.toggleTask"):
+		case a.bound(k, "nav.toggleTask"), a.bound(k, "nav.contextMenu"), k.IsRune('T'), k.IsRune('@'):
 			if t != nil {
-				a.toggleTask(*t)
-			}
-		case a.bound(k, "nav.contextMenu"):
-			if t != nil {
-				a.taskMenu(*t)
-			}
-		case k.IsRune('T'):
-			// As in the desktop calendar: T moves the task to today, @ picks a date.
-			if t != nil {
-				a.setTaskDue(*t, vault.TodayISO(calendarNow()))
-			}
-		case k.IsRune('@'):
-			if t != nil {
-				v.calendarDueMenu(a, *t)
+				v.taskActionKey(a, k, t)
 			}
 		default:
 			return v.taskEditKey(a, k, t)
@@ -1265,9 +1254,9 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		// The month and the columns order a day's entries differently.
 		v.calc().cursor = 0
 	case hourList && (k.IsRune('j') || k.Is("down")):
-		v.calc().scrollColumns(v.day, 1)
+		v.calc().moveSlot(1)
 	case hourList && (k.IsRune('k') || k.Is("up")):
-		v.calc().scrollColumns(v.day, -1)
+		v.calc().moveSlot(-1)
 	case k.IsRune('h') || k.Is("left"):
 		v.selectDay(a, v.day.AddDate(0, 0, -1))
 	case k.IsRune('l') || k.Is("right"):
@@ -1286,12 +1275,22 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	case k.IsRune(']') || k.IsRune('L'):
 		v.month = v.month.AddDate(0, 1, 0)
 		v.selectDay(a, v.day.AddDate(0, 1, 0))
+	case hourList && k.IsRune('T') && t != nil:
+		v.taskActionKey(a, k, t)
 	case k.IsRune('t') || k.IsRune('T'):
 		now := calendarNow()
 		v.month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 		v.selectDay(a, now)
+	case hourList && (k.Is("tab") || k.IsCtrl('n')):
+		v.stepEntry(a, 1)
+	case hourList && (k.Is("shift+tab") || k.IsCtrl('p')):
+		v.stepEntry(a, -1)
 	case k.Is("tab"):
 		return v.calc().cycleFocus(v.day)
+	case hourList && k.IsRune('a'):
+		v.focusAllDay()
+	case hourList && k.Is("enter"):
+		v.gridEnter(a)
 	case k.Is("enter"):
 		if !v.calc().cycleFocus(v.day) {
 			a.openPeriodicOn(periodic.Daily, v.day)
@@ -1301,7 +1300,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	case k.IsRune(':'):
 		a.openLocalEx()
 	default:
-		return false
+		return hourList && t != nil && v.taskActionKey(a, k, t)
 	}
 	return true
 }
@@ -1344,6 +1343,7 @@ func (v *tasksView) selectDay(a *App, day time.Time) {
 	}
 	v.calc().cursor = 0
 	v.calc().colScroll = 0
+	v.calc().pin = ""
 }
 
 func (v *tasksView) hintTargets(a *App, p *pane) []hintTarget {

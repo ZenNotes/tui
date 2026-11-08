@@ -363,8 +363,8 @@ func TestCalendarHintsFollowFocus(t *testing.T) {
 	if week := stripAnsi(tv.hint(a)); !strings.Contains(week, "z hour step") || strings.Contains(week, "due today") {
 		t.Errorf("week grid hint = %s", week)
 	}
-	calPress(a, tv, vim.KeyTab)
-	requireFocus(t, tv, calFocusItems, "Tab")
+	calPress(a, tv, vim.R('a'))
+	requireFocus(t, tv, calFocusItems, "a")
 	task := stripAnsi(tv.hint(a))
 	for _, want := range []string{"T due today", "@ due date", "Esc back"} {
 		if !strings.Contains(task, want) {

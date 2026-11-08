@@ -167,12 +167,11 @@ func TestSelectedTimedTaskScrollsIntoView(t *testing.T) {
 	if _, ok := calRowLine(calScreen(a, tv, 120, 20), calLabel24, "21"); ok {
 		t.Fatal("the 21 row is already on screen before the list scrolls")
 	}
-	calPress(a, tv, vim.KeyEnter)
-	requireFocus(t, tv, calFocusItems, "Enter on a day with an entry")
+	calPress(a, tv, vim.KeyTab)
 	requireOnlyInRow(t, calScreen(a, tv, 120, 20), "21", "late call", "selected timed entry in a short body")
 }
 
-func TestItemFocusFollowsBandThenHourRows(t *testing.T) {
+func TestAllDayFocusStaysInTheBand(t *testing.T) {
 	a, tv := calHourRowApp(t, []vault.Task{
 		{ID: "n#0", SourcePath: "n.md", Content: "late", Status: "open", Due: "2026-11-05", DueTime: "14:00"},
 		{ID: "n#1", SourcePath: "n.md", Content: "plain1", Status: "open", Due: "2026-11-05"},
@@ -180,9 +179,9 @@ func TestItemFocusFollowsBandThenHourRows(t *testing.T) {
 		{ID: "n#3", SourcePath: "n.md", Content: "plain2", Status: "open", Due: "2026-11-05"},
 	}, calWeek, false)
 	calScreen(a, tv, 160, 70)
-	calPress(a, tv, vim.KeyEnter)
-	requireFocus(t, tv, calFocusItems, "Enter on a day with entries")
-	want := []string{"plain1", "plain2", "early", "late"}
+	calPress(a, tv, vim.R('a'))
+	requireFocus(t, tv, calFocusItems, "a on a day with entries")
+	want := []string{"plain1", "plain2"}
 	selected := func() string {
 		calScreen(a, tv, 160, 70)
 		if sel := tv.selectedTask(); sel != nil {
@@ -197,6 +196,11 @@ func TestItemFocusFollowsBandThenHourRows(t *testing.T) {
 		if got := selected(); got != name {
 			t.Fatalf("after %d j presses the selection is %q, want %q", i, got, name)
 		}
+	}
+	// j stops at the last untimed entry; the timed ones are not in the band.
+	calPress(a, tv, vim.R('j'))
+	if got := selected(); got != "plain2" {
+		t.Fatalf("j past the band selected %q, want plain2", got)
 	}
 	for i := len(want) - 2; i >= 0; i-- {
 		calPress(a, tv, vim.R('k'))

@@ -13,12 +13,16 @@ import (
 type calColumn struct {
 	tt  calTimetable
 	idx []int
+	// sel is the index in the entries of the day of the selected entry, and
+	// cursor the slot that holds the cursor. Both are -1 when the column is not
+	// the selected day or when nothing is selected.
+	sel, cursor int
 }
 
 // columnTable lays out a day for the current zoom of the hour rows.
 func (c *taskCalendar) columnTable(day time.Time) calColumn {
 	tt := c.timetable(day, c.hourStep())
-	return calColumn{tt: tt, idx: c.blockIndexes(day, tt)}
+	return calColumn{tt: tt, idx: c.blockIndexes(day, tt), sel: -1, cursor: -1}
 }
 
 // blockIndexes gives, for each block of the timetable, the index of its entry
@@ -96,7 +100,9 @@ func (c *taskCalendar) hourLabelCell(a *App, lay calLayout, i int) string {
 // hourCell draws one slot of a column that is w cells wide. A block shows its
 // mark and its text on its first row only, and its level gives its colour.
 // A slot that holds more blocks than the levels have ends with their count.
-func (c *taskCalendar) hourCell(a *App, col calColumn, slot, w int, focusedDay bool) string {
+// The selected block and the empty cells of the slot of the cursor are in the
+// focused selection style.
+func (c *taskCalendar) hourCell(a *App, col calColumn, slot, w int) string {
 	th := a.theme
 	owners := col.tt.slotOwners(slot, w)
 	over := 0
@@ -117,7 +123,11 @@ func (c *taskCalendar) hourCell(a *App, col calColumn, slot, w int, focusedDay b
 		width := end - x
 		switch owner := owners[x]; owner {
 		case calCellEmpty:
-			sb.WriteString(strings.Repeat(" ", width))
+			blank := strings.Repeat(" ", width)
+			if slot == col.cursor {
+				blank = th.SelectedFocus.Render(blank)
+			}
+			sb.WriteString(blank)
 		case calCellMore:
 			sb.WriteString(th.Bold.Render(padRight(calOverLabel(over), width)))
 		default:
@@ -127,7 +137,7 @@ func (c *taskCalendar) hourCell(a *App, col calColumn, slot, w int, focusedDay b
 				text = " " + b.entry.mark + b.entry.content()
 			}
 			style := th.CalLevel[b.level-1]
-			if focusedDay && c.focus == calFocusItems && owner < len(col.idx) && col.idx[owner] == c.cursor {
+			if col.sel >= 0 && owner < len(col.idx) && col.idx[owner] == col.sel {
 				style = th.SelectedFocus
 			}
 			if b.entry.done {
@@ -164,7 +174,7 @@ func (c *taskCalendar) dayRows(a *App, day time.Time, lay calLayout, col calColu
 		var sb strings.Builder
 		if i < b.hours.h {
 			sb.WriteString(c.hourLabelCell(a, lay, i))
-			sb.WriteString(c.hourCell(a, col, lay.hourStart+i, b.hours.w, focused))
+			sb.WriteString(c.hourCell(a, col, lay.hourStart+i, b.hours.w))
 		} else {
 			sb.WriteString(strings.Repeat(" ", lay.pane.x))
 		}

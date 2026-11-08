@@ -39,6 +39,12 @@ type calEntry struct {
 	// continued says that the block carries on from the day before, so its
 	// start is midnight and not a time the user wrote.
 	continued bool
+	// path and line say where an event or a session is written. The line is
+	// zero-based. inline is true for an event that is one list line, and false
+	// for an event that is a whole note.
+	path   string
+	line   int
+	inline bool
 }
 
 // hasTask reports whether the entry stands for a task that a key or a click

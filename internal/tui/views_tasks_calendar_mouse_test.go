@@ -76,6 +76,20 @@ func calBoxFor(t *testing.T, tv *tasksView, day time.Time) calRect {
 	return calRect{}
 }
 
+// calInDayArea reports whether a cell is in the box of a day or, in the day
+// view, in its hour rows, where the cursor of the grid is.
+func calInDayArea(tv *tasksView, box calRect, x, y int) bool {
+	if box.contains(x, y) {
+		return true
+	}
+	for _, b := range tv.calc().layout.boxes {
+		if b.hours.contains(x, y) {
+			return true
+		}
+	}
+	return false
+}
+
 // calMouse sends one mouse press at a view-relative cell through the app's
 // real mouse entry point.
 func calMouse(a *App, button tea.MouseButton, x, y int) {
@@ -112,7 +126,7 @@ func TestClickDaySelectsWithGridFocus(t *testing.T) {
 		a, tv, _ := calVaultApp(t, calMouseFiles())
 		calToSub(t, a, tv, s.sub)
 		tv.selectDay(a, calDate(2026, time.November, 21))
-		calPress(a, tv, vim.KeyTab)
+		tv.calc().focus = calFocusStrip
 		requireFocus(t, tv, calFocusStrip, s.name+" set-up")
 		calPaneBody(a, tv)
 		x, y := calEmptyDayCell(calBoxFor(t, tv, s.target))
@@ -318,12 +332,12 @@ func TestSelectionPosFollowsFocus(t *testing.T) {
 
 		// Grid focus: inside the selected day's box or column.
 		x, y, _ := at("grid focus")
-		if box := calBoxFor(t, tv, calDate(2026, time.November, 18)); !box.contains(x, y-1) {
+		if box := calBoxFor(t, tv, calDate(2026, time.November, 18)); !calInDayArea(tv, box, x, y-1) {
 			t.Errorf("%s: grid focus position (%d,%d) is outside the selected day's box %+v", s.name, x, y-1, box)
 		}
 		tv.selectDay(a, s.target)
 		x, y, _ = at("moved selection")
-		if box := calBoxFor(t, tv, s.target); !box.contains(x, y-1) {
+		if box := calBoxFor(t, tv, s.target); !calInDayArea(tv, box, x, y-1) {
 			t.Errorf("%s: position (%d,%d) did not follow the selection to %s's box %+v", s.name, x, y-1, s.target.Format("2006-01-02"), box)
 		}
 		tv.selectDay(a, calDate(2026, time.November, 18))
