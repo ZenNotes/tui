@@ -93,8 +93,12 @@ func calOverLabel(n int) string { return fmt.Sprintf("+%d", n) }
 // hourLabelCell is the label of hour row i of the view and the rule after it.
 func (c *taskCalendar) hourLabelCell(a *App, lay calLayout, i int) string {
 	th := a.theme
-	label := hourLabel(a, (lay.hourStart+i)*c.hourStep())
-	return th.Muted.Render(padRight(label, lay.gutter-2)) + th.Dim.Render(" │")
+	label := padRight(hourLabel(a, (lay.hourStart+i)*c.hourStep()), lay.gutter-2)
+	style := th.Muted
+	if c.holdsNow(lay, lay.hourStart+i) {
+		style = th.Base.Foreground(th.Accent).Bold(true)
+	}
+	return style.Render(label) + th.Dim.Render(" │")
 }
 
 // hourCell draws one slot of a column that is w cells wide. A block shows its

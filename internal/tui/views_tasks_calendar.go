@@ -90,8 +90,9 @@ type taskCalendar struct {
 	focus  calFocus
 	cursor int
 	strip  int
-	// half selects half-hourly hour rows in place of hourly ones.
-	half bool
+	// zoom is the index in calZoomSteps of the minutes that one hour row
+	// covers: hourly, half-hourly or quarter-hourly.
+	zoom int
 	// scroll is the time of day, in minutes, of the first hour row shown.
 	// It is a time rather than a row index so it survives a change of
 	// variant.
@@ -418,14 +419,18 @@ func clockMinute(clock string) int {
 	return h*60 + m
 }
 
+// calZoomSteps are the minutes that one hour row covers in each zoom, from
+// the first zoom to the last.
+var calZoomSteps = [...]int{60, 30, 15}
+
 // hourLabelWidth is the width of the widest hour label for the time format
-// and hour-list variant.
-func hourLabelWidth(a *App, half bool) int {
+// and the minutes that one hour row covers.
+func hourLabelWidth(a *App, step int) int {
 	w := 2
 	if a.prefs.TimeFormat == "12h" {
 		w = 5
 	}
-	if half {
+	if step < 60 {
 		w += 3
 	}
 	return w
@@ -433,7 +438,7 @@ func hourLabelWidth(a *App, half bool) int {
 
 // hourLabel is the label of the row starting at the given minute of the day.
 func hourLabel(a *App, minute int) string {
-	h, half := minute/60, minute%60 == 30
+	h, m := minute/60, minute%60
 	if a.prefs.TimeFormat == "12h" {
 		n := h % 12
 		if n == 0 {
@@ -443,24 +448,19 @@ func hourLabel(a *App, minute int) string {
 		if h >= 12 {
 			suffix = "PM"
 		}
-		if half {
-			return fmt.Sprintf("%2d:30 %s", n, suffix)
+		if m != 0 {
+			return fmt.Sprintf("%2d:%02d %s", n, m, suffix)
 		}
 		return fmt.Sprintf("%2d %s", n, suffix)
 	}
-	if half {
-		return fmt.Sprintf("%02d:30", h)
+	if m != 0 {
+		return fmt.Sprintf("%02d:%02d", h, m)
 	}
 	return fmt.Sprintf("%02d", h)
 }
 
 // hourStep is the minutes one hour row covers.
-func (c *taskCalendar) hourStep() int {
-	if c.half {
-		return 30
-	}
-	return 60
-}
+func (c *taskCalendar) hourStep() int { return calZoomSteps[c.zoom] }
 
 // hourRowCount is the number of rows in the whole hour list.
 func (c *taskCalendar) hourRowCount() int { return 24 * 60 / c.hourStep() }
@@ -496,10 +496,13 @@ func (c *taskCalendar) scrollHours(delta int) {
 	c.scroll = clampInt(c.firstHourRow(room)+delta, 0, max(0, c.hourRowCount()-room)) * step
 }
 
-// toggleHalf switches between hourly and half-hourly rows. The list starts at
-// the same time, or at the hour containing it, kept inside the new list.
-func (c *taskCalendar) toggleHalf() {
-	c.half = !c.half
+// cycleZoom changes the rows from hourly to half-hourly, to quarter-hourly
+// and back to hourly. The cursor moves to the start of the row that holds its
+// time. The list starts at the same time, or at the row containing it, kept
+// inside the new list.
+func (c *taskCalendar) cycleZoom() {
+	c.zoom = (c.zoom + 1) % len(calZoomSteps)
+	c.curMin = c.curMin / c.hourStep() * c.hourStep()
 	c.scroll = c.scroll / c.hourStep() * c.hourStep()
 	if room := c.visibleHourRows(); room > 0 {
 		c.scroll = c.firstHourRow(room) * c.hourStep()
@@ -573,7 +576,7 @@ func (c *taskCalendar) columnLayout(a *App, day time.Time, w, h int) calLayout {
 	lay.strip = calRect{x: 0, y: h - stripH, w: w, h: stripH}
 	footH := footerHeight(h)
 	lay.footer = calRect{x: 0, y: lay.strip.y - footH, w: w, h: footH}
-	lay.gutter = hourLabelWidth(a, c.half) + 2
+	lay.gutter = hourLabelWidth(a, c.hourStep()) + 2
 	lay.hourTotal = c.hourRowCount()
 	body := h - stripH - footH - headRows
 	if c.sub == calDay {

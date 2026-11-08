@@ -84,7 +84,7 @@ func (v *tasksView) setMode(mode string) {
 		v.mode = "kanban"
 	case "calendar":
 		v.mode = "calendar"
-		v.calc().half = false
+		v.calc().zoom = 0
 	default:
 		v.mode = "list"
 	}
@@ -903,7 +903,8 @@ func (v *tasksView) handleKey(a *App, k vim.Key) bool {
 			v.mode = "list"
 		}
 		if v.mode == "calendar" {
-			v.calc().half = false
+			v.calc().zoom = 0
+			v.openAtTime(a)
 		}
 		a.prefs.TasksViewMode = v.mode
 		v.refresh(a)
@@ -1198,7 +1199,7 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	t := v.selectedTask()
 	if k.IsRune('z') && a.prefs.VimMode && v.calc().sub != calMonth {
-		v.calc().toggleHalf()
+		v.calc().cycleZoom()
 		return true
 	}
 	if v.calc().focus != calFocusGrid {
@@ -1253,6 +1254,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		v.calc().sub = (v.calc().sub + 1) % 3
 		// The month and the columns order a day's entries differently.
 		v.calc().cursor = 0
+		v.openAtTime(a)
 	case hourList && (k.IsRune('j') || k.Is("down")):
 		v.calc().moveSlot(1)
 	case hourList && (k.IsRune('k') || k.Is("up")):
@@ -1277,6 +1279,8 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		v.selectDay(a, v.day.AddDate(0, 1, 0))
 	case hourList && k.IsRune('T') && t != nil:
 		v.taskActionKey(a, k, t)
+	case hourList && (k.IsRune('t') || k.Is("home")):
+		v.goToNow(a)
 	case k.IsRune('t') || k.IsRune('T'):
 		now := calendarNow()
 		v.month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)

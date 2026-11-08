@@ -73,7 +73,7 @@ func TestHourListStartsHourlyAtMidnight(t *testing.T) {
 	}
 }
 
-func TestZTogglesVariantInWeek(t *testing.T) {
+func TestZCyclesVariantInWeek(t *testing.T) {
 	a, tv := calTestApp(t, nil)
 	a.prefs.VimMode = true
 	a.prefs.TimeFormat = "24h"
@@ -83,10 +83,14 @@ func TestZTogglesVariantInWeek(t *testing.T) {
 	}
 	requireLabels(t, calScreen(a, tv, 120, 110), calLabel24, calHalfHours24(), "week after z")
 	calPress(a, tv, vim.R('z'))
-	requireLabels(t, calScreen(a, tv, 120, 110), calLabel24, calHours24(), "week after z twice")
+	if got := tv.calc().hourStep(); got != 15 {
+		t.Errorf("week after z twice: rows of %d minutes, want 15", got)
+	}
+	calPress(a, tv, vim.R('z'))
+	requireLabels(t, calScreen(a, tv, 120, 110), calLabel24, calHours24(), "week after z three times")
 }
 
-func TestZTogglesVariantInDay(t *testing.T) {
+func TestZCyclesVariantInDay(t *testing.T) {
 	a, tv := calTestApp(t, nil)
 	a.prefs.VimMode = true
 	a.prefs.TimeFormat = "24h"
@@ -96,7 +100,11 @@ func TestZTogglesVariantInDay(t *testing.T) {
 	}
 	requireLabels(t, calScreen(a, tv, 120, 110), calLabel24, calHalfHours24(), "day after z")
 	calPress(a, tv, vim.R('z'))
-	requireLabels(t, calScreen(a, tv, 120, 110), calLabel24, calHours24(), "day after z twice")
+	if got := tv.calc().hourStep(); got != 15 {
+		t.Errorf("day after z twice: rows of %d minutes, want 15", got)
+	}
+	calPress(a, tv, vim.R('z'))
+	requireLabels(t, calScreen(a, tv, 120, 110), calLabel24, calHours24(), "day after z three times")
 }
 
 func TestZWorksInItemFocusWithVimMode(t *testing.T) {
@@ -328,17 +336,12 @@ func TestHourListScrollPersists(t *testing.T) {
 	calPress(a, tv, calRunes("hhhhhhh")...)
 	requireFirst("back in the first week")
 	calEsc(a, tv)
+	calToSub(t, a, tv, calDay)
+	calLabels(a, tv, 120, 20)
+	tv.calc().scrollHours(6)
 	requireFirst("in day view")
 	calPress(a, tv, calRunes("l")...)
 	requireFirst("on another day")
-	calEsc(a, tv)
-	if tv.calc().sub != calMonth {
-		t.Fatalf("layout = %v, want month", tv.calc().sub)
-	}
-	calEsc(a, tv)
-	requireFirst("in week view after the month view")
-	calEsc(a, tv)
-	requireFirst("in day view after the month view")
 }
 
 func TestHourListScrollAfterZKeepsTime(t *testing.T) {
@@ -361,6 +364,10 @@ func TestHourListScrollAfterZKeepsTime(t *testing.T) {
 		t.Fatalf("one j in the half-hourly variant gave %v, want first row 06:30", got)
 	}
 	calPress(a, tv, vim.R('z'))
+	if got := calLabels(a, tv, 120, 20); got[0] != "06:30" {
+		t.Errorf("06:30 became %v in the quarter-hourly variant, want first row 06:30", got)
+	}
+	calPress(a, tv, vim.R('z'))
 	if got := calLabels(a, tv, 120, 20); got[0] != "06" {
 		t.Errorf("06:30 became %v in the hourly variant, want first row 06", got)
 	}
@@ -375,7 +382,7 @@ func TestHourListScrollAfterZKeepsTime(t *testing.T) {
 	if len(end) != n || end[len(end)-1] != "23:30" {
 		t.Fatalf("half-hourly end of list = %v, want %d rows ending at 23:30", end, n)
 	}
-	calPress(a, tv, vim.R('z'))
+	calPress(a, tv, vim.R('z'), vim.R('z'))
 	got = calLabels(a, tv, 120, 20)
 	if len(got) != n || got[len(got)-1] != "23" {
 		t.Errorf("hourly list after z at the end = %v, want %d rows ending at 23", got, n)

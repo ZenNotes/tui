@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	calLabel24 = regexp.MustCompile(`^\s*(\d{2}(?::30)?)(?:\s|\x{2502}|\|$|$)`)
+	calLabel24 = regexp.MustCompile(`^\s*(\d{2}(?::[0-5]\d)?)(?:\s|\x{2502}|\|$|$)`)
 	calLabel12 = regexp.MustCompile(`^\s*(\d{1,2}(?::30)? [AP]M)`)
 	calMoreRe  = regexp.MustCompile(`\+(\d+) more`)
 	calZqRe    = regexp.MustCompile(`zq\d\d`)
@@ -23,14 +23,26 @@ var (
 
 func calEsc(a *App, tv *tasksView) { calPress(a, tv, vim.KeyEsc) }
 
-// calToSub presses Esc until the calendar shows the given layout.
-func calToSub(t *testing.T, a *App, tv *tasksView, want calSub) {
+// calSwitchTo presses Esc until the calendar shows the given layout. A switch
+// to a week or day layout opens at a time chosen by the calendar.
+func calSwitchTo(t *testing.T, a *App, tv *tasksView, want calSub) {
 	t.Helper()
 	for i := 0; i < 3 && tv.calc().sub != want; i++ {
 		calEsc(a, tv)
 	}
 	if tv.calc().sub != want {
 		t.Fatalf("Esc did not reach layout %v (stuck on %v)", want, tv.calc().sub)
+	}
+}
+
+// calToSub switches to the given layout and then puts the cursor and the hour
+// list back on the 00 row, so that a test can count rows from midnight.
+func calToSub(t *testing.T, a *App, tv *tasksView, want calSub) {
+	t.Helper()
+	calSwitchTo(t, a, tv, want)
+	if want != calMonth {
+		tv.calc().setCursorRow(0)
+		tv.calc().scroll = 0
 	}
 }
 
