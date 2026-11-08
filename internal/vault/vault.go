@@ -1273,6 +1273,17 @@ func (v *Vault) loadRollContext(in *TaskRollInput, opts ParseTasksOptions) {
 	}
 }
 
+// LoadRollContext fills the parts of a roll input that the work sessions
+// need: the tasks, the events, the block ids and a reader for notes. A caller
+// that plans a roll itself uses it, as ToggleTask does.
+func (v *Vault) LoadRollContext(in *TaskRollInput) {
+	v.loadRollContext(in, ParseTasksOptions{IncludeExcluded: true, Dialect: in.Dialect})
+}
+
+// SkipResolverAt gives the resolver for the `@name` items of a `skip:` token,
+// for a roll at the time now. Events are read at the first name only.
+func (v *Vault) SkipResolverAt(now time.Time) SkipResolver { return v.skipResolver(now) }
+
 // writeSessionCopies writes the session copies of a roll, one note at a time.
 // A note that the caller may not write is counted in one warning without its
 // path. A note that fails to write gets a warning that names it.

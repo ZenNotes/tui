@@ -1297,6 +1297,14 @@ func (a *App) rollsRepeatingTasks() bool {
 // not repeat gets the plain change, which toggleTask applies itself; rolled
 // is false for it, so the other callers can make their own plain change.
 func (a *App) rollTaskBody(body string, t vault.Task, action vault.RollAction) (next string, rolled bool) {
+	a.rollPending = rollEffects{}
+	if plan, ok, planned := a.planTaskRoll(body, t, action); planned {
+		if !ok {
+			return body, false
+		}
+		a.rollPending = rollEffects{copies: plan.Copies, ownNote: plan.InOwnNote}
+		return plan.Body, plan.Rolled
+	}
 	now, weekStart := a.taskClock(), a.taskWeekStart()
 	if t.Kind == "file" {
 		return vault.RollTaskFileInBody(body, action, now, weekStart)
@@ -1319,6 +1327,7 @@ func (a *App) toggleTask(t vault.Task) {
 		}
 		return vault.ToggleTaskInBody(body, t.TaskIndex, vault.DialectApp)
 	})
+	a.endRoll(err)
 	if err != nil {
 		a.notifyError(err.Error())
 		return
@@ -1331,6 +1340,7 @@ func (a *App) editTaskLine(t vault.Task, edit func(body string) string) {
 		next := edit(body)
 		return next, next != body
 	})
+	a.endRoll(err)
 	if err != nil {
 		a.notifyError(err.Error())
 		return

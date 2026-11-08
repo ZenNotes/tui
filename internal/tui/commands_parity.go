@@ -680,6 +680,7 @@ func (a *App) setTaskStateAtCursor(buf *noteBuffer, state string) error {
 		}
 		return next, next != body
 	})
+	a.endRoll(err)
 	if err != nil {
 		return err
 	}

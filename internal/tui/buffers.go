@@ -164,10 +164,12 @@ func (a *App) completeCheckboxText(buf *noteBuffer, text string, line int) (stri
 		if t.Kind != "" || t.LineNumber != line {
 			continue
 		}
-		next, inserted, ok := vault.RollTaskInBody(text, t.TaskIndex, vault.DialectApp, vault.RollComplete, a.taskClock(), a.taskWeekStart())
-		if !ok || inserted == 0 {
+		next, rolled := a.rollTaskBody(text, t, vault.RollComplete)
+		if !rolled {
+			a.rollPending = rollEffects{}
 			return "", false
 		}
+		a.endRoll(nil)
 		return next, true
 	}
 	return "", false
