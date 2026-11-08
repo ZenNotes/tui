@@ -97,7 +97,7 @@ func useRemoteServer(t *testing.T, s *remoteServer) {
 	t.Setenv("ZENNOTES_REMOTE_TOKEN", "token")
 }
 
-// Against a server, `zn task list` prints the same bytes as zn v0.14.0 for
+// Against a server, `zn task list` prints the same bytes as zn v0.17.1 for
 // notes that hold events, work sessions, `until:`, `skip:@` items and block
 // ids. The `scheduled` value that the server sends stays in the JSON.
 func TestRemoteTaskListMatchesReleasedOutput(t *testing.T) {
@@ -140,7 +140,9 @@ func TestRemoteToggleOfRepeatingTaskWithSessionOnlyTicks(t *testing.T) {
 	})
 	want := []string{"inbox/Work.md\n# Work\n\n" +
 		"- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" +
-		"- [ ] Send the invoice due:2026-11-12\n"}
+		"- [ ] Send the invoice due:2026-11-12\n" +
+		"- [ ] A due:2027-03-08T23:59 @repeat:weekly @until:2027-03-10 @skip:spring-break\n" +
+		"- [ ] B due:2027-03-08 @repeat:monthly-15\n"}
 	if got := s.Writes(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("writes:\n%q\nwant:\n%q", got, want)
 	}

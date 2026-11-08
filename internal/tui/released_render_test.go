@@ -144,8 +144,8 @@ func releasedRenderReport(t *testing.T) string {
 }
 
 // The Tasks list, the board, the Home dashboard and the calendar's month view
-// draw the same text as released zn v0.14.0 for notes without the new syntax.
-// The golden file was made by running this report with zn v0.14.0.
+// draw the same text as released zn v0.17.1 for notes without the new syntax.
+// The golden file was made by running this report with zn v0.17.1.
 func TestTasksViewRendersAsReleasedWithoutNewSyntax(t *testing.T) {
 	got := releasedRenderReport(t)
 	golden := filepath.Join("testdata", "released-tasks-render.golden")
@@ -159,6 +159,6 @@ func TestTasksViewRendersAsReleasedWithoutNewSyntax(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != string(want) {
-		t.Fatalf("the Tasks view differs from released zn v0.14.0.\ngot:\n%s\nwant:\n%s", got, want)
+		t.Fatalf("the Tasks view differs from released zn v0.17.1.\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }

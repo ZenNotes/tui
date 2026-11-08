@@ -333,13 +333,15 @@ func TestRemoteToggleTaskToolOnlyTicks(t *testing.T) {
 	}
 	want := []string{"inbox/Work.md\n# Work\n\n" +
 		"- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" +
-		"- [ ] Send the invoice due:2026-11-12\n"}
+		"- [ ] Send the invoice due:2026-11-12\n" +
+		"- [ ] A due:2027-03-08T23:59 @repeat:weekly @until:2027-03-10 @skip:spring-break\n" +
+		"- [ ] B due:2027-03-08 @repeat:monthly-15\n"}
 	if got := f.Writes(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("writes:\n%q\nwant:\n%q", got, want)
 	}
 }
 
-// Against a server, list_tasks returns the same text as zn v0.14.0, with the
+// Against a server, list_tasks returns the same text as zn v0.17.1, with the
 // `scheduled` value of the server kept.
 func TestListTasksAgainstRemoteMatchesReleased(t *testing.T) {
 	f := newRemoteFixture(t)

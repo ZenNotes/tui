@@ -140,9 +140,9 @@ func TestTaskListJSONKeepsScheduledTokenInContent(t *testing.T) {
 }
 
 // A vault with checkbox `scheduled:` tokens, prose that mentions `when:` and
-// no new syntax lists the same bytes as released zn v0.14.0. The files were
+// no new syntax lists the same bytes as released zn v0.17.1. The files were
 // made by running `zn task list --json`, `zn task list --json --all` and
-// `zn task list` with zn v0.14.0 over testdata/released-tasks.
+// `zn task list` with zn v0.17.1 over testdata/released-tasks.
 func TestTaskListMatchesReleasedOutputForNotesWithoutNewSyntax(t *testing.T) {
 	isolatedCLI(t)
 	root := t.TempDir()
@@ -170,6 +170,31 @@ func TestTaskListMatchesReleasedOutputForNotesWithoutNewSyntax(t *testing.T) {
 		if out != string(want) {
 			t.Errorf("zn %v differs from testdata/%s:\n%s", args, tc.golden, out)
 		}
+	}
+}
+
+// A vault with only the `@repeat:` values of released zn (daily, weekly,
+// weekdays, `after-` and `@remind:`) lists the same text as released zn
+// v0.17.1. The file was made by running `zn task list` with zn v0.17.1 over
+// testdata/released-repeat.
+func TestTaskListPlainMatchesReleasedForUpstreamRepeat(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("testdata", "released-repeat"))); err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile(filepath.Join("testdata", "released-repeat.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"task", "list", "--vault", root}
+	out := captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	if out != string(want) {
+		t.Errorf("zn %v differs from testdata/released-repeat.txt:\n%s", args, out)
 	}
 }
 
