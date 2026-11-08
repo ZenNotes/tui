@@ -388,3 +388,34 @@ func TestTaskListJSONCarriesBlockId(t *testing.T) {
 		t.Errorf("blockId key present: %+v", tasks[1])
 	}
 }
+
+// Plain-text `zn task list` writes a due time or range as in the note, in
+// 24-hour form, before the priority. Its text keeps a `scheduled:` token.
+func TestTaskListPlainWritesDueAsInNote(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	note := "- [ ] Call Ana due:2026-11-03T14:00-15:30 scheduled:2026-11-02T09:00 !high\n" +
+		"- [ ] Plain due:2026-11-04 !low\n- [ ] Timed due:2026-11-05T08:15\n"
+	if err := os.WriteFile(filepath.Join(root, "todo.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"task", "list", "--vault", root}
+	out := captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("got %q", out)
+	}
+	if !strings.HasSuffix(lines[0], "  due:2026-11-03T14:00-15:30  !high") || !strings.Contains(lines[0], "scheduled:2026-11-02T09:00") {
+		t.Errorf("range line %q", lines[0])
+	}
+	if !strings.HasSuffix(lines[1], "  due:2026-11-04  !low") {
+		t.Errorf("date line %q", lines[1])
+	}
+	if !strings.HasSuffix(lines[2], "  due:2026-11-05T08:15") {
+		t.Errorf("time line %q", lines[2])
+	}
+}
