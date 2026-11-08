@@ -208,3 +208,33 @@ func TestMCPRecordsOnlyTheCategoryNotesInScope(t *testing.T) {
 		t.Fatal("a note out of scope must have no record")
 	}
 }
+
+// update_task records a category note that its roll writes, as toggle_task does.
+func TestMCPRecordsACategoryNoteThatUpdateTaskWrites(t *testing.T) {
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	root := t.TempDir()
+	before := map[string]string{rollWorkNote: rollWorkBody, "quick/Plans.md": rollSession}
+	writeNotes(t, root, before)
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	if text, isErr := callTool(t, cs, "update_task", map[string]any{"id": rollWorkNote + "#0", "state": "done"}); isErr {
+		t.Fatalf("update_task: %s", text)
+	}
+	for rel, want := range before {
+		rec := vault.ReadAgentEdit(root, rel)
+		if rec == nil {
+			t.Fatalf("no record for %s", rel)
+		}
+		if rec.Before != want {
+			t.Fatalf("%s: before = %q", rel, rec.Before)
+		}
+		if rec.After == nil || *rec.After != readNote(t, root, rel) {
+			t.Fatalf("%s: after = %v", rel, rec.After)
+		}
+		if len(rec.Edits) != 1 || rec.Edits[0].Tool != "update_task" {
+			t.Fatalf("%s: edits = %+v", rel, rec.Edits)
+		}
+	}
+}

@@ -1261,6 +1261,59 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 	return nil, nil
 }
 
+// RollEdit is what RollEditedTask did.
+type RollEdit struct {
+	// Applied is true when the task rolled and the notes were written. It is
+	// false when the task has no repeat rule that gives a roll, and nothing
+	// was written.
+	Applied bool
+	// Inserted counts the task lines added above the task in its note.
+	Inserted int
+}
+
+// RollEditedTask finishes or cancels the task at index in a note, with body as
+// the text of the note. The caller has edited the line of the task in body and
+// not written it. When the task has a repeat rule, the roll writes body with
+// the new occurrence and writes the session copies as ToggleTaskWith does. The
+// caller writes the note itself when Applied is false.
+func (v *Vault) RollEditedTask(rel, body string, index int, action RollAction, dialect TaskDialect, toggle ToggleOptions) (RollEdit, error) {
+	abs, folder, err := v.notePath(rel)
+	if err != nil {
+		return RollEdit{}, err
+	}
+	relPosix := v.relPosix(abs)
+	title := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
+	opts := ParseTasksOptions{IncludeExcluded: true, Dialect: dialect}
+	repeats := false
+	for _, t := range ParseTasks(relPosix, title, folder, body, opts) {
+		if t.Kind == "" && t.TaskIndex == index && t.Repeat != "" {
+			repeats = true
+			break
+		}
+	}
+	if !repeats {
+		return RollEdit{}, nil
+	}
+	now := v.now()
+	input := TaskRollInput{
+		Path: relPosix, Body: body, Index: index, Dialect: dialect, Action: action,
+		Now: now, WeekStart: v.WeekStart, Names: v.skipResolver(now), Rand: v.Rand,
+	}
+	if v.DailyNoteDate != nil {
+		input.FallbackDue, _ = v.DailyNoteDate(relPosix, title)
+	}
+	v.loadRollContext(&input, opts)
+	plan, found := PlanTaskRoll(input)
+	if !found || !(plan.Rolled || plan.Ended) {
+		return RollEdit{}, nil
+	}
+	if _, err := v.WriteNote(relPosix, plan.Body); err != nil {
+		return RollEdit{}, err
+	}
+	v.writeSessionCopies(plan.Copies, toggle.CanWrite, toggle.Around)
+	return RollEdit{Applied: true, Inserted: plan.Inserted}, nil
+}
+
 // loadRollContext fills the parts of a roll input that the sessions need: the
 // tasks, the events and the block ids of the vault, and a way to read a note.
 func (v *Vault) loadRollContext(in *TaskRollInput, opts ParseTasksOptions) {

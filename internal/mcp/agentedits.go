@@ -108,7 +108,7 @@ func noteText(ctx context.Context, b Backend, rel string) (string, bool) {
 // local vault. Run gives each write its turn, so the record cannot race.
 // Recording never stands in the way of the edit the user asked for: if the
 // record cannot be written, the tool still runs and the change is simply not
-// offered for review. The tool gets a context. For toggle_task,
+// offered for review. The tool gets a context. For toggle_task and update_task,
 // this context makes the backend record each other note that the tool writes.
 func runRecording(ctx context.Context, tool string, a args, b Backend, agent string, run func(ctx context.Context) (any, error)) (any, error) {
 	noteOf, ok := recordedTools[tool]
@@ -124,7 +124,7 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 	if !reviewAgentEditsEnabled() {
 		return run(ctx)
 	}
-	if tool == "toggle_task" {
+	if tool == "toggle_task" || tool == "update_task" {
 		// A roll copies work sessions into other notes. Each one gets a
 		// record before the roll writes it. The note of the task is already
 		// recorded here.

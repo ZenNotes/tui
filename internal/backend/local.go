@@ -159,6 +159,12 @@ func (l *Local) ToggleTask(ctx context.Context, taskID string, dialect vault.Tas
 	return l.vault.ToggleTaskWith(taskID, dialect, vault.ToggleOptions{Around: aroundNoteWrites(ctx)})
 }
 
+// RollEditedTask rolls a task whose line the caller has edited in body and not
+// written. See vault.RollEditedTask.
+func (l *Local) RollEditedTask(ctx context.Context, rel, body string, index int, action vault.RollAction, canWrite func(rel string) bool) (vault.RollEdit, error) {
+	return l.vault.RollEditedTask(rel, body, index, action, vault.DialectCLI, vault.ToggleOptions{CanWrite: canWrite, Around: aroundNoteWrites(ctx)})
+}
+
 type aroundWritesKey struct{}
 
 // WithAroundNoteWrites gives ToggleTask a function to call around each extra
