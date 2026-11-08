@@ -62,11 +62,11 @@ func TestParseTasksStripsRangedDueFromContent(t *testing.T) {
 }
 
 func TestDueAcrossDaysKeepsOnlyItsStartDate(t *testing.T) {
-	got := scanOne(t, "- [ ] Essay due:2026-11-03..2026-11-05", DialectApp)
+	got := scanOne(t, "- [ ] Essay due:2026-11-03/2026-11-05", DialectApp)
 	if got.Due != "2026-11-03" || got.DueTime != "" || got.DueEnd != "" || got.Content != "Essay" {
 		t.Fatalf("line task: %+v", got)
 	}
-	body := "---\ntags: [task]\ndue: 2026-11-03T09:00..2026-11-05\n---\n\n# Essay\n"
+	body := "---\ntags: [task]\ndue: 2026-11-03T09:00/2026-11-05\n---\n\n# Essay\n"
 	tasks := ParseTasks("inbox/e.md", "Essay", FolderInbox, body, ParseTasksOptions{})
 	if len(tasks) != 1 || tasks[0].Due != "2026-11-03" || tasks[0].DueTime != "" || tasks[0].DueEnd != "" {
 		t.Fatalf("file task: %+v", tasks)
@@ -120,14 +120,14 @@ func TestTaskTokenProblemsListsBadRanges(t *testing.T) {
 		"- [ ] c due:2026-11-03T14:00-25:00",
 		"- [ ] d due:2026-11-03T14:00-15:30",
 		"- [ ] e due:2026-11-03-15:30",
-		"- [ ] f due:2026-11-03..2026-11-05",
+		"- [ ] f due:2026-11-03/2026-11-05",
 	}, "\n")
 	got := problemSummary(TaskTokenProblems("d.md", body))
 	want := []string{
 		"d.md:2 due:2026-11-03T15:30-14:00",
 		"d.md:4 due:2026-11-03T14:00-25:00",
 		"d.md:6 due:2026-11-03-15:30",
-		"d.md:7 due:2026-11-03..2026-11-05",
+		"d.md:7 due:2026-11-03/2026-11-05",
 	}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("problems\n got %q\nwant %q", got, want)

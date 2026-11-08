@@ -172,7 +172,7 @@ func TestFifthOverlapSharesLevelFourAndCounts(t *testing.T) {
 }
 
 func TestCrossDayEventBlocksAndBand(t *testing.T) {
-	notes := map[string]string{"Plans.md": "- Shift when:2026-11-03T22:00..2026-11-05T02:00\n"}
+	notes := map[string]string{"Plans.md": "- Shift when:2026-11-03T22:00/2026-11-05T02:00\n"}
 	_, tv := calEventApp(t, notes)
 	c := tv.calc()
 	first := c.timetable(calDate(2026, time.November, 3), 60)

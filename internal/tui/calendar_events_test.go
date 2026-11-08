@@ -68,9 +68,9 @@ func TestMonthViewListsEventOccurrences(t *testing.T) {
 	a, tv := calEventApp(t, map[string]string{
 		"Lecture.md": "---\npage-type: event\nwhen: 2026-11-02T09:00-10:30\nrepeat: 1w\nskip: [2026-11-16]\n---\nBody\n",
 		"Plans.md": "- Gym when:2026-11-02T07:00 @repeat:after-1w\n" +
-			"- Trip when:2026-11-05..2026-11-07\n" +
+			"- Trip when:2026-11-05/2026-11-07\n" +
 			"- Course when:2026-11-02T18:00 @repeat:1w @until:2026-11-23\n" +
-			"- Conference when:2027-03-13..2027-03-14 @repeat:1y\n",
+			"- Conference when:2027-03-13/2027-03-14 @repeat:1y\n",
 	})
 	cases := []struct {
 		text string
@@ -178,7 +178,7 @@ func TestMonthViewListsSessionWithTime(t *testing.T) {
 }
 
 func TestEventAcrossDaysIsBlockOnFirstAndLastDay(t *testing.T) {
-	_, tv := calEventApp(t, map[string]string{"Plans.md": "- Shift when:2026-11-03T22:00..2026-11-05T02:00\n"})
+	_, tv := calEventApp(t, map[string]string{"Plans.md": "- Shift when:2026-11-03T22:00/2026-11-05T02:00\n"})
 	type shape struct{ clock, end string }
 	want := map[int]shape{3: {"22:00", "24:00"}, 4: {"", ""}, 5: {"00:00", "02:00"}}
 	for d, w := range want {
@@ -252,5 +252,21 @@ func TestProseWhenIsNoCalendarEvent(t *testing.T) {
 		if got := calLabelsOn(tv, 2026, time.November, d); len(got) != 0 {
 			t.Errorf("2026-11-%02d lists %q, want no event", d, got)
 		}
+	}
+}
+
+func TestMonthViewEventFields(t *testing.T) {
+	_, tv := calEventApp(t, map[string]string{
+		"Plans.md": "- Lecture when:2026-11-02T09:00-10:30 @repeat:weekly @until:2026-11-23 @skip:2026-11-16\n" +
+			"- Class when:2026-11-02T11:00 repeat:1w\n",
+	})
+	if got := calDaysListing(tv, 2026, time.November, "Lecture"); !reflect.DeepEqual(got, []int{2, 9, 23}) {
+		t.Errorf("Lecture is listed on days %v, want [2 9 23]", got)
+	}
+	if got := calLabelsOn(tv, 2026, time.November, 2); !reflect.DeepEqual(got, []string{"◆09:00 Lecture", "◆11:00 Class repeat:1w"}) {
+		t.Errorf("2026-11-02 lists %q", got)
+	}
+	if got := calDaysListing(tv, 2026, time.November, "Class"); !reflect.DeepEqual(got, []int{2}) {
+		t.Errorf("Class is listed on days %v, want [2]", got)
 	}
 }

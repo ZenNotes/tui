@@ -35,7 +35,7 @@ func TestEventRuleIgnoresAfterPrefix(t *testing.T) {
 }
 
 func TestMultiDayEventRepeatsWithItsLength(t *testing.T) {
-	e := oneEvent(t, "- Conference when:2027-03-13..2027-03-14 @repeat:1y")
+	e := oneEvent(t, "- Conference when:2027-03-13/2027-03-14 @repeat:1y")
 	got := EventOccurrences(e, "2028-03-01", "2028-03-31", time.Monday, nil)
 	if len(got) != 1 {
 		t.Fatalf("got %d occurrences, want 1: %+v", len(got), got)
@@ -49,7 +49,7 @@ func TestMultiDayEventRepeatsWithItsLength(t *testing.T) {
 		t.Fatalf("got %+v, want the occurrence that starts on 2028-03-13", got)
 	}
 	// Times and the length across midnight are kept.
-	n := oneEvent(t, "- Night when:2026-11-03T22:00..2026-11-04T02:00 @repeat:1w")
+	n := oneEvent(t, "- Night when:2026-11-03T22:00/2026-11-04T02:00 @repeat:1w")
 	got = EventOccurrences(n, "2026-11-10", "2026-11-10", time.Monday, nil)
 	want := EventOccurrence{StartDate: "2026-11-10", StartTime: "22:00", EndDate: "2026-11-11", EndTime: "02:00"}
 	if len(got) != 1 || got[0] != want {
@@ -74,7 +74,7 @@ func TestEventStopsAtUntil(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("note: got %v, want %v", got, want)
 	}
-	e := oneEvent(t, "- Trip when:2026-11-06..2026-11-08 @repeat:1w @until:2026-11-13")
+	e := oneEvent(t, "- Trip when:2026-11-06/2026-11-08 @repeat:1w @until:2026-11-13")
 	var starts, ends []string
 	for _, o := range EventOccurrences(e, "2026-11-01", "2026-12-31", time.Monday, nil) {
 		starts, ends = append(starts, o.StartDate), append(ends, o.EndDate)

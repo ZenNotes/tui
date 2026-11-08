@@ -184,7 +184,7 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "inbox"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	event := "---\npage-type: event\nwhen: 2027-03-13..2027-03-21\n---\n"
+	event := "---\npage-type: event\nwhen: 2027-03-13/2027-03-21\n---\n"
 	if err := os.WriteFile(filepath.Join(root, "inbox", "Spring Break.md"), []byte(event), 0o644); err != nil {
 		t.Fatal(err)
 	}

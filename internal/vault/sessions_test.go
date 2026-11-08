@@ -129,7 +129,7 @@ func TestSessionDateIsFirstCurrentSessionEndingTodayOrLater(t *testing.T) {
 			"- T task:[[Work#^ab12cd]] when:2026-11-04T07:00",
 		}, "2026-11-04", "07:00", ""},
 		{"range that ends today", []string{
-			"- T task:[[Work#^ab12cd]] when:2026-11-03T22:00..2026-11-04T02:00",
+			"- T task:[[Work#^ab12cd]] when:2026-11-03T22:00/2026-11-04T02:00",
 		}, "2026-11-03", "22:00", "02:00"},
 		{"all ended: the last one", []string{
 			"- T task:[[Work#^ab12cd]] when:2026-11-01",

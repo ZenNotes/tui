@@ -162,12 +162,12 @@ func TestSchedulePromptPrefillAndAnswers(t *testing.T) {
 	a.handleKey(vim.Key{Name: "esc"})
 
 	good := map[string]string{
-		"2026-11-03T14:00-15:30":             "2026-11-03T14:00-15:30",
-		"2026-11-03":                         "2026-11-03",
-		"2026-11-03T22:00..2026-11-04T02:00": "2026-11-03T22:00..2026-11-04T02:00",
-		"tomorrow":                           "2026-11-03",
-		"+3":                                 "2026-11-05",
-		"fri":                                "2026-11-06",
+		"2026-11-03T14:00-15:30":            "2026-11-03T14:00-15:30",
+		"2026-11-03":                        "2026-11-03",
+		"2026-11-03T22:00/2026-11-04T02:00": "2026-11-03T22:00/2026-11-04T02:00",
+		"tomorrow":                          "2026-11-03",
+		"+3":                                "2026-11-05",
+		"fri":                               "2026-11-06",
 	}
 	for in, want := range good {
 		a, root := scheduleApp(t, map[string]string{"inbox/Work.md": schedWork, "inbox/Plans.md": schedPlans})

@@ -24,7 +24,7 @@ func (a *App) scheduleSession(t vault.Task) {
 		a.notify("Events need a local vault")
 		return
 	}
-	a.promptFor("Schedule a work session", a.sessionPrefill(), "YYYY-MM-DD[THH:MM[-HH:MM]], start..end, today, tomorrow, +3 or mon..sun", func(a *App, text string) {
+	a.promptFor("Schedule a work session", a.sessionPrefill(), "YYYY-MM-DD[THH:MM[-HH:MM]], start/end, today, tomorrow, +3 or mon..sun", func(a *App, text string) {
 		when, err := parseSessionWhen(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.scheduleSession(t)
@@ -42,14 +42,14 @@ func (a *App) sessionPrefill() string {
 	start := time.Date(now.Year(), now.Month(), now.Day(), now.Hour()+1, 0, 0, 0, now.Location())
 	end := start.Add(time.Hour)
 	if end.Day() != start.Day() {
-		return start.Format("2006-01-02T15:04") + ".." + end.Format("2006-01-02T15:04")
+		return start.Format("2006-01-02T15:04") + "/" + end.Format("2006-01-02T15:04")
 	}
 	return start.Format("2006-01-02T15:04") + "-" + end.Format("15:04")
 }
 
 // parseSessionWhen reads the answer to the when prompt into a `when:` value.
 func parseSessionWhen(text string, now time.Time) (string, error) {
-	if strings.Contains(text, "..") {
+	if strings.Contains(text, "/") {
 		value := strings.ToUpper(text)
 		if _, _, _, _, problem := vault.ParseWhenValue(value); problem != "" {
 			return "", fmt.Errorf("not a time range: %s", problem)

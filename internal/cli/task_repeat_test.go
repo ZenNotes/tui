@@ -463,7 +463,7 @@ func writeEventNote(t *testing.T, root, folder, title, front string) {
 // A name in a skip token stands for the days of the event note with that
 // title. A name that no single live event note answers skips nothing.
 func TestTaskToggleResolvesNamedSkip(t *testing.T) {
-	const spring = "when: 2027-03-13..2027-03-21\n"
+	const spring = "when: 2027-03-13/2027-03-21\n"
 	const task = "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break"
 	const later = "- [ ] Assignment due:2028-03-08T23:59 @repeat:1w @skip:spring-break"
 	for _, tc := range []struct {
@@ -487,7 +487,7 @@ func TestTaskToggleResolvesNamedSkip(t *testing.T) {
 		}},
 		{"no note", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {}},
 		{"inline event only", "2027-03-08", task, "2027-03-15T23:59", func(t *testing.T, root string) {
-			if err := os.WriteFile(filepath.Join(root, "inbox", "Plans.md"), []byte("- Spring break when:2027-03-13..2027-03-21\n"), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(root, "inbox", "Plans.md"), []byte("- Spring break when:2027-03-13/2027-03-21\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
 		}},
@@ -526,7 +526,7 @@ func TestTaskToggleResolvesNamedSkip(t *testing.T) {
 func TestTaskToggleNamedSkipStopsAtUntil(t *testing.T) {
 	fixClock(t, "2027-03-08")
 	root := isolatedCLI(t)
-	writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13..2027-03-21\n")
+	writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13/2027-03-21\n")
 	line := "- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break @until:2027-03-20"
 	got, _ := toggleNoteIn(t, root, line+"\n", "0")
 	if want := strings.Replace(line, "[ ]", "[x]", 1) + "\n"; got != want {
@@ -577,7 +577,7 @@ func TestTaskToggleSkipAndUntilFields(t *testing.T) {
 	t.Run("a name", func(t *testing.T) {
 		fixClock(t, "2027-03-08")
 		root := isolatedCLI(t)
-		writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13..2027-03-21\n")
+		writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13/2027-03-21\n")
 		in := "- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break\n"
 		got, _ := toggleNoteIn(t, root, in, "0")
 		if want := "- [ ] A due:2027-03-22 @repeat:1w @skip:spring-break\n- [x] A due:2027-03-08 @repeat:1w @skip:spring-break\n"; got != want {

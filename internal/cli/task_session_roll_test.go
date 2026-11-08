@@ -113,9 +113,9 @@ func TestTaskToggleCopiesWorkSessions(t *testing.T) {
 		{
 			name: "session across midnight", today: "2026-11-02",
 			work:      "- [ ] T @repeat:1w ^ab12cd\n",
-			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02T22:00..2026-11-03T02:00\n",
+			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02T22:00/2026-11-03T02:00\n",
 			wantWork:  "- [ ] T @repeat:1w ^{ID}\n- [x] T @repeat:1w ^ab12cd\n",
-			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02T22:00..2026-11-03T02:00\n- T task:[[Work#^{ID}]] when:2026-11-09T22:00..2026-11-10T02:00\n",
+			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02T22:00/2026-11-03T02:00\n- T task:[[Work#^{ID}]] when:2026-11-09T22:00/2026-11-10T02:00\n",
 		},
 		{
 			name: "repeating and dangling sessions", today: "2026-11-02",

@@ -91,8 +91,8 @@ func TestPlanRollCountsFromEarliestSession(t *testing.T) {
 			"- [ ] T due:2026-11-08 @repeat:after-3d ^" + id, "when:2026-11-07"},
 		{"skip period", "2027-03-08", "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd", "when:2027-03-08T09:00-11:00",
 			"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^" + id, "when:2027-03-22T09:00-11:00"},
-		{"across midnight", "2026-11-02", "- [ ] T @repeat:1w ^ab12cd", "when:2026-11-02T22:00..2026-11-03T02:00",
-			"- [ ] T @repeat:1w ^" + id, "when:2026-11-09T22:00..2026-11-10T02:00"},
+		{"across midnight", "2026-11-02", "- [ ] T @repeat:1w ^ab12cd", "when:2026-11-02T22:00/2026-11-03T02:00",
+			"- [ ] T @repeat:1w ^" + id, "when:2026-11-09T22:00/2026-11-10T02:00"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			work := sessionNote{"Work.md", "Work", tc.task + "\n"}

@@ -161,8 +161,8 @@ func TestFooterBlankOnEmptySlotAndFollowsFocus(t *testing.T) {
 }
 
 func TestFooterShowsEventDetails(t *testing.T) {
-	files := map[string]string{"Plans.md": "- Spring break when:2027-03-13..2027-03-21\n" +
-		"- Night shift when:2026-11-03T22:00..2026-11-04T02:00\n" +
+	files := map[string]string{"Plans.md": "- Spring break when:2027-03-13/2027-03-21\n" +
+		"- Night shift when:2026-11-03T22:00/2026-11-04T02:00\n" +
 		"- Dentist when:2026-11-03T14:00-15:00 @repeat:1w\n"}
 
 	a, tv, _ := calCursorApp(t, files, calDay, false)

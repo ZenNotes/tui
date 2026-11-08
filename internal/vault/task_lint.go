@@ -80,7 +80,7 @@ func dueReason(token string) string {
 	_, value, _ := strings.Cut(token, ":")
 	date, start, _ := SplitDateTime(value)
 	switch {
-	case strings.HasPrefix(value[len(date):], ".."):
+	case strings.HasPrefix(value[len(date):], "/"), strings.HasPrefix(value[len(date):], ".."):
 		return "a due value holds one day, so only its start date is used"
 	case start == "" && strings.HasPrefix(value[len(date):], "-"),
 		start == "" && strings.HasPrefix(value[len(date):], "T-"):

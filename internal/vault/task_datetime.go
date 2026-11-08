@@ -19,8 +19,8 @@ func IsValidClockTime(s string) bool {
 // but only when the end is a valid `HH:MM` later than the start. Otherwise the
 // end is empty and the start is kept. When the date is real but what follows
 // `T` is not a valid `HH:MM`, the date is kept and the times are empty, so a
-// typo never hides the day. A value that goes on past the date with `-` or
-// `..` keeps its date only. A value whose date is not a real `YYYY-MM-DD`
+// typo never hides the day. A value that goes on past the date with `-`, `/`
+// or `..` keeps its date only. A value whose date is not a real `YYYY-MM-DD`
 // gives an empty date.
 func SplitDateTime(s string) (date, start, end string) {
 	date, start, end, _ = parseDateTimeRange(s)
@@ -39,7 +39,7 @@ func parseDateTimeRange(s string) (date, start, end string, ok bool) {
 	switch {
 	case rest == "":
 		return date, "", "", true
-	case strings.HasPrefix(rest, "-") || strings.HasPrefix(rest, ".."):
+	case strings.HasPrefix(rest, "-") || strings.HasPrefix(rest, "/") || strings.HasPrefix(rest, ".."):
 		return date, "", "", false
 	case rest[0] != 'T':
 		return "", "", "", false
@@ -63,14 +63,15 @@ func parseDateTimeRange(s string) (date, start, end string, ok bool) {
 // which is empty when the whole value is well formed.
 //
 // The same-day form is `start` or `start-HH:MM`, read as SplitDateTime reads
-// it. The cross-day form is `start..end`, where both ends are a date or both
+// it. The cross-day form is `start/end`, where both ends are a date or both
 // are a date-time. A date end must not be before the start date. A date-time
-// end must be after the start. A `..` with both ends on one day gives the same
-// result as the same-day form. An end that is not valid gives no end, and the
+// end must be after the start. A `/` with both ends on one day gives the same
+// result as the same-day form. A `..` is not a separator, so a value with `..`
+// keeps its start and has a problem. An end that is not valid gives no end, and the
 // start is kept with its time. The end date is empty when the value has no
 // end, and for a date range that ends on its start day.
 func ParseWhenValue(s string) (startDate, startTime, endDate, endTime, problem string) {
-	cut := strings.Index(s, "..")
+	cut := strings.Index(s, "/")
 	if cut < 10 {
 		return parseSameDayWhen(s)
 	}
@@ -78,7 +79,7 @@ func ParseWhenValue(s string) (startDate, startTime, endDate, endTime, problem s
 	if date == "" {
 		return "", "", "", "", "the start is not a date in the form YYYY-MM-DD"
 	}
-	toDate, toTime, toEnd, toOK := parseDateTimeRange(s[cut+2:])
+	toDate, toTime, toEnd, toOK := parseDateTimeRange(s[cut+1:])
 	switch {
 	case !leftOK || left != "":
 		return date, start, "", "", "the start of the range is not a date or a date with a time"
@@ -96,7 +97,7 @@ func ParseWhenValue(s string) (startDate, startTime, endDate, endTime, problem s
 	return date, start, toDate, toTime, ""
 }
 
-// parseSameDayWhen reads a value that has no `..`. A timed end is on the start
+// parseSameDayWhen reads a value that has no `/`. A timed end is on the start
 // date.
 func parseSameDayWhen(s string) (startDate, startTime, endDate, endTime, problem string) {
 	date, start, end, ok := parseDateTimeRange(s)
@@ -113,8 +114,17 @@ func parseSameDayWhen(s string) (startDate, startTime, endDate, endTime, problem
 		// range that goes on into the next day.
 		if next := shiftISODate(date, 1); next != "" {
 			return date, start, "", "", "the end is not after the start; to end on the next day write " +
-				date + "T" + start + ".." + next + "T" + s[17:]
+				date + "T" + start + "/" + next + "T" + s[17:]
 		}
+	}
+	rest := s[10:]
+	if len(rest) >= 6 && rest[0] == 'T' && IsValidClockTime(rest[1:6]) {
+		rest = rest[6:]
+		start = s[11:16]
+	}
+	if strings.HasPrefix(rest, "..") {
+		// A range across days is written with a slash, not with dots.
+		return date, start, "", "", "a range across days is written start/end with a slash, so only the start is used"
 	}
 	return date, start, "", "", "the time or the end of the value is not valid"
 }
@@ -152,7 +162,7 @@ func ShiftWhenValue(s string, days int) string {
 	case endDate == startDate:
 		return out + "-" + endTime
 	}
-	out += ".." + shiftISODate(endDate, days)
+	out += "/" + shiftISODate(endDate, days)
 	if endTime != "" {
 		out += "T" + endTime
 	}

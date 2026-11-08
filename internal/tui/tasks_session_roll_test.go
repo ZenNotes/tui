@@ -180,7 +180,7 @@ func TestTasksViewRollCopiesSessions(t *testing.T) {
 
 const (
 	skipTask  = "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
-	skipEvent = "---\npage-type: event\nwhen: 2027-03-13..2027-03-21\n---\n"
+	skipEvent = "---\npage-type: event\nwhen: 2027-03-13/2027-03-21\n---\n"
 	skipWant  = "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:spring-break\n" +
 		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
 )

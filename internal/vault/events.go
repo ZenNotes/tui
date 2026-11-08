@@ -223,14 +223,14 @@ func eventFromLine(line string) (Event, bool) {
 }
 
 // startsWithRealDate reports whether a `when:` value begins with a real
-// `YYYY-MM-DD` date that is followed by the end of the value, a `T`, a `-` or
-// `..`.
+// `YYYY-MM-DD` date that is followed by the end of the value, a `T`, a `-`, a
+// `/` or `..`.
 func startsWithRealDate(value string) bool {
 	if len(value) < 10 || !IsValidISODate(value[:10]) {
 		return false
 	}
 	rest := value[10:]
-	return rest == "" || rest[0] == 'T' || rest[0] == '-' || strings.HasPrefix(rest, "..")
+	return rest == "" || rest[0] == 'T' || rest[0] == '-' || rest[0] == '/' || strings.HasPrefix(rest, "..")
 }
 
 // cutSpans replaces each span of text with one space. The spans are byte

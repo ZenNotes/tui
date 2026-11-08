@@ -193,7 +193,7 @@ func TestBeyondFourShowsPlusCountAndDistinctColours(t *testing.T) {
 func TestDayViewAllDayPane(t *testing.T) {
 	notes := map[string]string{
 		"Work.md":  "- [ ] errand due:2026-11-05\n- [ ] laundry due:2026-11-05\n- [ ] Standup due:2026-11-05T10:00\n",
-		"Plans.md": "- Trip when:2026-11-04..2026-11-06\n",
+		"Plans.md": "- Trip when:2026-11-04/2026-11-06\n",
 	}
 	a, tv := calBlockApp(t, notes, calDay, false)
 	for _, c := range []struct{ w, pane int }{{70, 24}, {120, 36}, {200, 40}} {
@@ -230,8 +230,8 @@ func TestDayViewAllDayPane(t *testing.T) {
 func TestWeekViewKeepsAllDayBand(t *testing.T) {
 	notes := map[string]string{
 		"Work.md": "- [ ] errand due:2026-11-03\n- [ ] laundry due:2026-11-03\n- [ ] Standup due:2026-11-05T10:00\n",
-		"Plans.md": "- Trip when:2026-11-04..2026-11-06\n" +
-			"- Night when:2026-11-05T22:00..2026-11-06T02:00\n",
+		"Plans.md": "- Trip when:2026-11-04/2026-11-06\n" +
+			"- Night when:2026-11-05T22:00/2026-11-06T02:00\n",
 	}
 	a, tv := calBlockApp(t, notes, calWeek, false)
 	lines := calScreen(a, tv, 160, 70)
@@ -271,7 +271,7 @@ func TestWeekViewKeepsAllDayBand(t *testing.T) {
 func TestSmallestBodiesAndTwelveHourWeek(t *testing.T) {
 	notes := map[string]string{
 		"Work.md":  "- [ ] Dentist due:2026-11-05T14:00-15:30\n- [ ] errand due:2026-11-05\n",
-		"Plans.md": "- Night when:2026-11-05T22:00..2026-11-06T02:00\n",
+		"Plans.md": "- Night when:2026-11-05T22:00/2026-11-06T02:00\n",
 	}
 	for _, c := range []struct {
 		sub     calSub

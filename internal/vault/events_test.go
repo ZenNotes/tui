@@ -27,15 +27,15 @@ func TestInlineEventsAcrossDaysAndTimes(t *testing.T) {
 		line string
 		want span
 	}{
-		"date range":          {"- Spring break when:2027-03-13..2027-03-21", span{"2027-03-13", "", "2027-03-21", ""}},
-		"across midnight":     {"- Night shift when:2026-11-03T22:00..2026-11-04T02:00", span{"2026-11-03", "22:00", "2026-11-04", "02:00"}},
-		"same day long form":  {"- Talk when:2026-11-03T14:00..2026-11-03T15:30", span{"2026-11-03", "14:00", "2026-11-03", "15:30"}},
+		"date range":          {"- Spring break when:2027-03-13/2027-03-21", span{"2027-03-13", "", "2027-03-21", ""}},
+		"across midnight":     {"- Night shift when:2026-11-03T22:00/2026-11-04T02:00", span{"2026-11-03", "22:00", "2026-11-04", "02:00"}},
+		"same day long form":  {"- Talk when:2026-11-03T14:00/2026-11-03T15:30", span{"2026-11-03", "14:00", "2026-11-03", "15:30"}},
 		"same day short form": {"- Talk when:2026-11-03T14:00-15:30", span{"2026-11-03", "14:00", "2026-11-03", "15:30"}},
-		"end date first":      {"- E when:2026-11-04..2026-11-03", span{"2026-11-04", "", "", ""}},
-		"end time first":      {"- E when:2026-11-03T22:00..2026-11-03T21:00", span{"2026-11-03", "22:00", "", ""}},
-		"time then date":      {"- E when:2026-11-03T22:00..2026-11-04", span{"2026-11-03", "22:00", "", ""}},
-		"date then time":      {"- E when:2026-11-03..2026-11-04T02:00", span{"2026-11-03", "", "", ""}},
-		"end not a date":      {"- E when:2026-11-03..2026-02-30", span{"2026-11-03", "", "", ""}},
+		"end date first":      {"- E when:2026-11-04/2026-11-03", span{"2026-11-04", "", "", ""}},
+		"end time first":      {"- E when:2026-11-03T22:00/2026-11-03T21:00", span{"2026-11-03", "22:00", "", ""}},
+		"time then date":      {"- E when:2026-11-03T22:00/2026-11-04", span{"2026-11-03", "22:00", "", ""}},
+		"date then time":      {"- E when:2026-11-03/2026-11-04T02:00", span{"2026-11-03", "", "", ""}},
+		"end not a date":      {"- E when:2026-11-03/2026-02-30", span{"2026-11-03", "", "", ""}},
 		"end wraps":           {"- Late when:2026-11-03T23:00-01:00", span{"2026-11-03", "23:00", "", ""}},
 	}
 	for name, c := range cases {
@@ -249,7 +249,7 @@ func TestEventListMarker(t *testing.T) {
 }
 
 func TestDueAcrossDaysIsNotAnEvent(t *testing.T) {
-	body := "- [ ] Essay due:2026-11-03..2026-11-05\n"
+	body := "- [ ] Essay due:2026-11-03/2026-11-05\n"
 	if got := readEvents(body); len(got) != 0 {
 		t.Errorf("got %+v", got)
 	}
@@ -286,5 +286,27 @@ func TestEventLineKeepsABareRepeatTokenInItsText(t *testing.T) {
 	e = oneEvent(t, "- Gym @repeat:1w when:2026-11-02T07:00 repeat:2w\n")
 	if e.Repeat != "1w" || e.Text != "Gym repeat:2w" {
 		t.Errorf("field and bare token: repeat %q, text %q", e.Repeat, e.Text)
+	}
+}
+
+func TestEventLineKeepsBareTokensAndAtTaskAsText(t *testing.T) {
+	e := oneEvent(t, "- Lecture when:2026-11-02T09:00 repeat:1w until:2026-11-23 skip:2026-11-16")
+	if e.Text != "Lecture repeat:1w until:2026-11-23 skip:2026-11-16" || e.Repeat != "" || e.Until != "" || len(e.Skip) != 0 {
+		t.Errorf("bare tokens: %+v", e)
+	}
+	e = oneEvent(t, "- Write report @task:[[Work#^ab12cd]] when:2026-11-03T14:00")
+	if e.Text != "Write report @task:[[Work#^ab12cd]]" || e.TaskLink != "" {
+		t.Errorf("@task: %+v", e)
+	}
+	e = oneEvent(t, "- Write report task:[[Work#^ab12cd]] when:2026-11-03T14:00")
+	if e.Text != "Write report" || e.TaskLink != "[[Work#^ab12cd]]" {
+		t.Errorf("task: %+v", e)
+	}
+}
+
+func TestEventFieldsLeaveTheText(t *testing.T) {
+	e := oneEvent(t, "- Lecture when:2026-11-02T09:00-10:30 @repeat:weekly @until:2026-11-23 @skip:2026-11-16")
+	if e.Text != "Lecture" || e.Repeat == "" || e.Until != "2026-11-23" || !reflect.DeepEqual(e.Skip, []string{"2026-11-16"}) {
+		t.Errorf("got %+v", e)
 	}
 }

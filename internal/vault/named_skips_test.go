@@ -22,14 +22,14 @@ func resolverFor(events ...[]Event) SkipResolver {
 func TestNamedSkipNormalisesTitles(t *testing.T) {
 	want := []SkipPeriod{{Start: "2027-03-13", End: "2027-03-21"}}
 	for _, title := range []string{"Spring Break", "spring-break", "SPRING  BREAK", " Spring - Break "} {
-		names := resolverFor(noteEvent(title, FolderInbox, "when: 2027-03-13..2027-03-21\n"))
+		names := resolverFor(noteEvent(title, FolderInbox, "when: 2027-03-13/2027-03-21\n"))
 		for _, name := range []string{"spring-break", "SPRING-BREAK", "spring break", "-spring-break-"} {
 			if got := names(Event{}, name); !reflect.DeepEqual(got, want) {
 				t.Errorf("title %q, name %q: got %v, want %v", title, name, got, want)
 			}
 		}
 	}
-	names := resolverFor(noteEvent("Spring Break", FolderInbox, "when: 2027-03-13..2027-03-21\n"))
+	names := resolverFor(noteEvent("Spring Break", FolderInbox, "when: 2027-03-13/2027-03-21\n"))
 	for _, name := range []string{"SpringBreak", "Spring_Break", "spring", ""} {
 		if got := names(Event{}, name); len(got) != 0 {
 			t.Errorf("name %q: got %v, want no period", name, got)
@@ -38,7 +38,7 @@ func TestNamedSkipNormalisesTitles(t *testing.T) {
 }
 
 func TestNamedSkipCoversEveryOccurrence(t *testing.T) {
-	names := resolverFor(noteEvent("Reading Week", FolderInbox, "when: 2026-11-07..2026-11-15\nrepeat: 1y\n"))
+	names := resolverFor(noteEvent("Reading Week", FolderInbox, "when: 2026-11-07/2026-11-15\nrepeat: 1y\n"))
 	got := names(Event{}, "reading-week")
 	want := []SkipPeriod{
 		{Start: "2026-11-07", End: "2026-11-15"},
@@ -53,14 +53,14 @@ func TestNamedSkipCoversEveryOccurrence(t *testing.T) {
 }
 
 func TestNamedSkipIgnoresInlineEventsTrashAndAmbiguity(t *testing.T) {
-	inline := ParseEvents("Plans.md", "Plans", FolderInbox, "- Spring break when:2027-03-13..2027-03-21\n")
+	inline := ParseEvents("Plans.md", "Plans", FolderInbox, "- Spring break when:2027-03-13/2027-03-21\n")
 	if len(inline) != 1 {
 		t.Fatalf("inline events: %+v", inline)
 	}
 	if got := resolverFor(inline)(Event{}, "spring-break"); len(got) != 0 {
 		t.Errorf("inline event: got %v", got)
 	}
-	trashed := noteEvent("Spring Break", FolderTrash, "when: 2027-03-13..2027-03-21\n")
+	trashed := noteEvent("Spring Break", FolderTrash, "when: 2027-03-13/2027-03-21\n")
 	if got := resolverFor(trashed)(Event{}, "spring-break"); len(got) != 0 {
 		t.Errorf("trashed note: got %v", got)
 	}
@@ -98,7 +98,7 @@ func TestNamedSkipCycleIsIgnored(t *testing.T) {
 }
 
 func TestNamedSkipRespectsEventUntil(t *testing.T) {
-	names := resolverFor(noteEvent("Reading Week", FolderInbox, "when: 2026-11-07..2026-11-15\nrepeat: 1y\nuntil: 2027-12-31\n"))
+	names := resolverFor(noteEvent("Reading Week", FolderInbox, "when: 2026-11-07/2026-11-15\nrepeat: 1y\nuntil: 2027-12-31\n"))
 	got := names(Event{}, "reading-week")
 	want := []SkipPeriod{
 		{Start: "2026-11-07", End: "2026-11-15"},
@@ -123,7 +123,7 @@ func TestNamedSkipUsesTheEventsOwnSkips(t *testing.T) {
 }
 
 func TestEventOccurrencesHonourNamedSkips(t *testing.T) {
-	spring := noteEvent("Spring Break", FolderInbox, "when: 2027-03-13..2027-03-21\n")
+	spring := noteEvent("Spring Break", FolderInbox, "when: 2027-03-13/2027-03-21\n")
 	lab := ParseEvents("Plans.md", "Plans", FolderInbox, "- Lab when:2027-03-01T14:00-16:00 @repeat:1w @skip:spring-break\n")
 	if len(lab) != 1 {
 		t.Fatalf("events: %+v", lab)
