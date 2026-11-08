@@ -670,3 +670,51 @@ func TestTaskToggleRunsUpstreamCases(t *testing.T) {
 		})
 	}
 }
+
+// toggleInVault writes body at rel in a vault whose vault.json holds settings,
+// runs `zn task toggle` for the first task and returns the note afterwards.
+func toggleInVault(t *testing.T, settings, rel, body string) string {
+	t.Helper()
+	root := isolatedCLI(t)
+	writeVaultFile(t, root, ".zennotes/vault.json", settings)
+	writeVaultFile(t, root, rel, body)
+	args := []string{"task", "toggle", rel + "#0", "--vault", root}
+	captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	got, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(got)
+}
+
+func TestTaskToggleCountsFromDailyNoteDate(t *testing.T) {
+	fixClock(t, "2026-11-08")
+	const on = `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":true}}`
+	const off = `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":false}}`
+	const daily = "inbox/Daily Notes/2026-11-06.md"
+	line := "- [ ] Water plants @repeat:monthly\n"
+	fromNote := "- [ ] Water plants @repeat:monthly due:2026-12-06\n- [x] Water plants\n"
+	fromToday := "- [ ] Water plants @repeat:monthly due:2026-12-08\n- [x] Water plants\n"
+	for _, tc := range []struct {
+		name, settings, rel, body, want string
+	}{
+		{"daily notes on", on, daily, line, fromNote},
+		{"daily notes off", off, daily, line, fromToday},
+		{"note outside the daily folder", on, "inbox/Projects/2026-11-06.md", line, fromToday},
+		{"title does not match", on, "inbox/Daily Notes/Plans.md", line, fromToday},
+		{"line due comes first", on, daily, "- [ ] Water plants due:2026-11-01 @repeat:monthly\n",
+			"- [ ] Water plants due:2026-12-01 @repeat:monthly\n- [x] Water plants due:2026-11-01\n"},
+		{"frontmatter due comes first", on, daily, "---\ndue: 2026-11-01\n---\n" + line,
+			"---\ndue: 2026-11-01\n---\n- [ ] Water plants @repeat:monthly due:2026-12-01\n- [x] Water plants\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := toggleInVault(t, tc.settings, tc.rel, tc.body); got != tc.want {
+				t.Fatalf("got:\n%s\nwant:\n%s", got, tc.want)
+			}
+		})
+	}
+}

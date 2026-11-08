@@ -455,3 +455,33 @@ func TestToggleTaskToolRunsUpstreamCases(t *testing.T) {
 		t.Fatal("no cases")
 	}
 }
+
+// toggle_task counts a repeating task in a daily note from the date of the
+// note when daily notes are on.
+func TestToggleTaskToolCountsFromDailyNoteDate(t *testing.T) {
+	for _, tc := range []struct {
+		name, settings, want string
+	}{
+		{"daily notes on", `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":true}}`, "due:2026-12-06"},
+		{"daily notes off", `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":false}}`, "due:2026-12-08"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := seedFiles(t, map[string]string{
+				".zennotes/vault.json":            tc.settings,
+				"inbox/Daily Notes/2026-11-06.md": "- [ ] Water plants @repeat:monthly\n",
+			})
+			today := time.Date(2026, 11, 8, 12, 0, 0, 0, time.Local)
+			cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+				return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+			})
+			text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/Daily Notes/2026-11-06.md#0"})
+			if isErr {
+				t.Fatalf("toggle_task: %s", text)
+			}
+			got, err := os.ReadFile(filepath.Join(root, "inbox", "Daily Notes", "2026-11-06.md"))
+			if err != nil || !strings.Contains(string(got), "- [ ] Water plants @repeat:monthly "+tc.want+"\n") {
+				t.Fatalf("note (%v):\n%s\nwant %s on the open copy", err, got, tc.want)
+			}
+		})
+	}
+}

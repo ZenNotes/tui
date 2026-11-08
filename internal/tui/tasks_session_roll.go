@@ -30,6 +30,7 @@ func (a *App) planTaskRoll(body string, t vault.Task, action vault.RollAction) (
 		Path: t.SourcePath, Body: body, File: t.Kind == "file", Index: t.TaskIndex,
 		Dialect: vault.DialectApp, Action: action, Now: now, WeekStart: a.taskWeekStart(),
 		Names: v.SkipResolverAt(now), Rand: v.Rand,
+		FallbackDue: a.dailyNoteDate(t.SourcePath, t.NoteTitle),
 	}
 	if t.Repeat != "" {
 		v.LoadRollContext(&in)

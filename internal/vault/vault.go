@@ -47,6 +47,10 @@ type Vault struct {
 	// TaskWarning receives a warning when a roll cannot do all of its work.
 	// Nil drops the warning.
 	TaskWarning func(string)
+	// DailyNoteDate gives the day of a daily note from the path and the title
+	// of a note, and false for any other note. A roll counts a task that has no
+	// date from that day. Nil means no note is a daily note.
+	DailyNoteDate func(rel, title string) (string, bool)
 	// Rand is the source of new block ids; nil uses the global source.
 	Rand *rand.Rand
 }
@@ -1196,6 +1200,9 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 	input := TaskRollInput{
 		Path: relPosix, Body: string(body), Dialect: dialect, Action: RollComplete,
 		Now: now, WeekStart: v.WeekStart, Names: v.skipResolver(now), Rand: v.Rand,
+	}
+	if v.DailyNoteDate != nil {
+		input.FallbackDue, _ = v.DailyNoteDate(relPosix, title)
 	}
 	targetIndex := 0
 	if indexStr == "task" {

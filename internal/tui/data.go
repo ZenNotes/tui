@@ -272,6 +272,16 @@ func (a *App) dailyDueByPath() map[string]string {
 	return out
 }
 
+// dailyNoteDate gives the day of a note that is a daily note under the vault
+// settings, and false for any other note. A roll counts from that day.
+func (a *App) dailyNoteDate(path, title string) string {
+	if a.idx == nil {
+		return ""
+	}
+	date, _ := periodic.DailyNoteDate(path, title, a.idx.settings, a.primaryAtRoot())
+	return date
+}
+
 // displayTasks are the tasks the Tasks surfaces show: work sessions joined,
 // daily-note due inference applied, archived notes retired unless the
 // preference keeps them.

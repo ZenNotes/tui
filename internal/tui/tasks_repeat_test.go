@@ -527,3 +527,68 @@ func TestCompletingDropsWaitingAndStatusFromCopy(t *testing.T) {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 }
+
+func TestTasksViewCountsFromDailyNoteDate(t *testing.T) {
+	const rel = "inbox/Daily Notes/2026-11-06.md"
+	for _, tc := range []struct {
+		name, settings, rel, want string
+	}{
+		{"daily notes on", `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":true}}`, rel, "due:2026-12-06"},
+		{"daily notes off", `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":false}}`, rel, "due:2026-12-08"},
+		{"outside the daily folder", `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":true}}`, "inbox/Projects/2026-11-06.md", "due:2026-12-08"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newSessionParityVault(t)
+			if err := os.WriteFile(filepath.Join(root, ".zennotes", "vault.json"), []byte(tc.settings), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, filepath.FromSlash(tc.rel))
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("- [ ] Water plants @repeat:monthly\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a := newSessionParityApp(t, root)
+			day := time.Date(2026, 11, 8, 12, 0, 0, 0, time.Local)
+			a.taskNow = func() time.Time { return day }
+			task := vault.ParseTasks(tc.rel, "2026-11-06", vault.FolderInbox, "- [ ] Water plants @repeat:monthly\n",
+				vault.ParseTasksOptions{IncludeExcluded: true, Dialect: vault.DialectApp})[0]
+			a.toggleTask(task)
+			want := "- [ ] Water plants @repeat:monthly " + tc.want + "\n- [x] Water plants\n"
+			if got := readRepeatNote(t, path); got != want {
+				t.Errorf("note = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestEditorCountsFromDailyNoteDate(t *testing.T) {
+	root := newSessionParityVault(t)
+	settings := `{"primaryNotesLocation":"inbox","dailyNotes":{"enabled":true}}`
+	if err := os.WriteFile(filepath.Join(root, ".zennotes", "vault.json"), []byte(settings), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const rel = "inbox/Daily Notes/2026-11-06.md"
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	text := "- [ ] Water plants @repeat:monthly\n"
+	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a := newSessionParityApp(t, root)
+	day := time.Date(2026, 11, 8, 12, 0, 0, 0, time.Local)
+	a.taskNow = func() time.Time { return day }
+	a.openNote(rel, true)
+	buf := a.activeBuffer()
+	if buf == nil {
+		t.Fatal("note did not open")
+	}
+	got, rolled := a.completeCheckboxText(buf, text, 0)
+	want := "- [ ] Water plants @repeat:monthly due:2026-12-06\n- [x] Water plants\n"
+	if !rolled || got != want {
+		t.Errorf("rolled = %v, text = %q, want %q", rolled, got, want)
+	}
+}

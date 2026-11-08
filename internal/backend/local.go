@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -27,6 +28,9 @@ func newLocal(root string, opts Options) (*Local, error) {
 	}
 	v.Now = opts.Now
 	v.TaskWarning = opts.TaskWarning
+	v.DailyNoteDate = func(rel, title string) (string, bool) {
+		return periodic.DailyNoteDate(rel, title, v.Settings(), v.PrimaryNotesLocation() == vault.PrimaryNotesRoot)
+	}
 	return &Local{vault: v}, nil
 }
 
