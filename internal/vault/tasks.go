@@ -637,6 +637,18 @@ func SetTaskCancelled(markdown string, taskIndex int, cancelled bool) string {
 	return out
 }
 
+// appendTaskToken adds token to the end of the text of a task line. A block id
+// that ends the text stays the last item, because a block id counts only at
+// the end of a line.
+func appendTaskToken(tail, token string) string {
+	rest, id := splitBlockID(tail)
+	out := trailingWsRe.ReplaceAllString(rest, "") + " " + token
+	if id != "" {
+		out += " ^" + id
+	}
+	return out
+}
+
 func taskTail(m []string) (string, bool) {
 	if !strings.HasPrefix(m[3], "]") {
 		return "", false
@@ -658,7 +670,7 @@ func SetTaskWaiting(markdown string, taskIndex int, waiting bool) string {
 		has := waitingTokenRe.MatchString(tail)
 		next := tail
 		if waiting && !has {
-			next = trailingWsRe.ReplaceAllString(tail, "") + " @waiting"
+			next = appendTaskToken(tail, "@waiting")
 		} else if !waiting && has {
 			next = tidyTail(waitingTokenRe.ReplaceAllString(tail, "$1"))
 		}
@@ -677,7 +689,7 @@ func SetTaskPriority(markdown string, taskIndex int, priority string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(priorityTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if priority != "" {
-			next += " !" + priority
+			next = appendTaskToken(cleaned, "!"+priority)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
@@ -701,7 +713,7 @@ func SetTaskDue(markdown string, taskIndex int, due string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(dueTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if due != "" {
-			next += " due:" + due
+			next = appendTaskToken(cleaned, "due:"+due)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
@@ -750,7 +762,7 @@ func SetTaskField(markdown string, taskIndex int, key, value string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(tokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if value != "" {
-			next += " @" + key + ":" + value
+			next = appendTaskToken(cleaned, "@"+key+":"+value)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})

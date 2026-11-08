@@ -141,7 +141,7 @@ func withDue(line, date string) string {
 	if loc := inlineDueRe.FindStringSubmatchIndex(line); loc != nil {
 		return line[:loc[2]] + date + line[loc[3]:]
 	}
-	return strings.TrimRight(line, " \t") + " due:" + date
+	return appendTaskToken(line, "due:"+date)
 }
 
 // cancelMarker is the state a plain cancel gives a line: cancelled, or open
