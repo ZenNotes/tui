@@ -18,7 +18,8 @@ type colView struct {
 	below   int
 }
 
-const colScrollTotal = 50
+// colScrollTotal is more than the day view's pane can list at 120x70.
+const colScrollTotal = 80
 
 // calColumnView reads the zq entries and the `+N more` lines of one render.
 func calColumnView(t *testing.T, lines []string) colView {
@@ -178,7 +179,7 @@ func TestColumnScrolledToEndShowsOnlyTopMore(t *testing.T) {
 			t.Errorf("%s: top count = %d, want +%d more", ctx, got.above, want)
 		}
 		if len(got.entries) != wantEntries || got.entries[len(got.entries)-1] != colScrollTotal-1 {
-			t.Errorf("%s: entries = %v, want the last %d ending at the 50th", ctx, got.entries, wantEntries)
+			t.Errorf("%s: entries = %v, want the last %d ending at the last", ctx, got.entries, wantEntries)
 		}
 		requireDay(t, tv, "2026-11-18", ctx)
 	}

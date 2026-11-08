@@ -185,7 +185,7 @@ func TestHourListScrollsAtMinimumSize(t *testing.T) {
 	for _, c := range []struct {
 		sub  calSub
 		w, h int
-	}{{calWeek, 64, 12}, {calDay, 40, 10}} {
+	}{{calWeek, 64, 16}, {calDay, 60, 14}} {
 		for _, half := range []bool{false, true} {
 			a, tv := calTestApp(t, nil)
 			a.prefs.VimMode = true

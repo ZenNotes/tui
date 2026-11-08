@@ -63,9 +63,12 @@ func calBoxFor(t *testing.T, tv *tasksView, day time.Time) calRect {
 	t.Helper()
 	for _, b := range tv.calc().layout.boxes {
 		if b.day.Format("2006-01-02") == day.Format("2006-01-02") {
-			// A week or day column is its all-day band and the hour rows under it.
+			// A week column is its all-day band and the hour rows under it.
+			// The day view has the all-day pane only, beside the hour rows.
 			r := b.rect
-			r.h += b.hours.h
+			if tv.calc().sub == calWeek {
+				r.h += b.hours.h
+			}
 			return r
 		}
 	}
@@ -254,7 +257,7 @@ func TestWheelScrollsHourListOneRow(t *testing.T) {
 	for _, c := range []struct {
 		sub  calSub
 		w, h int
-	}{{calWeek, 64, 12}, {calDay, 40, 10}} {
+	}{{calWeek, 64, 16}, {calDay, 60, 14}} {
 		for _, half := range []bool{false, true} {
 			a, tv := calTestApp(t, nil)
 			a.prefs.VimMode = true

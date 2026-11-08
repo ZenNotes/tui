@@ -118,8 +118,14 @@ func TestUntimedTaskStaysOutOfHourRows(t *testing.T) {
 			if got := strings.Count(calScreenText(lines), "errand"); got != 1 {
 				t.Fatalf("%s: entry shown %d times, want once:\n%s", ctx, got, calScreenText(lines))
 			}
+			// The day view lists untimed entries in the pane right of the
+			// hours, so only the cells left of the pane are the hour rows.
+			grid := 1 << 20
+			if sub == calDay {
+				grid = tv.calc().layout.pane.x
+			}
 			for _, l := range lines {
-				if calLabel24.MatchString(l) && strings.Contains(l, "errand") {
+				if calLabel24.MatchString(l) && strings.Contains(l, "errand") && calCellOf(l, "errand") < grid {
 					t.Errorf("%s: entry sits in the hour row %q", ctx, l)
 				}
 			}
@@ -132,7 +138,7 @@ func TestAllDayBandSitsAboveHourRows(t *testing.T) {
 		{ID: "n#0", SourcePath: "n.md", Content: "errand", Status: "open", Due: "2026-11-05"},
 		{ID: "n#1", SourcePath: "n.md", Content: "standup", Status: "open", Due: "2026-11-05", DueTime: "10:00"},
 	}
-	for _, sub := range []calSub{calWeek, calDay} {
+	for _, sub := range []calSub{calWeek} {
 		a, tv := calHourRowApp(t, tasks, sub, false)
 		lines := calScreen(a, tv, 160, 70)
 		ctx := fmt.Sprintf("layout %v", sub)
@@ -172,13 +178,13 @@ func TestItemFocusFollowsBandThenHourRows(t *testing.T) {
 		{ID: "n#1", SourcePath: "n.md", Content: "plain1", Status: "open", Due: "2026-11-05"},
 		{ID: "n#2", SourcePath: "n.md", Content: "early", Status: "open", Due: "2026-11-05", DueTime: "09:00"},
 		{ID: "n#3", SourcePath: "n.md", Content: "plain2", Status: "open", Due: "2026-11-05"},
-	}, calDay, false)
-	calScreen(a, tv, 120, 70)
+	}, calWeek, false)
+	calScreen(a, tv, 160, 70)
 	calPress(a, tv, vim.KeyEnter)
 	requireFocus(t, tv, calFocusItems, "Enter on a day with entries")
 	want := []string{"plain1", "plain2", "early", "late"}
 	selected := func() string {
-		calScreen(a, tv, 120, 70)
+		calScreen(a, tv, 160, 70)
 		if sel := tv.selectedTask(); sel != nil {
 			return sel.Content
 		}

@@ -63,8 +63,11 @@ type Theme struct {
 	Frontmatter  lipgloss.Style
 	LineNumber   lipgloss.Style
 	Overdue      lipgloss.Style
-	KeyHint      lipgloss.Style
-	Match        lipgloss.Style
+	// CalLevel are the styles of calendar blocks by indentation level, from
+	// the outermost one: blue, green, purple and aqua blocks that carry text.
+	CalLevel [4]lipgloss.Style
+	KeyHint  lipgloss.Style
+	Match    lipgloss.Style
 }
 
 // DetectDarkBackground asks the terminal for its background color. It must
@@ -256,6 +259,10 @@ func themeFromPalette(p themes.Palette) Theme {
 	t.Frontmatter = lipgloss.NewStyle().Foreground(t.FgMuted)
 	t.LineNumber = lipgloss.NewStyle().Foreground(t.FgMuted)
 	t.Overdue = lipgloss.NewStyle().Foreground(t.Red)
+	for i, hue := range []themes.RGB{tk.Blue, tk.Green, tk.Purple, tk.Aqua} {
+		bg, fg := block(hue)
+		t.CalLevel[i] = lipgloss.NewStyle().Background(bg).Foreground(fg)
+	}
 	t.KeyHint = lipgloss.NewStyle().Foreground(t.Accent).Bold(true)
 	t.Match = lipgloss.NewStyle().Foreground(t.Accent).Underline(true).Bold(true)
 	t.ChromaStyle = registerChromaStyle(t)

@@ -314,8 +314,9 @@ func TestUntimedEntriesSitInAllDayBand(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{
 		{ID: "n#0", SourcePath: "n.md", Content: "call at 15:00 sharp", Due: "2026-11-18"},
 	})
+	// The day view has a pane beside the hours and no band above them.
 	a.prefs.TimeFormat = "24h"
-	for _, sub := range []calSub{calWeek, calDay} {
+	for _, sub := range []calSub{calWeek} {
 		calToSub(t, a, tv, sub)
 		lines := calScreen(a, tv, 120, 70)
 		text := calScreenText(lines)
@@ -386,9 +387,9 @@ func TestWeekColumnOverflowShowsMoreCount(t *testing.T) {
 }
 
 func TestDayColumnOverflowShowsMoreCount(t *testing.T) {
-	a, tv := calTestApp(t, calManyTasks("2026-11-18", 50, "zq"))
+	a, tv := calTestApp(t, calManyTasks("2026-11-18", 80, "zq"))
 	calToSub(t, a, tv, calDay)
-	requireOverflowCount(t, calScreen(a, tv, 120, 60), 50)
+	requireOverflowCount(t, calScreen(a, tv, 120, 60), 80)
 }
 
 func requireOverflowCount(t *testing.T, lines []string, total int) {
@@ -419,7 +420,7 @@ func requireOverflowCount(t *testing.T, lines []string, total int) {
 func TestDayShowsOneFullWidthColumn(t *testing.T) {
 	long := "fullwidth " + strings.Repeat("abcdefghi ", 6) + "end"
 	a, tv := calTestApp(t, []vault.Task{
-		{ID: "n#0", SourcePath: "n.md", Content: long, Due: "2026-11-18"},
+		{ID: "n#0", SourcePath: "n.md", Content: long, Due: "2026-11-18", DueTime: "09:00"},
 		{ID: "n#1", SourcePath: "n.md", Content: "nextday task", Due: "2026-11-19"},
 	})
 	a.prefs.TimeFormat = "24h"
@@ -475,17 +476,17 @@ func TestWeekAndDayStripBelowGrid(t *testing.T) {
 func TestWeekTooSmallBelowMinimum(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{{ID: "n#0", SourcePath: "n.md", Content: "something", Due: "2026-11-18"}})
 	calToSub(t, a, tv, calWeek)
-	for _, size := range [][2]int{{63, 12}, {64, 11}} {
+	for _, size := range [][2]int{{63, 16}, {64, 15}} {
 		lines := calScreen(a, tv, size[0], size[1])
 		requireTooSmall(t, lines, true, fmt.Sprintf("%dx%d", size[0], size[1]))
 		if strings.Contains(calScreenText(lines), "something") {
 			t.Errorf("%dx%d: entry shown while too small", size[0], size[1])
 		}
 	}
-	lines := calScreen(a, tv, 64, 12)
-	requireTooSmall(t, lines, false, "64x12")
-	requireWeekHeader(t, lines, calWeekdayNames, "64x12")
-	if len(lines) != 13 {
+	lines := calScreen(a, tv, 64, 16)
+	requireTooSmall(t, lines, false, "64x16")
+	requireWeekHeader(t, lines, calWeekdayNames, "64x16")
+	if len(lines) != 17 {
 		t.Errorf("render is %d lines, want toolbar plus 12", len(lines))
 	}
 	for i, l := range lines {
@@ -498,23 +499,23 @@ func TestWeekTooSmallBelowMinimum(t *testing.T) {
 func TestDayTooSmallBelowMinimum(t *testing.T) {
 	a, tv := calTestApp(t, []vault.Task{{ID: "n#0", SourcePath: "n.md", Content: "dt1", Due: "2026-11-18"}})
 	calToSub(t, a, tv, calDay)
-	for _, size := range [][2]int{{39, 10}, {40, 9}} {
+	for _, size := range [][2]int{{59, 14}, {60, 13}} {
 		lines := calScreen(a, tv, size[0], size[1])
 		requireTooSmall(t, lines, true, fmt.Sprintf("%dx%d", size[0], size[1]))
 		if strings.Contains(calScreenText(lines), "dt1") {
 			t.Errorf("%dx%d: entry shown while too small", size[0], size[1])
 		}
 	}
-	lines := calScreen(a, tv, 40, 10)
-	requireTooSmall(t, lines, false, "40x10")
+	lines := calScreen(a, tv, 60, 14)
+	requireTooSmall(t, lines, false, "60x14")
 	if !strings.Contains(calScreenText(lines), "dt1") {
-		t.Errorf("40x10: day column does not show the entry:\n%s", calScreenText(lines))
+		t.Errorf("60x14: day column does not show the entry:\n%s", calScreenText(lines))
 	}
-	if len(lines) != 11 {
-		t.Errorf("render is %d lines, want toolbar plus 10", len(lines))
+	if len(lines) != 15 {
+		t.Errorf("render is %d lines, want toolbar plus 14", len(lines))
 	}
 	for i, l := range lines {
-		if lipgloss.Width(l) > 40 {
+		if lipgloss.Width(l) > 60 {
 			t.Errorf("line %d is %d cells wide", i, lipgloss.Width(l))
 		}
 	}
@@ -533,7 +534,7 @@ func TestTooSmallMonthDoesNotSwitchModeButEscDoes(t *testing.T) {
 	if tv.calc().sub != calWeek {
 		t.Fatalf("Esc while too small left layout %v, want week", tv.calc().sub)
 	}
-	lines := calScreen(a, tv, 64, 12)
-	requireTooSmall(t, lines, false, "week at 64x12")
-	requireWeekHeader(t, lines, calWeekdayNames, "week at 64x12")
+	lines := calScreen(a, tv, 64, 16)
+	requireTooSmall(t, lines, false, "week at 64x16")
+	requireWeekHeader(t, lines, calWeekdayNames, "week at 64x16")
 }

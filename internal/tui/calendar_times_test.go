@@ -30,7 +30,9 @@ func calShownLeftOfPanel(tv *tasksView, lines []string) string {
 
 func TestCalendarEntryShowsTimeInTwelveHourFormat(t *testing.T) {
 	tasks := []vault.Task{{ID: "a", Content: "Call", Due: "2026-11-18", DueTime: "14:00", Status: "open"}}
-	for _, sub := range []calSub{calMonth, calWeek, calDay} {
+	// Only the month view writes the time in the entry. The hour grid shows
+	// the time by the row of the block.
+	for _, sub := range []calSub{calMonth} {
 		a, tv := calTestApp(t, tasks)
 		a.prefs.TimeFormat = "12h"
 		calToSub(t, a, tv, sub)
