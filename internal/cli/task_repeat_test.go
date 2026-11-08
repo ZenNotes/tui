@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -52,11 +54,19 @@ func toggleNoteIn(t *testing.T, root, body, id string, extra ...string) (string,
 	return string(got), out
 }
 
+var repeatFieldRe = regexp.MustCompile(`(?i) @repeat:\S+`)
+
+// finishedLine is the line of an open repeating task after a tick: the
+// checkbox is done and the repeat field is gone.
+func finishedLine(line string) string {
+	return repeatFieldRe.ReplaceAllString(strings.Replace(line, "[ ]", "[x]", 1), "")
+}
+
 func TestTaskToggleInsertsNextOccurrence(t *testing.T) {
 	fixClock(t, "2026-11-02")
 	in := "intro\n- [ ] Water plants due:2026-11-02 @repeat:mon/thu\noutro\n"
 	want := "intro\n- [ ] Water plants due:2026-11-05 @repeat:mon/thu\n" +
-		"- [x] Water plants due:2026-11-02 @repeat:mon/thu\noutro\n"
+		"- [x] Water plants due:2026-11-02\noutro\n"
 	got, _ := toggleNote(t, in, "0")
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
@@ -105,7 +115,7 @@ func TestTaskToggleNextOccurrenceOfEachRule(t *testing.T) {
 			in := "- [ ] T due:" + tc.base + " @repeat:" + tc.rule + "\n"
 			got, _ := toggleNoteIn(t, root, in, "0")
 			want := "- [ ] T due:" + tc.next + " @repeat:" + tc.rule + "\n" +
-				"- [x] T due:" + tc.base + " @repeat:" + tc.rule + "\n"
+				"- [x] T due:" + tc.base + "\n"
 			if got != want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 			}
@@ -142,7 +152,7 @@ func TestTaskToggleRepeatValues(t *testing.T) {
 			in := "- [ ] T due:" + tc.base + " @repeat:" + tc.rule + "\n"
 			got, _ := toggleNote(t, in, "0")
 			want := "- [ ] T due:" + tc.next + " @repeat:" + tc.rule + "\n" +
-				"- [x] T due:" + tc.base + " @repeat:" + tc.rule + "\n"
+				"- [x] T due:" + tc.base + "\n"
 			if got != want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 			}
@@ -163,7 +173,7 @@ func TestTaskToggleBaseDateAndMissedOccurrences(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fixClock(t, tc.today)
 			got, _ := toggleNote(t, tc.line+"\n", "0")
-			done := strings.Replace(tc.line, "[ ]", "[x]", 1)
+			done := finishedLine(tc.line)
 			if want := tc.open + "\n" + done + "\n"; got != want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 			}
@@ -174,13 +184,13 @@ func TestTaskToggleBaseDateAndMissedOccurrences(t *testing.T) {
 func TestTaskToggleRepeatKeyInAnyCase(t *testing.T) {
 	fixClock(t, "2026-11-02")
 	got, _ := toggleNote(t, "- [ ] T due:2026-11-02 @REPEAT:3D\n", "0")
-	want := "- [ ] T due:2026-11-05 @REPEAT:3D\n- [x] T due:2026-11-02 @REPEAT:3D\n"
+	want := "- [ ] T due:2026-11-05 @REPEAT:3D\n- [x] T due:2026-11-02\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 	fixClock(t, "2027-03-08")
 	got, _ = toggleNote(t, "- [ ] A due:2027-03-08 @repeat:1w @SKIP:2027-03-13/2027-03-21\n", "0")
-	want = "- [ ] A due:2027-03-22 @repeat:1w @SKIP:2027-03-13/2027-03-21\n- [x] A due:2027-03-08 @repeat:1w @SKIP:2027-03-13/2027-03-21\n"
+	want = "- [ ] A due:2027-03-22 @repeat:1w @SKIP:2027-03-13/2027-03-21\n- [x] A due:2027-03-08 @SKIP:2027-03-13/2027-03-21\n"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -224,7 +234,7 @@ func TestTaskToggleWithoutRepeatOnlyTicks(t *testing.T) {
 func TestTaskToggleWithoutDatesAddsDue(t *testing.T) {
 	fixClock(t, "2026-11-02")
 	got, _ := toggleNote(t, "- [ ] T @repeat:3d\n", "0")
-	if want := "- [ ] T @repeat:3d due:2026-11-05\n- [x] T @repeat:3d\n"; got != want {
+	if want := "- [ ] T @repeat:3d due:2026-11-05\n- [x] T\n"; got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -274,7 +284,7 @@ func TestTaskToggleHonoursSkipPeriods(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fixClock(t, tc.today)
 			got, _ := toggleNote(t, tc.line+"\n", "0")
-			done := strings.Replace(tc.line, "[ ]", "[x]", 1)
+			done := finishedLine(tc.line)
 			if want := tc.open + "\n" + done + "\n"; got != want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 			}
@@ -379,7 +389,7 @@ func TestTaskToggleStopsAtUntil(t *testing.T) {
 	t.Run("copy before the end", func(t *testing.T) {
 		fixClock(t, "2026-11-02")
 		got, _ := toggleNote(t, "- [ ] T due:2026-11-02 @repeat:1d @until:2026-11-03\n", "0")
-		want := "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n- [x] T due:2026-11-02 @repeat:1d @until:2026-11-03\n"
+		want := "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n- [x] T due:2026-11-02 @until:2026-11-03\n"
 		if got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
@@ -387,7 +397,7 @@ func TestTaskToggleStopsAtUntil(t *testing.T) {
 	t.Run("last date", func(t *testing.T) {
 		fixClock(t, "2026-11-03")
 		got, _ := toggleNote(t, "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n", "0")
-		if want := "- [x] T due:2026-11-03 @repeat:1d @until:2026-11-03\n"; got != want {
+		if want := "- [x] T due:2026-11-03 @until:2026-11-03\n"; got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
 	})
@@ -395,11 +405,11 @@ func TestTaskToggleStopsAtUntil(t *testing.T) {
 		fixClock(t, "2026-11-02")
 		in := "- [ ] T due:2026-11-02 @repeat:1d @skip:2026-11-03 @until:2026-11-03\n"
 		got, _ := toggleNote(t, in, "0")
-		if want := "- [x] T due:2026-11-02 @repeat:1d @skip:2026-11-03 @until:2026-11-03\n"; got != want {
+		if want := "- [x] T due:2026-11-02 @skip:2026-11-03 @until:2026-11-03\n"; got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
 	})
-	t.Run("json reports the ticked task", func(t *testing.T) {
+	t.Run("json reports the ticked task, which has no rule and no end", func(t *testing.T) {
 		fixClock(t, "2026-11-03")
 		_, out := toggleNote(t, "- [ ] T due:2026-11-03 @repeat:1d @until:2026-11-03\n", "0", "--json")
 		var task struct {
@@ -410,7 +420,7 @@ func TestTaskToggleStopsAtUntil(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &task); err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
-		if task.ID != "inbox/note.md#0" || !task.Checked || task.Until != "2026-11-03" {
+		if task.ID != "inbox/note.md#0" || !task.Checked || task.Until != "" {
 			t.Fatalf("got %+v", task)
 		}
 	})
@@ -514,7 +524,7 @@ func TestTaskToggleResolvesNamedSkip(t *testing.T) {
 			tc.prepare(t, root)
 			got, _ := toggleNoteIn(t, root, tc.line+"\n", "0")
 			open := "- [ ] Assignment due:" + tc.due + " @repeat:1w @skip:spring-break"
-			done := strings.Replace(tc.line, "[ ]", "[x]", 1)
+			done := finishedLine(tc.line)
 			if want := open + "\n" + done + "\n"; got != want {
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 			}
@@ -529,7 +539,7 @@ func TestTaskToggleNamedSkipStopsAtUntil(t *testing.T) {
 	writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13/2027-03-21\n")
 	line := "- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break @until:2027-03-20"
 	got, _ := toggleNoteIn(t, root, line+"\n", "0")
-	if want := strings.Replace(line, "[ ]", "[x]", 1) + "\n"; got != want {
+	if want := finishedLine(line) + "\n"; got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -544,26 +554,26 @@ func TestTaskToggleSkipAndUntilFields(t *testing.T) {
 		{"range", "2027-03-08",
 			"- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:2027-03-13/2027-03-21\n",
 			"- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:2027-03-13/2027-03-21\n" +
-				"- [x] Assignment due:2027-03-08T23:59 @repeat:1w @skip:2027-03-13/2027-03-21\n"},
+				"- [x] Assignment due:2027-03-08T23:59 @skip:2027-03-13/2027-03-21\n"},
 		{"fields add up", "2027-03-08",
 			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-15 @skip:2027-03-22\n",
 			"- [ ] A due:2027-03-29 @repeat:1w @skip:2027-03-15 @skip:2027-03-22\n" +
-				"- [x] A due:2027-03-08 @repeat:1w @skip:2027-03-15 @skip:2027-03-22\n"},
+				"- [x] A due:2027-03-08 @skip:2027-03-15 @skip:2027-03-22\n"},
 		{"dots end the value", "2027-03-08",
 			"- [ ] A due:2027-03-08 @repeat:1w @skip:2027-03-13..2027-03-21\n",
 			"- [ ] A due:2027-03-15 @repeat:1w @skip:2027-03-13..2027-03-21\n" +
-				"- [x] A due:2027-03-08 @repeat:1w @skip:2027-03-13..2027-03-21\n"},
+				"- [x] A due:2027-03-08 @skip:2027-03-13..2027-03-21\n"},
 		{"until on the last date", "2026-12-14",
 			"- [ ] Lab due:2026-12-14 @repeat:1w @until:2026-12-14\n",
-			"- [x] Lab due:2026-12-14 @repeat:1w @until:2026-12-14\n"},
+			"- [x] Lab due:2026-12-14 @until:2026-12-14\n"},
 		{"until after the next date", "2026-12-14",
 			"- [ ] Lab due:2026-12-14 @repeat:1w @until:2026-12-21\n",
 			"- [ ] Lab due:2026-12-21 @repeat:1w @until:2026-12-21\n" +
-				"- [x] Lab due:2026-12-14 @repeat:1w @until:2026-12-21\n"},
+				"- [x] Lab due:2026-12-14 @until:2026-12-21\n"},
 		{"bare tokens", "2027-03-08",
 			"- [ ] A due:2027-03-08 @repeat:1w skip:2027-03-15 until:2027-03-01\n",
 			"- [ ] A due:2027-03-15 @repeat:1w skip:2027-03-15 until:2027-03-01\n" +
-				"- [x] A due:2027-03-08 @repeat:1w skip:2027-03-15 until:2027-03-01\n"},
+				"- [x] A due:2027-03-08 skip:2027-03-15 until:2027-03-01\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fixClock(t, tc.today)
@@ -580,8 +590,83 @@ func TestTaskToggleSkipAndUntilFields(t *testing.T) {
 		writeEventNote(t, root, "inbox", "Spring Break", "when: 2027-03-13/2027-03-21\n")
 		in := "- [ ] A due:2027-03-08 @repeat:1w @skip:spring-break\n"
 		got, _ := toggleNoteIn(t, root, in, "0")
-		if want := "- [ ] A due:2027-03-22 @repeat:1w @skip:spring-break\n- [x] A due:2027-03-08 @repeat:1w @skip:spring-break\n"; got != want {
+		if want := "- [ ] A due:2027-03-22 @repeat:1w @skip:spring-break\n- [x] A due:2027-03-08 @skip:spring-break\n"; got != want {
 			t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 		}
 	})
+}
+
+// recurrenceCases reads upstream's table of check-off results without a
+// change. A case with `skip` or `fallbackDue` needs more than one toggle, so
+// the callers leave those out.
+func recurrenceCases(t *testing.T) []struct {
+	Name      string  `json:"name"`
+	Body      string  `json:"body"`
+	TaskIndex int     `json:"taskIndex"`
+	Today     string  `json:"today"`
+	Expected  *string `json:"expected"`
+} {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "vault", "testdata", "task-recurrence.cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table struct {
+		Cases []struct {
+			Name        string  `json:"name"`
+			Body        string  `json:"body"`
+			TaskIndex   int     `json:"taskIndex"`
+			Today       string  `json:"today"`
+			FallbackDue string  `json:"fallbackDue"`
+			Skip        bool    `json:"skip"`
+			Expected    *string `json:"expected"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &table); err != nil {
+		t.Fatal(err)
+	}
+	var out []struct {
+		Name      string  `json:"name"`
+		Body      string  `json:"body"`
+		TaskIndex int     `json:"taskIndex"`
+		Today     string  `json:"today"`
+		Expected  *string `json:"expected"`
+	}
+	for _, c := range table.Cases {
+		if c.FallbackDue != "" || c.Skip {
+			continue
+		}
+		out = append(out, struct {
+			Name      string  `json:"name"`
+			Body      string  `json:"body"`
+			TaskIndex int     `json:"taskIndex"`
+			Today     string  `json:"today"`
+			Expected  *string `json:"expected"`
+		}{c.Name, c.Body, c.TaskIndex, c.Today, c.Expected})
+	}
+	if len(out) == 0 {
+		t.Fatal("no cases")
+	}
+	return out
+}
+
+// `zn task toggle` writes the same note as the shared table for every case
+// that one toggle can reach. A case that expects null is a plain tick: the
+// note keeps its number of lines.
+func TestTaskToggleRunsUpstreamCases(t *testing.T) {
+	for _, c := range recurrenceCases(t) {
+		t.Run(c.Name, func(t *testing.T) {
+			fixClock(t, c.Today)
+			got, _ := toggleNote(t, c.Body, strconv.Itoa(c.TaskIndex))
+			if c.Expected == nil {
+				if strings.Count(got, "\n") != strings.Count(c.Body, "\n") {
+					t.Fatalf("a line was inserted:\n%q", got)
+				}
+				return
+			}
+			if got != *c.Expected {
+				t.Fatalf("got:\n%q\nwant:\n%q", got, *c.Expected)
+			}
+		})
+	}
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,7 +64,7 @@ const repeatingLine = "- [ ] Water plants due:2026-11-02 @repeat:mon/thu\n"
 
 func wantRolled(mark string) string {
 	return "- [ ] Water plants due:2026-11-05 @repeat:mon/thu\n" +
-		"- [" + mark + "] Water plants due:2026-11-02 @repeat:mon/thu\n"
+		"- [" + mark + "] Water plants due:2026-11-02\n"
 }
 
 func TestTasksViewToggleInsertsNextOccurrence(t *testing.T) {
@@ -289,6 +290,30 @@ func TestPlainTaskChangesKeepCRLF(t *testing.T) {
 	})
 }
 
+// A repeating task in a note with CRLF endings keeps them on every line, the
+// inserted ones included, in the Tasks view and in the editor.
+func TestRollKeepsCRLFInTheTasksViewAndEditor(t *testing.T) {
+	in := "a\r\n- [ ] x due:2026-11-02 @repeat:daily\r\n  - [ ] sub\r\nb\r\n"
+	want := "a\r\n- [ ] x due:2026-11-03 @repeat:daily\r\n  - [ ] sub\r\n" +
+		"- [x] x due:2026-11-02\r\n  - [-] sub\r\nb\r\n"
+	t.Run("tasks view", func(t *testing.T) {
+		a, path := repeatTasksApp(t, in, "2026-11-02")
+		a.toggleTask(repeatTaskAt(t, path))
+		if got := readRepeatNote(t, path); got != want {
+			t.Errorf("note = %q, want %q", got, want)
+		}
+	})
+	t.Run("editor", func(t *testing.T) {
+		a, _ := repeatTasksApp(t, in, "2026-11-02")
+		buf := openRepeatBuffer(t, a)
+		buf.ed.SetCursor(vim.Pos{Line: 1, Col: 0})
+		buf.ed.ToggleCheckboxAtCursor()
+		if got := strings.ReplaceAll(buf.ed.Text(), "\r\n", "\n"); got != strings.ReplaceAll(want, "\r\n", "\n") {
+			t.Errorf("buffer = %q", got)
+		}
+	})
+}
+
 func TestBoardDoneColumnChecksForwardedTask(t *testing.T) {
 	a, path := repeatTasksApp(t, "- [>] Water plants due:2026-11-02 @repeat:mon/thu\n", "2026-11-02")
 	a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
@@ -306,8 +331,8 @@ const (
 // On the last date the Tasks view, the board, the editor and a cancel only
 // change the one line, and a task note is finished for good.
 func TestTasksViewBoardAndEditorStopAtUntil(t *testing.T) {
-	ticked := "- [x] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
-	cancelled := "- [-] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
+	ticked := "- [x] Water plants due:2026-11-03 @until:2026-11-03\n"
+	cancelled := "- [-] Water plants due:2026-11-03 @until:2026-11-03\n"
 
 	t.Run("tasks view toggle", func(t *testing.T) {
 		a, path := repeatTasksApp(t, untilLine, "2026-11-03")
@@ -396,5 +421,109 @@ func TestForwardingMovesBlockIdToTheCopy(t *testing.T) {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("copy lacks %q:\n%s", want, raw)
 		}
+	}
+}
+
+// The Tasks view, the board and the editor write the same note as the shared
+// table of check-off results, for every case that one toggle can reach. The
+// board and the editor complete the task, so a case that expects null is not
+// run for them.
+func TestTasksViewBoardAndEditorRunUpstreamCases(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "vault", "testdata", "task-recurrence.cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table struct {
+		Cases []struct {
+			Name        string  `json:"name"`
+			Body        string  `json:"body"`
+			TaskIndex   int     `json:"taskIndex"`
+			Today       string  `json:"today"`
+			FallbackDue string  `json:"fallbackDue"`
+			Skip        bool    `json:"skip"`
+			Expected    *string `json:"expected"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &table); err != nil {
+		t.Fatal(err)
+	}
+	ran := 0
+	for _, c := range table.Cases {
+		if c.FallbackDue != "" || c.Skip || c.Expected == nil {
+			continue
+		}
+		ran++
+		task := func(t *testing.T, path string) vault.Task {
+			t.Helper()
+			opts := vault.ParseTasksOptions{IncludeExcluded: true, Dialect: vault.DialectApp}
+			for _, found := range vault.ParseTasks("inbox/note.md", "note", vault.FolderInbox, readRepeatNote(t, path), opts) {
+				if found.Kind == "" && found.TaskIndex == c.TaskIndex {
+					return found
+				}
+			}
+			t.Fatalf("no task %d", c.TaskIndex)
+			return vault.Task{}
+		}
+		t.Run(c.Name+"/tasks view", func(t *testing.T) {
+			a, path := repeatTasksApp(t, c.Body, c.Today)
+			a.toggleTask(task(t, path))
+			if got := readRepeatNote(t, path); got != *c.Expected {
+				t.Errorf("note = %q, want %q", got, *c.Expected)
+			}
+		})
+		t.Run(c.Name+"/board", func(t *testing.T) {
+			a, path := repeatTasksApp(t, c.Body, c.Today)
+			a.setTaskStatusColumn(task(t, path), "done")
+			if got := readRepeatNote(t, path); got != *c.Expected {
+				t.Errorf("note = %q, want %q", got, *c.Expected)
+			}
+		})
+		t.Run(c.Name+"/editor", func(t *testing.T) {
+			a, _ := repeatTasksApp(t, c.Body, c.Today)
+			buf := openRepeatBuffer(t, a)
+			opts := vault.ParseTasksOptions{IncludeExcluded: true, Dialect: vault.DialectApp}
+			line := -1
+			for _, found := range vault.ParseTasks("inbox/note.md", "note", vault.FolderInbox, c.Body, opts) {
+				if found.Kind == "" && found.TaskIndex == c.TaskIndex {
+					line = found.LineNumber
+				}
+			}
+			if line < 0 {
+				t.Fatalf("no task %d", c.TaskIndex)
+			}
+			buf.ed.SetCursor(vim.Pos{Line: line, Col: 0})
+			buf.ed.ToggleCheckboxAtCursor()
+			norm := func(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
+			if got := buf.ed.Text(); norm(got) != norm(*c.Expected) {
+				t.Errorf("buffer = %q, want %q", got, *c.Expected)
+			}
+		})
+	}
+	if ran == 0 {
+		t.Fatal("no cases")
+	}
+}
+
+// A task with an upstream rule rolls from the Tasks view. v0.17.1 only ticks
+// it there.
+func TestTasksViewRollsUpstreamRepeat(t *testing.T) {
+	a, path := repeatTasksApp(t, "- [ ] Journal @repeat:daily due:2026-11-01\n", "2026-11-01")
+	a.toggleTask(repeatTaskAt(t, path))
+	want := "- [ ] Journal @repeat:daily due:2026-11-02\n- [x] Journal due:2026-11-01\n"
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("note = %q, want %q", got, want)
+	}
+}
+
+// The next occurrence of an in-progress task starts open, and `@waiting` and
+// `@status:` stay on the finished line only.
+func TestCompletingDropsWaitingAndStatusFromCopy(t *testing.T) {
+	in := "- [/] Ship it !high @repeat:weekly due:2026-11-01 @status:doing @waiting #work\n"
+	want := "- [ ] Ship it !high @repeat:weekly due:2026-11-08 #work\n" +
+		"- [x] Ship it !high due:2026-11-01 @status:doing @waiting #work\n"
+	a, path := repeatTasksApp(t, in, "2026-11-01")
+	a.toggleTask(repeatTaskAt(t, path))
+	if got := readRepeatNote(t, path); got != want {
+		t.Errorf("note = %q, want %q", got, want)
 	}
 }

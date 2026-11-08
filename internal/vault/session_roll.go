@@ -23,6 +23,10 @@ type TaskRollInput struct {
 	WeekStart time.Weekday
 	// Names resolves the names in `@skip:` fields. It can be nil.
 	Names SkipResolver
+	// FallbackDue is the date that a task counts from when it has no session,
+	// no `due:` and no `due` in the note's frontmatter. A daily note gives it.
+	// It can be empty, and the roll then counts from today.
+	FallbackDue string
 	// Tasks and Events are every task and every event of the vault. They tell
 	// the roll which sessions the task has.
 	Tasks  []Task
@@ -55,6 +59,9 @@ type TaskRollPlan struct {
 	Inserted int
 	// Rolled is true when a new occurrence was inserted.
 	Rolled bool
+	// Ended is true when the task has a repeat rule and no next date is left.
+	// The line is then finished and it loses its rule, and nothing is inserted.
+	Ended bool
 	// Copies are the session copies for other notes, in path and line order.
 	Copies []SessionCopy
 	// InOwnNote counts the work sessions that are event notes. A roll does
@@ -67,12 +74,13 @@ type TaskRollPlan struct {
 // task note and a copy of each current work session of the task.
 //
 // The roll counts from the start of the earliest current session, else from
-// `due`, else from today. The `due` date and each session move by the same
-// number of days. A session is copied directly below its original, with its
-// `when:` moved and its `task:` link on the new occurrence. A link to a whole
-// note stays as it is. The copy has no `@until:` and no block id of its own.
-// The inserted open line gets a new block id only when the task has current
-// sessions.
+// the `due:` of the line, else from the `due` of the note, else from
+// FallbackDue, else from today. The `due:` date and each session move by the
+// same number of days. A session is copied directly below its original, with
+// its `when:` moved and its `task:` link on the new occurrence. A link to a
+// whole note stays as it is. The copy has no `@until:` and no block id of its
+// own. The inserted open line gets a new block id only when the task has
+// current sessions.
 //
 // A session is not copied when it is an event note, when it repeats, or when
 // its link does not name the task. Event notes are counted in InOwnNote. A
@@ -103,28 +111,28 @@ func PlanTaskRoll(in TaskRollInput) (plan TaskRollPlan, ok bool) {
 		}
 		return id
 	}
-	roll := func(body string) (string, int, bool, int, bool) {
+	roll := func(body string) rollResult {
 		if in.File {
 			next, rolled, days := rollTaskFile(body, in.Action, in.Now, in.WeekStart, in.Names, base)
-			return next, 0, rolled, days, true
+			return rollResult{next: next, rolled: rolled, days: days, ok: true}
 		}
-		s := rollSessions{base: base}
+		s := rollSessions{base: base, fallbackDue: in.FallbackDue}
 		if base != "" {
 			s.newID = newID
 		}
-		res := rollTaskLines(body, in.Index, in.Dialect, in.Action, in.Now, in.WeekStart, in.Names, s)
-		return res.next, res.inserted, res.rolled, res.days, res.ok
+		return rollTaskLines(body, in.Index, in.Dialect, in.Action, in.Now, in.WeekStart, in.Names, s)
 	}
 
-	next, inserted, rolled, days, ok := roll(in.Body)
-	if !ok {
+	res := roll(in.Body)
+	if !res.ok {
 		return TaskRollPlan{Body: in.Body}, false
 	}
-	plan = TaskRollPlan{Body: next, Inserted: inserted, Rolled: rolled}
-	if !rolled {
+	plan = TaskRollPlan{Body: res.next, Inserted: res.inserted, Rolled: res.rolled, Ended: res.ended}
+	if !res.rolled {
 		return plan, true
 	}
 	plan.InOwnNote = ownNote
+	days := res.days
 
 	link := ""
 	if !in.File && len(current) > 0 {
@@ -169,7 +177,8 @@ func PlanTaskRoll(in TaskRollInput) (plan TaskRollPlan, ok bool) {
 		// The copies in the task note go in before the roll. They are not
 		// task lines, so the task index stays the same.
 		withCopies := InsertSessionCopies(in.Body, own)
-		plan.Body, plan.Inserted, _, _, _ = roll(withCopies)
+		again := roll(withCopies)
+		plan.Body, plan.Inserted = again.next, again.inserted
 	}
 	return plan, true
 }

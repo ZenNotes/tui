@@ -238,3 +238,16 @@ func TestTaskNoteSkipAndUntil(t *testing.T) {
 		t.Fatalf("dots:\n got %q\nwant %q", got, want)
 	}
 }
+
+// A task note that waits, or that is in progress, goes back to `open` on a
+// roll. A custom status goes back too. The body stays as written.
+func TestTaskNoteRollReopensAnyStatus(t *testing.T) {
+	for _, status := range []string{"waiting", "doing", "in-progress", "blocked"} {
+		in := strings.Replace(rollNote("due: 2026-11-01", "repeat: weekly"), "status: open", "status: "+status, 1)
+		want := rollNote("due: 2026-11-08", "repeat: weekly", "lastCompleted: 2026-11-01")
+		got, rolled := RollTaskFileInBody(in, RollComplete, rollNow("2026-11-01"), time.Monday)
+		if !rolled || got != want {
+			t.Errorf("status %q: rolled=%v\n%s\nwant:\n%s", status, rolled, got, want)
+		}
+	}
+}

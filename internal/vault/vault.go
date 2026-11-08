@@ -1164,7 +1164,8 @@ type ToggleOptions struct {
 // ToggleTask flips the task named by an id, counted in the given grammar.
 // Exclusion-blind on purpose: an explicit id is an explicit ask. Finishing a
 // recurring task writes its next occurrence above it and returns the finished
-// one, whose id moved down past it. The remote backend toggles plainly instead.
+// one, whose id moved down past it. The remote backend rolls only the values
+// that the desktop app rolls.
 // Returns (nil, nil) when the id no longer matches a task.
 //
 // A roll copies the work sessions of the task. The note of the task is
@@ -1197,7 +1198,6 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 		Now: now, WeekStart: v.WeekStart, Names: v.skipResolver(now), Rand: v.Rand,
 	}
 	targetIndex := 0
-	hasRule := false
 	if indexStr == "task" {
 		task, found := parseTaskFile(relPosix, title, folder, strings.ReplaceAll(string(body), "\r\n", "\n"), dialect)
 		if !found {
@@ -1228,7 +1228,6 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 		for _, t := range ParseTasks(relPosix, title, folder, string(body), opts) {
 			if t.Kind == "" && t.TaskIndex == targetIndex && t.Repeat != "" {
 				v.loadRollContext(&input, opts)
-				hasRule = true
 				break
 			}
 		}
@@ -1236,12 +1235,6 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 
 	plan, found := PlanTaskRoll(input)
 	finalIndex := targetIndex + plan.Inserted
-	if found && !input.File && plan.Inserted == 0 && !hasRule {
-		// A task whose rule the roll above did not read keeps the way the
-		// desktop app rolls it. A task with a rule and no date left to land
-		// on is only ticked.
-		plan.Body, finalIndex, found = ToggleTaskRepeating(string(body), targetIndex, dialect, now)
-	}
 	if !found {
 		return nil, nil
 	}

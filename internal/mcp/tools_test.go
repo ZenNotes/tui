@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -119,7 +119,7 @@ func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
 		t.Fatalf("toggle_task: %s", text)
 	}
 	want := "intro\n- [ ] Water plants due:2026-11-05 @repeat:mon/thu\n" +
-		"- [x] Water plants due:2026-11-02 @repeat:mon/thu\noutro\n"
+		"- [x] Water plants due:2026-11-02\noutro\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -145,7 +145,7 @@ func TestToggleTaskToolStopsAtUntil(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "- [x] Water plants due:2026-11-03 @repeat:1d @until:2026-11-03\n"
+	want := "- [x] Water plants due:2026-11-03 @until:2026-11-03\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -202,7 +202,7 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 		t.Fatalf("toggle_task: %s", text)
 	}
 	want := "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:spring-break\n" +
-		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
+		"- [x] Assignment due:2027-03-08T23:59 @skip:spring-break\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -264,7 +264,7 @@ func TestToggleTaskToolCopiesWorkSessions(t *testing.T) {
 	if strings.Contains(strings.ToLower(text), "warning") || !strings.Contains(text, `"checked": true`) {
 		t.Fatalf("result is not the toggled task: %s", text)
 	}
-	wantWork := "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
+	wantWork := "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants ^ab12cd\noutro\n"
 	if got := withoutNewID(readNote(t, root, "inbox/Work.md")); got != wantWork {
 		t.Fatalf("Work.md:\n%s\nwant:\n%s", got, wantWork)
 	}
@@ -300,7 +300,7 @@ func TestScopedToggleWritesOnlyNotesInScope(t *testing.T) {
 			t.Fatalf("result mentions %q: %s", leak, text)
 		}
 	}
-	wantWork := "- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\n"
+	wantWork := "- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants ^ab12cd\n"
 	if got := withoutNewID(readNote(t, root, "Projects/Work.md")); got != wantWork {
 		t.Fatalf("Work.md:\n%s", got)
 	}
@@ -322,22 +322,51 @@ func remoteSession(t *testing.T, f *remoteFixture) *sdk.ClientSession {
 	})
 }
 
-// Against a server, toggle_task ticks the line and writes nothing else: no
-// next date and no copy of a work session.
-func TestRemoteToggleTaskToolOnlyTicks(t *testing.T) {
-	f := newRemoteFixture(t)
-	cs := remoteSession(t, f)
-	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/Work.md#0"})
-	if isErr {
-		t.Fatalf("toggle_task: %s", text)
-	}
-	want := []string{"inbox/Work.md\n# Work\n\n" +
-		"- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" +
-		"- [ ] Send the invoice due:2026-11-12\n" +
-		"- [ ] A due:2027-03-08T23:59 @repeat:weekly @until:2027-03-10 @skip:spring-break\n" +
-		"- [ ] B due:2027-03-08 @repeat:monthly-15\n"}
-	if got := f.Writes(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("writes:\n%q\nwant:\n%q", got, want)
+// Against a server, toggle_task rolls the values that v0.17.1 rolls and ticks
+// every other task without a copy or a write to another note. The server has
+// no clock, so the next date of the rolled task counts from today.
+func TestRemoteToggleTaskToolRollsAsReleased(t *testing.T) {
+	const (
+		head    = "inbox/Work.md\n# Work\n\n"
+		water   = "- [ ] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n"
+		invoice = "- [ ] Send the invoice due:2026-11-12\n"
+		taskA   = "- [ ] A due:2027-03-08T23:59 @repeat:weekly @until:2027-03-10 @skip:spring-break\n"
+		taskB   = "- [ ] B due:2027-03-08 @repeat:monthly-15\n"
+	)
+	for _, tc := range []struct {
+		name, id string
+		want     func(next string) string
+	}{
+		{"a bare repeat token is a plain tick", "inbox/Work.md#0", func(string) string {
+			return head + "- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" + invoice + taskA + taskB
+		}},
+		{"a rule the desktop app reads rolls", "inbox/Work.md#2", func(next string) string {
+			return head + water + invoice +
+				"- [ ] A due:" + next + " @repeat:weekly @until:2027-03-10 @skip:spring-break\n" +
+				"- [x] A due:2027-03-08T23:59 @until:2027-03-10 @skip:spring-break\n" + taskB
+		}},
+		{"a rule only zn reads is a plain tick", "inbox/Work.md#3", func(string) string {
+			return head + water + invoice + taskA + "- [x] B due:2027-03-08 @repeat:monthly-15\n"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newRemoteFixture(t)
+			cs := remoteSession(t, f)
+			before := time.Now()
+			text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": tc.id})
+			after := time.Now()
+			if isErr {
+				t.Fatalf("toggle_task: %s", text)
+			}
+			got := f.Writes()
+			var wants []string
+			for _, day := range []time.Time{before, after} {
+				wants = append(wants, tc.want(day.AddDate(0, 0, 7).Format("2006-01-02")))
+			}
+			if len(got) != 1 || (got[0] != wants[0] && got[0] != wants[1]) {
+				t.Fatalf("writes:\n%q\nwant:\n%q", got, wants[0])
+			}
+		})
 	}
 }
 
@@ -364,5 +393,65 @@ func TestListTasksAgainstRemoteMatchesReleased(t *testing.T) {
 		if text != string(want) {
 			t.Errorf("list_tasks %v differs from testdata/%s:\n%s", tc.args, tc.golden, text)
 		}
+	}
+}
+
+// toggle_task writes the same note as the shared table of check-off results,
+// for every case that one toggle can reach. A case that expects null is a
+// plain tick, and the note keeps its number of lines.
+func TestToggleTaskToolRunsUpstreamCases(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "vault", "testdata", "task-recurrence.cases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var table struct {
+		Cases []struct {
+			Name        string  `json:"name"`
+			Body        string  `json:"body"`
+			TaskIndex   int     `json:"taskIndex"`
+			Today       string  `json:"today"`
+			FallbackDue string  `json:"fallbackDue"`
+			Skip        bool    `json:"skip"`
+			Expected    *string `json:"expected"`
+		} `json:"cases"`
+	}
+	if err := json.Unmarshal(data, &table); err != nil {
+		t.Fatal(err)
+	}
+	ran := 0
+	for _, c := range table.Cases {
+		if c.FallbackDue != "" || c.Skip {
+			continue
+		}
+		ran++
+		t.Run(c.Name, func(t *testing.T) {
+			root := t.TempDir()
+			writeNotes(t, root, map[string]string{"inbox/note.md": c.Body})
+			day, err := time.ParseInLocation("2006-01-02", c.Today, time.Local)
+			if err != nil {
+				t.Fatal(err)
+			}
+			today := day.Add(12 * time.Hour)
+			cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+				return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+			})
+			text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/note.md#" + strconv.Itoa(c.TaskIndex)})
+			if isErr {
+				t.Fatalf("toggle_task: %s", text)
+			}
+			got := readNote(t, root, "inbox/note.md")
+			if c.Expected == nil {
+				if strings.Count(got, "\n") != strings.Count(c.Body, "\n") {
+					t.Fatalf("a line was inserted:\n%q", got)
+				}
+				return
+			}
+			if got != *c.Expected {
+				t.Fatalf("got:\n%q\nwant:\n%q", got, *c.Expected)
+			}
+		})
+	}
+	if ran == 0 {
+		t.Fatal("no cases")
 	}
 }

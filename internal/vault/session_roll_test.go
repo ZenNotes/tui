@@ -57,7 +57,7 @@ func TestPlanRollCopiesSessionsBelowOriginals(t *testing.T) {
 	if !ok || !plan.Rolled {
 		t.Fatalf("plan: %+v, %v", plan, ok)
 	}
-	wantBody := "intro\n- [ ] Water plants @repeat:mon/thu ^" + id + "\n- [x] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
+	wantBody := "intro\n- [ ] Water plants @repeat:mon/thu ^" + id + "\n- [x] Water plants ^ab12cd\noutro\n"
 	if plan.Body != wantBody || plan.Inserted != 1 {
 		t.Fatalf("body %q inserted %d, want %q", plan.Body, plan.Inserted, wantBody)
 	}
@@ -115,7 +115,7 @@ func TestPlanRollCountsFromEarliestSession(t *testing.T) {
 	work := sessionNote{"Work.md", "Work", "- [ ] A due:2027-03-12 @repeat:1w ^ab12cd\n"}
 	plans := sessionNote{"Plans.md", "Plans", "- A task:[[Work#^ab12cd]] when:2027-03-08T09:00\n"}
 	plan, _ := planRollOf(t, "2027-03-08", "Work.md", 0, false, RollCancel, work, plans)
-	if !strings.Contains(plan.Body, "- [-] A due:2027-03-12 @repeat:1w ^ab12cd") || len(plan.Copies) != 1 {
+	if !strings.Contains(plan.Body, "- [-] A due:2027-03-12 ^ab12cd") || len(plan.Copies) != 1 {
 		t.Fatalf("cancel: %+v", plan)
 	}
 }
@@ -169,7 +169,7 @@ func TestPlanRollSkipsEventNoteRepeatingAndDanglingSessions(t *testing.T) {
 func TestPlanRollWithoutDueOrSessionAddsDue(t *testing.T) {
 	work := sessionNote{"Work.md", "Work", "- [ ] T @repeat:3d\n"}
 	plan, ok := planRollOf(t, "2026-11-02", "Work.md", 0, false, RollComplete, work)
-	if !ok || plan.Body != "- [ ] T @repeat:3d due:2026-11-05\n- [x] T @repeat:3d\n" {
+	if !ok || plan.Body != "- [ ] T @repeat:3d due:2026-11-05\n- [x] T\n" {
 		t.Fatalf("body %q, %v", plan.Body, ok)
 	}
 	if len(plan.Copies) != 0 {
@@ -181,7 +181,7 @@ func TestPlanRollAtUntilCopiesNothing(t *testing.T) {
 	work := sessionNote{"Work.md", "Work", "- [ ] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n"}
 	plans := sessionNote{"Plans.md", "Plans", "- Lab task:[[Work#^ab12cd]] when:2026-12-14T09:00\n"}
 	plan, ok := planRollOf(t, "2026-12-14", "Work.md", 0, false, RollComplete, work, plans)
-	if !ok || plan.Rolled || plan.Body != "- [x] Lab @repeat:1w @until:2026-12-14 ^ab12cd\n" || len(plan.Copies) != 0 {
+	if !ok || plan.Rolled || plan.Body != "- [x] Lab @until:2026-12-14 ^ab12cd\n" || len(plan.Copies) != 0 {
 		t.Fatalf("plan: %+v, %v", plan, ok)
 	}
 }
@@ -205,7 +205,7 @@ func TestPlanRollCopiesSessionInTheTaskNote(t *testing.T) {
 	id := wantID()
 	work := sessionNote{"Work.md", "Work", "- [ ] T @repeat:1w ^ab12cd\n- T task:[[Work#^ab12cd]] when:2026-11-02T09:00\n"}
 	plan, _ := planRollOf(t, "2026-11-02", "Work.md", 0, false, RollComplete, work)
-	want := "- [ ] T @repeat:1w ^" + id + "\n- [x] T @repeat:1w ^ab12cd\n" +
+	want := "- [ ] T @repeat:1w ^" + id + "\n- [x] T ^ab12cd\n" +
 		"- T task:[[Work#^ab12cd]] when:2026-11-02T09:00\n" +
 		"- T task:[[Work#^" + id + "]] when:2026-11-09T09:00\n"
 	if plan.Body != want || len(plan.Copies) != 0 || plan.Inserted != 1 {

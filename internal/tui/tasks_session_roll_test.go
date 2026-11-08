@@ -94,7 +94,7 @@ const (
 
 // wantRolledWork is Work.md after a roll on 2026-11-02.
 func wantRolledWork(mark string) string {
-	return "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [" + mark + "] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
+	return "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [" + mark + "] Water plants ^ab12cd\noutro\n"
 }
 
 const wantRolledPlans = "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n" +
@@ -166,7 +166,7 @@ func TestTasksViewRollCopiesSessions(t *testing.T) {
 		a, root := sessionRollApp(t, notes, "2027-03-08")
 		a.setTaskCancelled(firstTaskOf(t, root, "inbox/Work.md"), true)
 		wantWork := "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^{ID}\n" +
-			"- [-] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd\n"
+			"- [-] Assignment due:2027-03-12T23:59 @skip:2027-03-13/2027-03-21 ^ab12cd\n"
 		if got := maskRollID(t, readRollNote(t, root, "inbox/Work.md")); got != wantWork {
 			t.Errorf("Work.md:\n%s\nwant:\n%s", got, wantWork)
 		}
@@ -182,7 +182,7 @@ const (
 	skipTask  = "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
 	skipEvent = "---\npage-type: event\nwhen: 2027-03-13/2027-03-21\n---\n"
 	skipWant  = "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:spring-break\n" +
-		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w @skip:spring-break\n"
+		"- [x] Assignment due:2027-03-08T23:59 @skip:spring-break\n"
 )
 
 func TestTasksViewRollResolvesNamedSkip(t *testing.T) {

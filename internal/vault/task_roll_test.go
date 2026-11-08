@@ -37,24 +37,13 @@ func TestRollInsertsNextOccurrenceAboveCompletedTask(t *testing.T) {
 	want := []string{
 		"intro",
 		"- [ ] Water plants due:2026-11-05 @repeat:mon/thu",
-		"- [x] Water plants due:2026-11-02 @repeat:mon/thu",
+		"- [x] Water plants due:2026-11-02",
 		"outro",
 	}
 	got, inserted := rollLines(t, in, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, want)
 	if inserted != 1 {
 		t.Fatalf("inserted = %d, want 1", inserted)
-	}
-
-	// A CRLF note is normalised the way the plain toggle normalises it, and no
-	// further.
-	crlf := strings.Join(in, "\r\n")
-	next, _, ok := RollTaskInBody(crlf, 0, DialectCLI, RollComplete, rollNow("2026-11-02"), time.Monday)
-	if !ok {
-		t.Fatal("CRLF note: no task")
-	}
-	if next != strings.Join(want, "\n") {
-		t.Fatalf("CRLF note: got %q", next)
 	}
 }
 
@@ -63,7 +52,7 @@ func TestRollCancelInsertsNextOccurrence(t *testing.T) {
 	want := []string{
 		"intro",
 		"- [ ] Water plants due:2026-11-05 @repeat:mon/thu",
-		"- [-] Water plants due:2026-11-02 @repeat:mon/thu",
+		"- [-] Water plants due:2026-11-02",
 		"outro",
 	}
 	got, inserted := rollLines(t, in, 0, RollCancel, "2026-11-02")
@@ -107,9 +96,9 @@ func TestRollCopiesSubtasksUnticked(t *testing.T) {
 		"- [ ] Weekly review due:2026-11-09 @repeat:1w",
 		"  - [ ] Inbox zero",
 		"  - [ ] Plan week",
-		"- [x] Weekly review due:2026-11-02 @repeat:1w",
+		"- [x] Weekly review due:2026-11-02",
 		"  - [x] Inbox zero",
-		"  - [ ] Plan week",
+		"  - [-] Plan week",
 	}
 	got, inserted := rollLines(t, in, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, want)
@@ -118,7 +107,7 @@ func TestRollCopiesSubtasksUnticked(t *testing.T) {
 	}
 }
 
-func TestRollCopiesChildLinesAndShiftsSubtaskDates(t *testing.T) {
+func TestRollCopiesChildLinesAsWritten(t *testing.T) {
 	in := []string{
 		"- [ ] Weekly review due:2026-11-02 @repeat:1w",
 		"  Bring the notebook.",
@@ -130,13 +119,13 @@ func TestRollCopiesChildLinesAndShiftsSubtaskDates(t *testing.T) {
 		"- [ ] Weekly review due:2026-11-09 @repeat:1w",
 		"  Bring the notebook.",
 		"  - plain bullet",
-		"  - [ ] Send summary due:2026-11-11T17:00",
+		"  - [ ] Send summary due:2026-11-04T17:00",
 		"  - [ ] Read it scheduled:2026-11-03",
-		"- [x] Weekly review due:2026-11-02 @repeat:1w",
+		"- [x] Weekly review due:2026-11-02",
 		"  Bring the notebook.",
 		"  - plain bullet",
 		"  - [x] Send summary due:2026-11-04T17:00",
-		"  - [ ] Read it scheduled:2026-11-03",
+		"  - [-] Read it scheduled:2026-11-03",
 	}
 	got, inserted := rollLines(t, in, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, want)
@@ -147,7 +136,7 @@ func TestRollCopiesChildLinesAndShiftsSubtaskDates(t *testing.T) {
 
 func TestRollAddsDueWhenTaskHasNoDate(t *testing.T) {
 	got, _ := rollLines(t, []string{"- [ ] T @repeat:3d"}, 0, RollComplete, "2026-11-02")
-	want := []string{"- [ ] T @repeat:3d due:2026-11-05", "- [x] T @repeat:3d"}
+	want := []string{"- [ ] T @repeat:3d due:2026-11-05", "- [x] T"}
 	equalLines(t, got, want)
 	if strings.Contains(got[0], "scheduled:") {
 		t.Fatalf("inserted line gained a scheduled token: %q", got[0])
@@ -185,16 +174,14 @@ func TestRollCountsFromDue(t *testing.T) {
 
 func TestRollKeepsTimes(t *testing.T) {
 	got, _ := rollLines(t, []string{"- [ ] T due:2026-11-02T09:30 @repeat:1d"}, 0, RollComplete, "2026-11-02")
-	if got[0] != "- [ ] T due:2026-11-03T09:30 @repeat:1d" {
-		t.Fatalf("got %q", got[0])
-	}
+	equalLines(t, got, []string{"- [ ] T due:2026-11-03T09:30 @repeat:1d", "- [x] T due:2026-11-02T09:30"})
 
 	in := "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21"
 	got, _ = rollLines(t, []string{in}, 0, RollComplete, "2027-03-08")
-	want := "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21"
-	if got[0] != want {
-		t.Fatalf("got %q\nwant %q", got[0], want)
-	}
+	equalLines(t, got, []string{
+		"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21",
+		"- [x] Assignment due:2027-03-12T23:59 @skip:2027-03-13/2027-03-21",
+	})
 }
 
 func TestRollKeepsSkipTokensOnInsertedLine(t *testing.T) {
@@ -209,6 +196,10 @@ func TestRollKeepsSkipTokensOnInsertedLine(t *testing.T) {
 		got, _ := rollLines(t, []string{c.line}, 0, RollComplete, "2027-03-08")
 		if got[0] != c.next {
 			t.Errorf("%q\n got %q\nwant %q", c.line, got[0], c.next)
+		}
+		// The finished line drops the rule and keeps every skip field.
+		if want := strings.Replace(strings.Replace(c.line, "[ ]", "[x]", 1), " @repeat:1w", "", 1); got[1] != want {
+			t.Errorf("%q\n record %q\n  want %q", c.line, got[1], want)
 		}
 	}
 }
@@ -230,8 +221,8 @@ func TestRollCountsTasksPastFencesAndLeavesOthersAlone(t *testing.T) {
 		"- [ ] first",
 		"- [ ] second due:2026-11-03 @repeat:1d",
 		"  - [ ] child",
-		"- [x] second due:2026-11-02 @repeat:1d",
-		"  - [ ] child",
+		"- [x] second due:2026-11-02",
+		"  - [-] child",
 		"- [ ] third",
 	}
 	got, inserted := rollLines(t, in, 1, RollComplete, "2026-11-02")
@@ -272,7 +263,7 @@ func TestRollReplacesInvalidDueTokenOnCopy(t *testing.T) {
 	in := []string{"- [ ] A due:bad @repeat:1d"}
 	want := []string{
 		"- [ ] A due:2026-11-03 @repeat:1d",
-		"- [x] A due:bad @repeat:1d",
+		"- [x] A due:bad",
 	}
 	got, _ := rollLines(t, in, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, want)
@@ -282,7 +273,7 @@ func TestRollCancelCountsFromTodayOnDone(t *testing.T) {
 	in := []string{"- [ ] A due:2026-10-01 @repeat:after-1w"}
 	want := []string{
 		"- [ ] A due:2026-11-18 @repeat:after-1w",
-		"- [-] A due:2026-10-01 @repeat:after-1w",
+		"- [-] A due:2026-10-01",
 	}
 	got, _ := rollLines(t, in, 0, RollCancel, "2026-11-11")
 	equalLines(t, got, want)
@@ -294,7 +285,7 @@ func TestRollLeavesScheduledTokenAsText(t *testing.T) {
 	in := []string{"- [ ] T scheduled:2026-10-01 due:2026-11-02 @repeat:3d"}
 	want := []string{
 		"- [ ] T scheduled:2026-10-01 due:2026-11-05 @repeat:3d",
-		"- [x] T scheduled:2026-10-01 due:2026-11-02 @repeat:3d",
+		"- [x] T scheduled:2026-10-01 due:2026-11-02",
 	}
 	got, _ := rollLines(t, in, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, want)
@@ -302,6 +293,134 @@ func TestRollLeavesScheduledTokenAsText(t *testing.T) {
 	got, _ = rollLines(t, []string{"- [ ] T scheduled:2026-11-02 @repeat:3d"}, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, []string{
 		"- [ ] T scheduled:2026-11-02 @repeat:3d due:2026-11-05",
-		"- [x] T scheduled:2026-11-02 @repeat:3d",
+		"- [x] T scheduled:2026-11-02",
 	})
+}
+
+// The finished line loses `@repeat:` and `@remind:`, so unticking it never
+// starts a series again. The next occurrence keeps both.
+func TestRollRecordDropsRepeatAndRemind(t *testing.T) {
+	in := []string{"- [ ] Water plants @remind:9am due:2026-11-02 @repeat:mon/thu !high #home"}
+	want := []string{
+		"- [ ] Water plants @remind:9am due:2026-11-05 @repeat:mon/thu !high #home",
+		"- [x] Water plants due:2026-11-02 !high #home",
+	}
+	got, _ := rollLines(t, in, 0, RollComplete, "2026-11-02")
+	equalLines(t, got, want)
+
+	want[1] = "- [-] Water plants due:2026-11-02 !high #home"
+	got, _ = rollLines(t, in, 0, RollCancel, "2026-11-02")
+	equalLines(t, got, want)
+}
+
+// The finished line cancels the subtasks that were still open. It keeps the
+// ones that were done, cancelled or forwarded, and the copy opens every
+// checkbox again.
+func TestRollRecordCancelsOpenSubtasks(t *testing.T) {
+	in := []string{
+		"## Chores",
+		"- [ ] Weekly review due:2026-11-02 @repeat:1w ^keep",
+		"  - [x] Inbox zero",
+		"  - [ ] Plan week ^sub1",
+		"  - [/] Draft the update",
+		"    - [ ] Nested open",
+		"  - [-] Calendar",
+		"  - [>] Moved [[Elsewhere]]",
+		"  notes stay",
+		"- [ ] Other",
+	}
+	want := []string{
+		"## Chores",
+		"- [ ] Weekly review due:2026-11-09 @repeat:1w",
+		"  - [ ] Inbox zero",
+		"  - [ ] Plan week",
+		"  - [ ] Draft the update",
+		"    - [ ] Nested open",
+		"  - [ ] Calendar",
+		"  - [ ] Moved [[Elsewhere]]",
+		"  notes stay",
+		"- [x] Weekly review due:2026-11-02 ^keep",
+		"  - [x] Inbox zero",
+		"  - [-] Plan week ^sub1",
+		"  - [-] Draft the update",
+		"    - [-] Nested open",
+		"  - [-] Calendar",
+		"  - [>] Moved [[Elsewhere]]",
+		"  notes stay",
+		"- [ ] Other",
+	}
+	got, inserted := rollLines(t, in, 0, RollComplete, "2026-11-02")
+	equalLines(t, got, want)
+	if inserted != 7 {
+		t.Fatalf("inserted = %d, want 7 task lines", inserted)
+	}
+}
+
+// Every line keeps the ending that the note gives it, the inserted lines
+// included.
+func TestRollKeepsLineEndings(t *testing.T) {
+	in := "- [ ] Win due:2026-11-02T08:00 @repeat:daily\r\n  - [ ] sub\r\n- [ ] after\r\n"
+	want := "- [ ] Win due:2026-11-03T08:00 @repeat:daily\r\n  - [ ] sub\r\n" +
+		"- [x] Win due:2026-11-02T08:00\r\n  - [-] sub\r\n- [ ] after\r\n"
+	next, _, ok := RollTaskInBody(in, 0, DialectApp, RollComplete, rollNow("2026-11-02"), time.Monday)
+	if !ok || next != want {
+		t.Fatalf("got %q\nwant %q", next, want)
+	}
+
+	// A note with a mix of endings keeps each one on its own line.
+	mixed := "- [ ] Win due:2026-11-02 @repeat:daily\r\n  - [ ] sub\n"
+	want = "- [ ] Win due:2026-11-03 @repeat:daily\r\n  - [ ] sub\r\n" +
+		"- [x] Win due:2026-11-02\r\n  - [-] sub\n"
+	next, _, ok = RollTaskInBody(mixed, 0, DialectApp, RollComplete, rollNow("2026-11-02"), time.Monday)
+	if !ok || next != want {
+		t.Fatalf("mixed: got %q\nwant %q", next, want)
+	}
+}
+
+// A task with no `due:` counts from the `due` of the note. The copy gets no
+// `due:` of its own when the note has no other date for it either.
+func TestRollCountsFromFrontmatterDue(t *testing.T) {
+	in := "---\ndue: 2026-10-31\n---\n- [ ] Pay invoice @repeat:monthly"
+	want := "---\ndue: 2026-10-31\n---\n- [ ] Pay invoice @repeat:monthly due:2026-11-30\n- [x] Pay invoice"
+	next, _, ok := RollTaskInBody(in, 0, DialectApp, RollComplete, rollNow("2026-11-01"), time.Monday)
+	if !ok || next != want {
+		t.Fatalf("got %q\nwant %q", next, want)
+	}
+
+	// The `due:` of the line wins over the `due` of the note.
+	in = "---\ndue: 2026-10-31\n---\n- [ ] Pay invoice @repeat:monthly due:2026-12-15"
+	next, _, _ = RollTaskInBody(in, 0, DialectApp, RollComplete, rollNow("2026-11-01"), time.Monday)
+	if !strings.Contains(next, "due:2027-01-15") {
+		t.Fatalf("got %q", next)
+	}
+}
+
+// A task with a valid rule and no next date is finished and loses its rule
+// and its reminder. It keeps `@until:`, and nothing is inserted.
+func TestEndedSeriesDropsRepeatAndRemind(t *testing.T) {
+	in := []string{"- [ ] Lab due:2026-12-14 @repeat:1w @until:2026-12-14 @remind:8am ^ab12cd"}
+	got, inserted := rollLines(t, in, 0, RollComplete, "2026-12-14")
+	equalLines(t, got, []string{"- [x] Lab due:2026-12-14 @until:2026-12-14 ^ab12cd"})
+	if inserted != 0 {
+		t.Fatalf("inserted = %d, want 0", inserted)
+	}
+	got, _ = rollLines(t, in, 0, RollCancel, "2026-12-14")
+	equalLines(t, got, []string{"- [-] Lab due:2026-12-14 @until:2026-12-14 ^ab12cd"})
+
+	// An in-progress task is finished the same way, and its subtasks stay.
+	got, _ = rollLines(t, []string{"- [/] Lab due:2026-12-14 @repeat:1w @until:2026-12-14", "  - [ ] sub"}, 0, RollComplete, "2026-12-14")
+	equalLines(t, got, []string{"- [x] Lab due:2026-12-14 @until:2026-12-14", "  - [ ] sub"})
+
+	// A CRLF note keeps its endings here too.
+	next, _, _ := RollTaskInBody("- [ ] Lab @repeat:1w @until:2026-12-14\r\nx\r\n", 0, DialectApp, RollComplete, rollNow("2026-12-14"), time.Monday)
+	if next != "- [x] Lab @until:2026-12-14\r\nx\r\n" {
+		t.Fatalf("CRLF: got %q", next)
+	}
+
+	// Unticking the finished line does not start a series.
+	got, inserted = rollLines(t, []string{"- [x] Lab due:2026-12-14 @until:2026-12-14"}, 0, RollComplete, "2026-12-14")
+	equalLines(t, got, []string{"- [ ] Lab due:2026-12-14 @until:2026-12-14"})
+	if inserted != 0 {
+		t.Fatalf("untick inserted = %d", inserted)
+	}
 }

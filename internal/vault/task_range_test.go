@@ -102,7 +102,7 @@ func TestRollKeepsRanges(t *testing.T) {
 		"- [ ] Weekly review due:2026-11-09 @repeat:1w",
 		"  Bring the notebook.",
 		"  - plain bullet",
-		"  - [ ] Send summary due:2026-11-11T17:00-18:00",
+		"  - [ ] Send summary due:2026-11-04T17:00-18:00",
 	}
 	equalLines(t, got[:4], want)
 

@@ -94,8 +94,6 @@ func TestDoneOnARecurringTaskWritesTheNextOccurrence(t *testing.T) {
 	cs := runScoped(t, root, nil)
 	next := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 	want := "- [ ] water @repeat:daily due:" + next + "\n- [x] water due:2026-01-01\n"
-	// A toggle in a local vault leaves the rule on the finished line.
-	wantToggle := "- [ ] water @repeat:daily due:" + next + "\n- [x] water @repeat:daily due:2026-01-01\n"
 
 	var task vault.Task
 	if err := json.Unmarshal([]byte(mustCall(t, cs, "update_task", map[string]any{"id": "updated.md#0", "state": "done"})), &task); err != nil {
@@ -112,8 +110,8 @@ func TestDoneOnARecurringTaskWritesTheNextOccurrence(t *testing.T) {
 	if err := json.Unmarshal([]byte(mustCall(t, cs, "toggle_task", map[string]any{"id": "toggled.md#0"})), &task); err != nil {
 		t.Fatal(err)
 	}
-	if got := readFile(t, root, "toggled.md"); got != wantToggle {
-		t.Fatalf("toggle_task wrote %q, want %q", got, wantToggle)
+	if got := readFile(t, root, "toggled.md"); got != want {
+		t.Fatalf("toggle_task wrote %q, want %q", got, want)
 	}
 	if !task.Checked || task.ID != "toggled.md#1" {
 		t.Fatalf("toggle_task should return the finished task: %+v", task)

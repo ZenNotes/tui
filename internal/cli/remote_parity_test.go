@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sync"
 	"testing"
+	"time"
 )
 
 // remoteServer serves the recorded responses in testdata/remote-tasks as a
@@ -127,23 +127,56 @@ func TestRemoteTaskListMatchesReleasedOutput(t *testing.T) {
 	}
 }
 
-// Against a server, `zn task toggle` ticks the line and writes nothing else:
-// no next date and no copy of a work session.
-func TestRemoteToggleOfRepeatingTaskWithSessionOnlyTicks(t *testing.T) {
-	s := newRemoteServer(t)
-	useRemoteServer(t, s)
-	args := []string{"task", "toggle", "inbox/Work.md#0"}
-	captureOutput(t, func() {
-		if code := Main(args); code != 0 {
-			t.Errorf("zn %v exited %d", args, code)
-		}
-	})
-	want := []string{"inbox/Work.md\n# Work\n\n" +
-		"- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" +
-		"- [ ] Send the invoice due:2026-11-12\n" +
-		"- [ ] A due:2027-03-08T23:59 @repeat:weekly @until:2027-03-10 @skip:spring-break\n" +
-		"- [ ] B due:2027-03-08 @repeat:monthly-15\n"}
-	if got := s.Writes(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("writes:\n%q\nwant:\n%q", got, want)
+// remoteWorkHead is the path and the first lines of the note that the server
+// holds, as the server records a write of it.
+const remoteWorkHead = "inbox/Work.md\n# Work\n\n"
+
+// Against a server, `zn task toggle` rolls the values that v0.17.1 rolls and
+// ticks every other task without a copy or a write to another note. The
+// server has no clock, so the next date of the rolled task counts from today.
+func TestRemoteToggleOfRepeatingTaskRollsAsReleased(t *testing.T) {
+	const (
+		water   = "- [ ] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n"
+		invoice = "- [ ] Send the invoice due:2026-11-12\n"
+		taskA   = "- [ ] A due:2027-03-08T23:59 @repeat:weekly @until:2027-03-10 @skip:spring-break\n"
+		taskB   = "- [ ] B due:2027-03-08 @repeat:monthly-15\n"
+	)
+	for _, tc := range []struct {
+		name, id string
+		// want gives the note for a next date.
+		want func(next string) string
+	}{
+		{"a bare repeat token is a plain tick", "inbox/Work.md#0", func(string) string {
+			return remoteWorkHead + "- [x] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n" + invoice + taskA + taskB
+		}},
+		{"a rule the desktop app reads rolls", "inbox/Work.md#2", func(next string) string {
+			return remoteWorkHead + water + invoice +
+				"- [ ] A due:" + next + " @repeat:weekly @until:2027-03-10 @skip:spring-break\n" +
+				"- [x] A due:2027-03-08T23:59 @until:2027-03-10 @skip:spring-break\n" + taskB
+		}},
+		{"a rule only zn reads is a plain tick", "inbox/Work.md#3", func(string) string {
+			return remoteWorkHead + water + invoice + taskA + "- [x] B due:2027-03-08 @repeat:monthly-15\n"
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newRemoteServer(t)
+			useRemoteServer(t, s)
+			args := []string{"task", "toggle", tc.id}
+			before := time.Now()
+			captureOutput(t, func() {
+				if code := Main(args); code != 0 {
+					t.Errorf("zn %v exited %d", args, code)
+				}
+			})
+			after := time.Now()
+			got := s.Writes()
+			var wants []string
+			for _, day := range []time.Time{before, after} {
+				wants = append(wants, tc.want(day.AddDate(0, 0, 7).Format("2006-01-02")))
+			}
+			if len(got) != 1 || (got[0] != wants[0] && got[0] != wants[1]) {
+				t.Fatalf("writes:\n%q\nwant:\n%q", got, wants[0])
+			}
+		})
 	}
 }

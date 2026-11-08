@@ -145,6 +145,22 @@ func TestCalendarMarksForwardedAndFinishedRepeatSessions(t *testing.T) {
 	}
 }
 
+// After a roll the finished line has no rule, and its session is still
+// marked done next to the session of the open occurrence.
+func TestCalendarMarksSessionOfFinishedRecordWithoutRule(t *testing.T) {
+	_, tv := calEventApp(t, map[string]string{
+		"Work.md": "- [ ] Water @repeat:weekly ^cccccc\n- [x] Water ^bbbbbb\n",
+		"Plans.md": "- task:[[Work#^bbbbbb]] when:2026-11-02T09:00\n" +
+			"- task:[[Work#^cccccc]] when:2026-11-09T09:00\n",
+	})
+	if got := calLabelsOn(tv, 2026, time.November, 2); !reflect.DeepEqual(got, []string{"☑09:00 Water"}) {
+		t.Errorf("2026-11-02 lists %q", got)
+	}
+	if got := calLabelsOn(tv, 2026, time.November, 9); !reflect.DeepEqual(got, []string{"☐09:00 Water"}) {
+		t.Errorf("2026-11-09 lists %q", got)
+	}
+}
+
 func TestSessionShowsOwnTextElseTaskContent(t *testing.T) {
 	_, tv := calEventApp(t, map[string]string{
 		"Work.md": "- [ ] Write report ^aaaaaa\n",

@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"regexp"
 	"strings"
 	"time"
 )
@@ -18,32 +17,41 @@ const (
 )
 
 // RollTaskInBody completes or cancels the task at targetIndex, counted in the
-// given grammar. An open, in-progress or waiting task that carries a valid
-// `@repeat:` rule also gets its next occurrence: an open copy of the line and
-// its indented block is inserted directly above it, with `due:` moved to the
-// next date and the original keeping its own dates. A `scheduled:` token is
-// plain text and stays as written.
-// Every other case is the plain toggle or cancel, with nothing inserted: no
-// rule, an invalid rule, unticking, reopening, a forwarded task, or a rule
-// with no date left to land on, such as one that has reached its `@until:`
-// date.
+// given grammar. An open or in-progress task that carries a valid `@repeat:`
+// rule also gets its next occurrence, as the desktop app writes it: an open
+// copy of the line and its indented block is inserted directly above, and the
+// original becomes the finished record below it.
 //
-// The next date counts from `due:`, else today, and from today when the rule
-// starts with `after-`. It is the first date of the rule after that and after
-// today that no `@skip:` period covers and that is not past the `@until:` date.
-// The copied subtasks' dates move by the same number of days as the task's
-// `due:`, and each keeps its `THH:MM`. A task with no `due:` gets `due:` on the
-// copy. The copies drop a block id that ends their line, and the originals
-// keep theirs, so an id stays on one line. now and weekStart are inputs so the
-// caller chooses the clock and the first day of the week.
+// The copy keeps the text, the priority, the tags and every field in their
+// order. It drops `@waiting` and `@status:`, which belong to one occurrence.
+// Its `due:` is replaced where it stood, and it keeps its `THH:MM` time and its
+// range. A task with no `due:` and no work session gets `due:` at the end of
+// the copy. The copy holds the subtask lines as written, with every checkbox
+// open and without the block ids that end a line, so an id stays on one line.
+// A `scheduled:` token is plain text and stays as written.
+//
+// The record drops `@repeat:` and `@remind:`, so unticking it never starts a
+// series again, and it cancels the subtasks that were still open. It keeps
+// `@until:` and `@skip:`. A rule with no date left to land on, such as one that
+// has reached its `@until:` date, gives no copy. The line is then finished and
+// drops the same two fields.
+//
+// Every other case is the plain toggle or cancel, with nothing inserted: no
+// rule, an invalid rule, unticking, reopening or a forwarded task.
+//
+// The next date counts from the earliest work session, else from `due:`, else
+// from the `due` of the note, else from today. It counts from today when the
+// rule starts with `after-`. It is the first date of the rule after that and
+// after today that no `@skip:` period covers and that is not past the `@until:`
+// date. now and weekStart are inputs so the caller chooses the clock and the
+// first day of the week.
 //
 // Only local notes roll. A remote vault's server parses the note itself, so
 // remote toggles use ToggleTaskInBody and never insert a line.
 //
 // inserted counts the task lines added above the original, which is how far
-// the original's index, and every later task's, moved. Line endings are
-// normalised to LF, as ToggleTaskInBody does. ok is false when the body holds
-// no task at that index.
+// the original's index, and every later task's, moved. Every line keeps the
+// ending it has. ok is false when the body holds no task at that index.
 func RollTaskInBody(body string, targetIndex int, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday) (next string, inserted int, ok bool) {
 	return RollTaskInBodyWith(body, targetIndex, dialect, action, now, weekStart, nil)
 }
@@ -56,12 +64,15 @@ func RollTaskInBodyWith(body string, targetIndex int, dialect TaskDialect, actio
 	return res.next, res.inserted, res.ok
 }
 
-// rollSessions tells a roll about the work sessions of the task. The zero
-// value is a task with none.
+// rollSessions tells a roll about the work sessions of the task and about the
+// date of its note. The zero value is a task with none.
 type rollSessions struct {
 	// base is the start date of the earliest current session. The roll
 	// counts from it when it is not empty.
 	base string
+	// fallbackDue is the date that the roll counts from when the task has no
+	// session, no `due:` and no `due` in the frontmatter of the note.
+	fallbackDue string
 	// newID gives the block id of the inserted open line. It is called only
 	// when the task rolls. It is nil for a task without sessions.
 	newID func() string
@@ -74,6 +85,9 @@ type rollResult struct {
 	ok       bool
 	// rolled is true when a new occurrence was inserted.
 	rolled bool
+	// ended is true when the task has a valid rule and no next date. The line
+	// is finished and has lost its rule, and nothing is inserted.
+	ended bool
 	// days is how far the dates of the new occurrence moved.
 	days int
 }
@@ -81,57 +95,83 @@ type rollResult struct {
 // rollTaskLines does the work of RollTaskInBodyWith. The sessions change the
 // base date of the roll and give the inserted open line a new block id.
 func rollTaskLines(body string, targetIndex int, dialect TaskDialect, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver, sessions rollSessions) rollResult {
-	normalized := strings.ReplaceAll(body, "\r\n", "\n")
-	lines := strings.Split(normalized, "\n")
-	numbers := taskLineNumbersIn(lines, dialect)
+	lines := strings.Split(body, "\n")
+	bare := repeatBareLines(lines)
+	numbers := taskLineNumbersIn(bare, dialect)
 	if targetIndex < 0 || targetIndex >= len(numbers) {
 		return rollResult{next: body}
 	}
 	at := numbers[targetIndex]
-	m := dialect.lineRe().FindStringSubmatch(lines[at])
+	lineRe := dialect.lineRe()
+	m := lineRe.FindStringSubmatch(bare[at])
 	if m == nil {
 		return rollResult{next: body}
 	}
+	ending := lines[at][len(bare[at]):]
 
-	shift, due, days, rolled := planRoll(m, dialect, now, weekStart, names, sessions.base)
-	if !rolled {
+	plan := planRoll(m, bare, dialect, now, weekStart, names, sessions)
+	mark := "x"
+	if action == RollCancel {
+		mark = "-"
+	}
+	switch {
+	case plan.ended:
+		lines[at] = m[1] + mark + "]" + recordText(m[3][1:]) + ending
+		return rollResult{next: strings.Join(lines, "\n"), ok: true, ended: true}
+	case !plan.rolled:
 		if action == RollComplete {
 			plain, found := ToggleTaskInBody(body, targetIndex, dialect)
 			return rollResult{next: plain, ok: found}
 		}
-		lines[at] = m[1] + cancelMarker(m[2]) + m[3]
+		lines[at] = m[1] + cancelMarker(m[2]) + m[3] + ending
 		return rollResult{next: strings.Join(lines, "\n"), ok: true}
 	}
 
-	end := taskBlockEnd(lines, at, leadingIndentWidth(lines[at]))
-	copied := make([]string, 0, end-at)
-	inserted := 0
-	for i := at; i < end; i++ {
-		line := lines[i]
-		if cm := dialect.lineRe().FindStringSubmatch(line); cm != nil {
-			inserted++
-			line = cm[1] + " " + shift(cm[3])
-			line = stripBlockID(line)
-			if i == at && due != "" {
-				line = withDue(line, due)
-			}
-			if i == at && sessions.newID != nil {
-				line = strings.TrimRight(line, " \t") + " ^" + sessions.newID()
-			}
+	// The copy first, then the record, as the desktop app writes them.
+	copied := []string{m[1] + " ]" + plan.copyText}
+	if sessions.newID != nil {
+		copied[0] = strings.TrimRight(copied[0], " \t") + " ^" + sessions.newID()
+	}
+	end := taskBlockEnd(bare, at, leadingIndentWidth(bare[at]))
+	record := make([]string, 0, end-at)
+	inserted := 1
+	for i := at + 1; i < end; i++ {
+		child := lineRe.FindStringSubmatch(bare[i])
+		if child == nil {
+			copied = append(copied, bare[i])
+			record = append(record, bare[i])
+			continue
 		}
-		copied = append(copied, line)
+		inserted++
+		copied = append(copied, stripBlockID(child[1]+" "+child[3]))
+		if isOpenState(child[2]) {
+			record = append(record, child[1]+"-"+child[3])
+		} else {
+			record = append(record, bare[i])
+		}
 	}
 
-	original := m[1] + "x" + m[3]
-	if action == RollCancel {
-		original = m[1] + "-" + m[3]
-	}
 	out := make([]string, 0, len(lines)+len(copied))
 	out = append(out, lines[:at]...)
-	out = append(out, copied...)
-	out = append(out, original)
-	out = append(out, lines[at+1:]...)
-	return rollResult{next: strings.Join(out, "\n"), inserted: inserted, ok: true, rolled: true, days: days}
+	for _, line := range copied {
+		out = append(out, line+ending)
+	}
+	out = append(out, m[1]+mark+"]"+recordText(m[3][1:])+ending)
+	for k, line := range record {
+		out = append(out, line+lines[at+1+k][len(bare[at+1+k]):])
+	}
+	out = append(out, lines[end:]...)
+	return rollResult{next: strings.Join(out, "\n"), inserted: inserted, ok: true, rolled: true, days: plan.days}
+}
+
+// isOpenState reports whether a checkbox state is open or in progress.
+func isOpenState(state string) bool { return state == " " || state == "/" }
+
+// recordText is the text of a finished line of a repeating task: the text
+// after the checkbox without its `@repeat:` and `@remind:` fields.
+func recordText(rest string) string {
+	rest = repeatRuleTokenRe.ReplaceAllString(rest, "${1}")
+	return repeatTidy(repeatRemindRe.ReplaceAllString(rest, "${1}"))
 }
 
 // withDue gives line the `due:` date. A `due:` token the line already has,
@@ -153,45 +193,74 @@ func cancelMarker(state string) string {
 	return "-"
 }
 
-// planRoll decides whether the task line m rolls. If it does, shift moves the
-// `due:` date in the text after a line's `[ ` (which starts with its `]`) by
-// the offset of the new occurrence, and due is the `due:` date to add to the
-// copy of a task that has none. days is the offset of the new occurrence.
+// rollPlan is how a task line rolls.
+type rollPlan struct {
+	// rolled is true when the task gets a next occurrence, and then copyText
+	// is the text of the copy after its checkbox, and days is how far the
+	// dates of the copy moved.
+	rolled   bool
+	copyText string
+	days     int
+	// ended is true when the task has a valid rule and no next date.
+	ended bool
+}
+
+// planRoll decides whether the task line m rolls. bare holds the lines of the
+// note, and the line of m is one of them.
 //
-// base is the start date of the earliest current work session, or empty. It
-// takes the place of `due:` as the date the rule counts from. A task with a
-// session gets no `due:` that it did not have.
-func planRoll(m []string, dialect TaskDialect, now time.Time, weekStart time.Weekday, names SkipResolver, base string) (shift func(string) string, due string, days int, rolled bool) {
-	switch m[2] {
-	case " ", "/":
-	default:
-		return nil, "", 0, false
+// The rule counts from the first of these dates: the start of the earliest
+// current work session, the `due:` of the line, the `due` of the note, the
+// date that the sessions value gives for a daily note, and today. A task with
+// a session gets no `due:` that it did not have.
+func planRoll(m []string, bare []string, dialect TaskDialect, now time.Time, weekStart time.Weekday, names SkipResolver, sessions rollSessions) rollPlan {
+	if !isOpenState(m[2]) {
+		return rollPlan{}
 	}
-	tokens := extractTaskTokens(strings.TrimPrefix(m[3], "]"), dialect)
+	rest := m[3][1:]
+	tokens := extractTaskTokens(rest, dialect)
 	rule, valid := ParseRepeatRule(tokens.repeat)
 	if !valid {
-		return nil, "", 0, false
+		return rollPlan{}
 	}
 	_, periods, _ := ParseSkipItems(strings.Join(tokens.skip, ","))
 	periods = append(periods, skipPeriodsFor(names, Event{}, tokens.skipNames)...)
 
-	field := tokens.due
-	from := field
-	if base != "" {
-		from = base
+	from := sessions.base
+	if from == "" {
+		from = tokens.due
+	}
+	if from == "" {
+		from = parseNoteDefaults(strings.Join(bare, "\n")).Due
+	}
+	if from == "" {
+		from = sessions.fallbackDue
 	}
 	days, following, found := nextRollDate(rule, from, periods, tokens.until, now, weekStart)
 	if !found {
-		return nil, "", 0, false
+		return rollPlan{ended: true}
 	}
 
-	shift = func(text string) string {
-		return shiftTokenDate(text, inlineDueRe, days)
+	// The copy is the text without a block id, with `due:` replaced where it
+	// stood. `@waiting` and `@status:` belong to one occurrence and do not carry.
+	text, _ := splitBlockID(rest)
+	if loc := inlineDueRe.FindStringSubmatchIndex(text); loc != nil {
+		value := text[loc[2]:loc[3]]
+		if date, _, _ := SplitDateTime(value); date != "" {
+			value = shiftDateTime(value, days)
+		} else {
+			value = following
+		}
+		lead := ""
+		if loc[0] < loc[1] && (text[loc[0]] == ' ' || text[loc[0]] == '\t') {
+			lead = text[loc[0] : loc[0]+1]
+		}
+		text = text[:loc[0]] + lead + "due:" + value + text[loc[1]:]
+	} else if sessions.base == "" {
+		text = withDue(text, following)
 	}
-	if field == "" && base == "" {
-		due = following
-	}
-	return shift, due, days, true
+	text = repeatWaitingRe.ReplaceAllString(text, "${1}")
+	text = repeatTidy(repeatStatusRe.ReplaceAllString(text, "${1}"))
+	return rollPlan{rolled: true, copyText: text, days: days}
 }
 
 // nextRollDate finds where a repeating task goes next. field is the date the
@@ -214,17 +283,6 @@ func nextRollDate(rule RepeatRule, field string, periods []SkipPeriod, until str
 		from = today
 	}
 	return daysBetween(from, following), following, true
-}
-
-// shiftTokenDate moves the date of the first token re matches by days. The
-// token's `THH:MM` suffix stays as written. A value whose date is not real is
-// left alone.
-func shiftTokenDate(text string, re *regexp.Regexp, days int) string {
-	loc := re.FindStringSubmatchIndex(text)
-	if loc == nil || loc[2] < 0 {
-		return text
-	}
-	return text[:loc[2]] + shiftDateTime(text[loc[2]:loc[3]], days) + text[loc[3]:]
 }
 
 // shiftDateTime moves the date of a `YYYY-MM-DD[THH:MM]` value by days and

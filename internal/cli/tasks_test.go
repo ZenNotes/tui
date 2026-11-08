@@ -69,14 +69,14 @@ func TestTaskTogglePrintsWhereARecurringTaskWent(t *testing.T) {
 			t.Fatalf("exit %d", code)
 		}
 	})
-	if !strings.Contains(out, "n.md#1") {
+	if strings.TrimSpace(out) != "Toggled n.md#1 → done" {
 		t.Fatalf("%q", out)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "n.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "- [x] water @repeat:daily due:2026-01-01") || !strings.Contains(string(data), "- [ ] water @repeat:daily due:") {
+	if !strings.Contains(string(data), "- [x] water due:2026-01-01") || !strings.Contains(string(data), "- [ ] water @repeat:daily due:") {
 		t.Fatalf("%q", data)
 	}
 }
