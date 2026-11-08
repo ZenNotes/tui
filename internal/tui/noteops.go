@@ -222,24 +222,27 @@ func (a *App) trashNote(path string) {
 		a.deleteNoteForever(path)
 		return
 	}
-	do := func() {
-		if buf, ok := a.buffers[path]; ok {
-			if err := a.saveBuffer(buf); err != nil {
-				a.notifyError(err.Error())
-				return
-			}
-		}
-		next, err := a.backend.MoveToTrash(context.Background(), path)
-		if err != nil {
+	a.confirm("Move \""+meta.Title+"\" to trash?", func() { a.moveNoteToTrash(path, meta.Title) })
+}
+
+// moveNoteToTrash moves a note to the trash without asking. It saves an open
+// buffer of the note first.
+func (a *App) moveNoteToTrash(path, title string) {
+	if buf, ok := a.buffers[path]; ok {
+		if err := a.saveBuffer(buf); err != nil {
 			a.notifyError(err.Error())
 			return
 		}
-		a.dropNote(path)
-		a.ignoreChange(next.Path)
-		a.notify("Moved to trash: " + meta.Title)
-		a.refreshIndex()
 	}
-	a.confirm("Move \""+meta.Title+"\" to trash?", do)
+	next, err := a.backend.MoveToTrash(context.Background(), path)
+	if err != nil {
+		a.notifyError(err.Error())
+		return
+	}
+	a.dropNote(path)
+	a.ignoreChange(next.Path)
+	a.notify("Moved to trash: " + title)
+	a.refreshIndex()
 }
 
 func (a *App) deleteNoteForever(path string) {

@@ -45,6 +45,8 @@ type calEntry struct {
 	path   string
 	line   int
 	inline bool
+	// when is the `when` value of the event as written.
+	when string
 	// occ is the whole occurrence of an event or a session, with the dates and
 	// times that the user wrote, not the part that falls on this day.
 	occ vault.EventOccurrence

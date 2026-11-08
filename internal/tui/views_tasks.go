@@ -1207,6 +1207,9 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		if !a.listKeyAllowed(k) {
 			return false
 		}
+		if v.eventKey(a, k) {
+			return true
+		}
 		switch {
 		case k.IsRune(':'):
 			a.openLocalEx()
@@ -1249,6 +1252,9 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		return false
 	}
 	hourList := v.calc().sub != calMonth
+	if v.eventKey(a, k) {
+		return true
+	}
 	switch {
 	case k.Is("esc"):
 		v.calc().sub = (v.calc().sub + 1) % 3
