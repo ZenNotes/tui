@@ -223,7 +223,8 @@ func TestClickTimedTaskSelectsIt(t *testing.T) {
 	row := calRowOf(calScreen(a, tv, 120, 70), "dentist")
 	// The body starts one line under the view's toolbar.
 	tv.calc().click(a, tv, 12, row-1, false, false)
-	requireFocus(t, tv, calFocusItems, "click on a timed entry")
+	requireFocus(t, tv, calFocusGrid, "click on a timed entry")
+	requireCursor(t, tv, 14*60, "click on a timed entry")
 	if sel := tv.selectedTask(); sel == nil || sel.Content != "dentist" {
 		t.Errorf("selected task = %+v, want dentist", sel)
 	}

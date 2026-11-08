@@ -986,6 +986,40 @@ func (c *taskCalendar) pressTask(a *App, t vault.Task, right, double bool) {
 	}
 }
 
+// pressEntry acts on the entry a press landed on: a right-click opens the
+// menu of the entry and a double-click opens its note. A due entry has the
+// menu of its task, and an event or a session has the menu of events.
+func (c *taskCalendar) pressEntry(a *App, v *tasksView, e calEntry, right, double bool) {
+	switch {
+	case right && e.kind == calDue:
+		a.taskMenu(e.task)
+	case right:
+		v.eventMenu(a, e)
+	case double:
+		a.openCalEntry(e)
+	}
+}
+
+// clickSlot handles a press on a slot of the hour rows of a day. The cursor
+// goes to that day and slot, and the entry drawn under the press is selected.
+func (c *taskCalendar) clickSlot(a *App, v *tasksView, b calDayBox, row, x int, right, double bool) {
+	if !sameDay(b.day, v.day) {
+		v.selectDay(a, b.day)
+	}
+	c.focus = calFocusGrid
+	c.setCursorRow(row)
+	idx, ok := c.hourEntryAt(b, row, x)
+	if !ok {
+		if double {
+			v.calendarKey(a, vim.KeyEnter)
+		}
+		return
+	}
+	e := c.dayEntries(b.day)[idx]
+	c.pin = entryKey(e)
+	c.pressEntry(a, v, e, right, double)
+}
+
 // click handles a mouse press at body cell (x, y) by hit-testing the last
 // layout.
 func (c *taskCalendar) click(a *App, v *tasksView, x, y int, right, double bool) {
@@ -1008,27 +1042,21 @@ func (c *taskCalendar) click(a *App, v *tasksView, x, y int, right, double bool)
 			continue
 		}
 		if c.sub != calMonth {
-			selected := sameDay(b.day, v.day)
-			var idx int
-			var ok bool
-			if inBand {
-				s := 0
-				if selected {
-					s = c.columnScroll(b)
-				}
-				idx, ok = c.columnEntryAt(b, s, y-b.rect.y)
-			} else {
-				idx, ok = c.hourEntryAt(b, lay.hourStart+y-b.hours.y, x-b.hours.x)
+			if inHours {
+				c.clickSlot(a, v, b, lay.hourStart+y-b.hours.y, x-b.hours.x, right, double)
+				return
 			}
-			if ok {
+			s := 0
+			if sameDay(b.day, v.day) {
+				s = c.columnScroll(b)
+			}
+			if idx, ok := c.columnEntryAt(b, s, y-b.rect.y); ok {
 				if !sameDay(b.day, v.day) {
 					v.selectDay(a, b.day)
 				}
 				c.focus = calFocusItems
 				c.cursor = idx
-				if e := c.dayEntries(b.day)[idx]; e.hasTask() {
-					c.pressTask(a, e.task, right, double)
-				}
+				c.pressEntry(a, v, c.dayEntries(b.day)[idx], right, double)
 				return
 			}
 		}
@@ -1045,9 +1073,7 @@ func (c *taskCalendar) click(a *App, v *tasksView, x, y int, right, double bool)
 		if idx < len(entries) {
 			c.focus = calFocusItems
 			c.cursor = idx
-			if entries[idx].hasTask() {
-				c.pressTask(a, entries[idx].task, right, double)
-			}
+			c.pressEntry(a, v, entries[idx], right, double)
 		}
 	}
 }

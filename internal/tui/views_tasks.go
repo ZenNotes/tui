@@ -1207,7 +1207,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		if !a.listKeyAllowed(k) {
 			return false
 		}
-		if v.eventKey(a, k) {
+		if v.createKey(a, k) || v.eventKey(a, k) {
 			return true
 		}
 		switch {
@@ -1252,7 +1252,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		return false
 	}
 	hourList := v.calc().sub != calMonth
-	if v.eventKey(a, k) {
+	if v.createKey(a, k) || v.eventKey(a, k) {
 		return true
 	}
 	switch {

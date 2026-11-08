@@ -45,25 +45,58 @@ func (v *tasksView) eventKey(a *App, k vim.Key) bool {
 	}
 	switch {
 	case k.IsRune('T'), k.IsRune('@'), k.IsRune('d'), k.IsRune('D'):
-		if !a.eventEditable(e) {
-			return true
-		}
-		switch {
-		case k.IsRune('T'):
-			a.moveEventTo(e, vault.TodayISO(calendarNow()))
-		case k.IsRune('@'):
-			v.eventDayMenu(a, e)
-		case k.IsRune('d'):
-			a.eventWhenPrompt(e, e.when)
-		default:
-			a.deleteEvent(e)
-		}
+		v.eventAct(a, e, k.Rune)
 	case e.kind == calEvent && eventTaskKey(a, k):
 		a.notify(eventTaskKeyRefusal)
 	default:
 		return false
 	}
 	return true
+}
+
+// eventAct edits an event or a session with the action of a key: `T`, `@`,
+// `d` or `D`.
+func (v *tasksView) eventAct(a *App, e calEntry, act rune) {
+	if !a.eventEditable(e) {
+		return
+	}
+	switch act {
+	case 'T':
+		a.moveEventTo(e, vault.TodayISO(calendarNow()))
+	case '@':
+		v.eventDayMenu(a, e)
+	case 'd':
+		a.eventWhenPrompt(e, e.when)
+	default:
+		a.deleteEvent(e)
+	}
+}
+
+// eventMenu opens the menu of an event or a session. It has the actions of
+// the keys, and a session also leads to the menu of its task.
+func (v *tasksView) eventMenu(a *App, e calEntry) {
+	title := e.content()
+	if title == "" {
+		title = e.note
+	}
+	open := "Open note"
+	if e.hasTask() {
+		open = "Open task"
+	}
+	act := func(r rune) func(a *App) {
+		return func(a *App) { v.eventAct(a, e, r) }
+	}
+	items := []menuItem{
+		{key: "o", label: open, run: func(a *App) { a.openCalEntry(e) }},
+		{key: "T", label: "Move to today", run: act('T')},
+		{key: "@", label: "Move to a day", run: act('@')},
+		{key: "d", label: "Edit time", run: act('d')},
+		{key: "D", label: "Delete", run: act('D')},
+	}
+	if e.kind == calSession {
+		items = append(items, menuItem{sep: true}, menuItem{key: "t", label: "Task actions", run: func(a *App) { a.taskMenu(e.task) }})
+	}
+	a.showMenu(truncateCells(title, 40), items)
 }
 
 // eventTaskKey reports whether k is a key that completes, cancels, ranks or
@@ -135,8 +168,7 @@ func (a *App) moveEventTo(e calEntry, day string) {
 // eventWhenPrompt asks for a new time of an event. A wrong answer keeps the
 // prompt open with the text and the error.
 func (a *App) eventWhenPrompt(e calEntry, initial string) {
-	help := "YYYY-MM-DD[THH:MM[-HH:MM]], start/end, today, tomorrow, +3 or mon..sun"
-	a.promptFor("Time of the event", initial, help, func(a *App, text string) {
+	a.promptFor("Time of the event", initial, whenHelp, func(a *App, text string) {
 		when, err := parseSessionWhen(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.eventWhenPrompt(e, text)
