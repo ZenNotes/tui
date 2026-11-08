@@ -486,6 +486,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.err == nil && a.idx != nil {
 			a.idx.tasks = m.tasks
+			a.idx.events = m.events
 			a.idx.tasksAt = time.Now()
 			a.sidebar.rebuild(a)
 			a.refreshViews()

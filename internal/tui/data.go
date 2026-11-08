@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/templates"
@@ -21,6 +22,7 @@ type index struct {
 	folders  []vault.FolderEntry
 	tags     []tagCount
 	tasks    []vault.Task
+	events   []vault.Event
 	settings vault.VaultSettings
 	primary  vault.PrimaryNotesLocation
 	search   []search.Entry
@@ -40,9 +42,10 @@ type indexLoadedMsg struct {
 }
 
 type tasksLoadedMsg struct {
-	epoch *int
-	tasks []vault.Task
-	err   error
+	epoch  *int
+	tasks  []vault.Task
+	events []vault.Event
+	err    error
 }
 
 func (a *App) loadIndexCmd() tea.Cmd {
@@ -80,11 +83,28 @@ func (a *App) loadIndexCmd() tea.Cmd {
 	}
 }
 
+// loadEvents reads the events of a local vault. A remote vault gives none:
+// the terminal does not read event notes through a remote server.
+func loadEvents(b backend.Backend) []vault.Event {
+	local, ok := b.(*backend.Local)
+	if !ok {
+		return nil
+	}
+	events, err := local.Vault().ScanEvents()
+	if err != nil {
+		return nil
+	}
+	return events
+}
+
 func (a *App) loadTasksCmd() tea.Cmd {
 	b, epoch := a.backend, a.epoch
 	return func() tea.Msg {
 		tasks, err := b.ScanTasks(context.Background(), vault.ParseTasksOptions{Dialect: vault.DialectApp})
-		return tasksLoadedMsg{epoch: epoch, tasks: tasks, err: err}
+		if err != nil {
+			return tasksLoadedMsg{epoch: epoch, err: err}
+		}
+		return tasksLoadedMsg{epoch: epoch, tasks: tasks, events: loadEvents(b)}
 	}
 }
 
@@ -252,13 +272,18 @@ func (a *App) dailyDueByPath() map[string]string {
 	return out
 }
 
-// displayTasks are the tasks the Tasks surfaces show: daily-note due
-// inference applied, archived notes retired unless the preference keeps them.
+// displayTasks are the tasks the Tasks surfaces show: work sessions joined,
+// daily-note due inference applied, archived notes retired unless the
+// preference keeps them.
 func (a *App) displayTasks() []vault.Task {
 	if a.idx == nil {
 		return nil
 	}
-	tasks := vault.InferDailyTaskDueDates(a.idx.tasks, a.dailyDueByPath())
+	tasks := a.idx.tasks
+	if len(a.idx.events) > 0 {
+		tasks = vault.JoinSessions(tasks, a.idx.events, a.taskClock())
+	}
+	tasks = vault.InferDailyTaskDueDates(tasks, a.dailyDueByPath())
 	return vault.FilterTasksForDisplay(tasks, a.prefs.ShowArchivedTasks)
 }
 

@@ -189,6 +189,21 @@ func taskMatchesTerm(t vault.Task, term string, today time.Time) bool {
 			default:
 				match = strings.HasPrefix(t.Due, val)
 			}
+		case "session":
+			// Only the joined work session counts. A `@session:` field
+			// does not.
+			switch val {
+			case "today":
+				match = t.SessionDate == vault.TodayISO(today)
+			case "overdue":
+				match = vault.IsTaskOpen(t) && t.SessionDate != "" && t.SessionDate < vault.TodayISO(today)
+			case "none":
+				match = t.SessionDate == ""
+			case "any":
+				match = t.SessionDate != ""
+			default:
+				match = strings.HasPrefix(t.SessionDate, val)
+			}
 		case "priority", "prio", "p":
 			match = t.Priority == val || (val == "none" && t.Priority == "")
 		case "status":
@@ -546,6 +561,9 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 		} else {
 			meta = append(meta, th.Dim.Render(due))
 		}
+	}
+	if t.SessionDate != "" {
+		meta = append(meta, th.Dim.Render("session "+withTaskClock(t.SessionDate, t.SessionTime, t.SessionEnd, a.prefs.TimeFormat)))
 	}
 	if t.Priority != "" {
 		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority))
