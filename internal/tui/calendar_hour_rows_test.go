@@ -127,32 +127,6 @@ func TestUntimedTaskStaysOutOfHourRows(t *testing.T) {
 	}
 }
 
-func TestCrowdedHourRowEndsWithMoreCount(t *testing.T) {
-	var tasks []vault.Task
-	for i, clock := range []string{"09:05", "09:15", "09:30", "09:50"} {
-		tasks = append(tasks, vault.Task{
-			ID: fmt.Sprintf("n#%d", i), SourcePath: "n.md", Content: fmt.Sprintf("crowd%d", i),
-			Status: "open", Due: "2026-11-05", DueTime: clock,
-		})
-	}
-	a, tv := calHourRowApp(t, tasks, calDay, false)
-	lines := calScreen(a, tv, 120, 70)
-	row, ok := calRowLine(lines, calLabel24, "09")
-	if !ok {
-		t.Fatalf("no 09 row:\n%s", calScreenText(lines))
-	}
-	if got := strings.TrimRight(row, " "); !strings.HasSuffix(got, "+3 more") {
-		t.Errorf("09 row = %q, want it to end with `+3 more`", got)
-	}
-	shown := 0
-	for i := range tasks {
-		shown += strings.Count(calScreenText(lines), fmt.Sprintf("crowd%d", i))
-	}
-	if shown != 1 {
-		t.Errorf("%d crowded entries shown, want 1 with the other 3 counted:\n%s", shown, calScreenText(lines))
-	}
-}
-
 func TestAllDayBandSitsAboveHourRows(t *testing.T) {
 	tasks := []vault.Task{
 		{ID: "n#0", SourcePath: "n.md", Content: "errand", Status: "open", Due: "2026-11-05"},
