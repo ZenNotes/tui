@@ -3,8 +3,15 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ZenNotes/tui/internal/backend"
 )
 
 // The desktop MCP server's tool names; the Go server must offer them all.
@@ -86,5 +93,58 @@ func TestEncodedStringSize(t *testing.T) {
 	// An encoder may write a bad byte as a character or an escape. The larger is counted.
 	if got := encodedStringSize("bad\xff"); got != 9 {
 		t.Errorf("a bad byte: %d", got)
+	}
+}
+
+func remoteSession(t *testing.T, f *remoteFixture) *sdk.ClientSession {
+	t.Helper()
+	return runServer(t, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindRemote, BaseURL: f.URL, AuthToken: "token"}, nil
+	})
+}
+
+// Against a server, toggle_task of a `@repeat:` task writes the next open
+// line and the finished line, as zn v0.18.1 does.
+func TestRemoteToggleTaskToolMakesNextOccurrence(t *testing.T) {
+	f := newRemoteFixture(t)
+	cs := remoteSession(t, f)
+	text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "inbox/Work.md#0"})
+	if isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	want := []string{"inbox/Work.md\n# Work\n\n" +
+		"- [ ] Water plants @repeat:weekly due:2099-01-12\n" +
+		"- [x] Water plants due:2099-01-05\n" +
+		"- [ ] Send the invoice due:2026-11-12\n" +
+		"- [x] Pay the bill due:2026-11-01\n" +
+		"- [-] Cancel the trip\n"}
+	if got := f.Writes(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("writes:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// Against a server, list_tasks returns the same text as zn v0.18.1, with the
+// `scheduled` value of the server kept.
+func TestListTasksAgainstRemoteMatchesReleased(t *testing.T) {
+	f := newRemoteFixture(t)
+	cs := remoteSession(t, f)
+	for _, tc := range []struct {
+		golden string
+		args   map[string]any
+	}{
+		{"remote-list-tasks.json", nil},
+		{"remote-list-tasks-all.json", map[string]any{"status": "all"}},
+	} {
+		want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text, isErr := callTool(t, cs, "list_tasks", tc.args)
+		if isErr {
+			t.Fatalf("list_tasks: %s", text)
+		}
+		if text != string(want) {
+			t.Errorf("list_tasks %v differs from testdata/%s:\n%s", tc.args, tc.golden, text)
+		}
 	}
 }
