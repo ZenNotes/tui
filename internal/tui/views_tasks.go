@@ -317,7 +317,7 @@ func (v *tasksView) buildColumns(a *App) {
 		for _, c := range []struct{ id, title string }{{"today", "Today"}, {"upcoming", "Upcoming"}, {"undated", "No due date"}, {"in-progress", "In progress"}, {"waiting", "Waiting"}, {"done", "Done"}} {
 			cols = append(cols, kanbanColumn{id: c.id, title: v.columnTitle(a, c.id, c.title)})
 		}
-		today := vault.TodayISO(time.Now())
+		today := vault.TodayISO(a.taskClock())
 		for _, t := range v.tasks {
 			if t.Cancelled || t.Forwarded {
 				continue
@@ -330,6 +330,7 @@ func (v *tasksView) buildColumns(a *App) {
 				id = "waiting"
 			case t.InProgress:
 				id = "in-progress"
+			case t.SessionDate != "" && t.SessionDate <= today:
 			case t.Due == "":
 				id = "undated"
 			case t.Due > today:
@@ -642,40 +643,13 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 		}
 		cardRows := h - 2
 		start := 0
-		if ci == v.col && v.card*3 >= cardRows {
-			start = v.card - cardRows/3 + 1
+		if ci == v.col {
+			start = boardScrollStart(a, col.cards, v.card, cardRows)
 		}
 		v.boardStarts[ci] = start
 		for i := start; i < len(col.cards) && len(lines) < h; i++ {
-			c := col.cards[i]
 			selected := focused && ci == v.col && i == v.card
-			text := c.Content
-			if c.Kind == "file" {
-				text = c.NoteTitle
-			}
-			first := truncateCells(" "+text, colW)
-			meta := []string{}
-			if c.Due != "" {
-				if vault.IsOverdue(c, time.Now()) {
-					meta = append(meta, th.Overdue.Render(withTaskClock(c.Due, c.DueTime, c.DueEnd, a.prefs.TimeFormat)))
-				} else {
-					meta = append(meta, th.Dim.Render(withTaskClock(c.Due, c.DueTime, c.DueEnd, a.prefs.TimeFormat)))
-				}
-			}
-			if c.Priority != "" {
-				meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))
-			}
-			if c.Waiting {
-				meta = append(meta, th.Dim.Render("waiting"))
-			}
-			meta = append(meta, th.Muted.Render(truncateCells(c.NoteTitle, max(4, colW-2-lipgloss.Width(strings.Join(meta, " "))))))
-			second := " " + strings.Join(meta, " ")
-			if selected {
-				bar := th.BorderFocus.Render("▍")
-				lines = append(lines, bar+th.SelectedFocus.Render(padRight(strings.TrimPrefix(first, " "), colW-1)), bar+th.Selected.Render(padRight(stripAnsi(strings.Join(meta, " ")), colW-1)))
-			} else {
-				lines = append(lines, padRight(th.Base.Render(first), colW), padRight(second, colW))
-			}
+			lines = append(lines, boardCardLines(a, col.cards[i], colW, selected)...)
 			if len(lines) < h {
 				lines = append(lines, strings.Repeat(" ", colW))
 			}
@@ -686,6 +660,138 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 		}
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, blocks...)
+}
+
+// boardCardLines draws one card: its title, a line for a due date that has a
+// time, a line for a work session that has a time, and a line with the other
+// details. A card with no time has the title line and the details line only.
+func boardCardLines(a *App, c vault.Task, colW int, selected bool) []string {
+	th := a.theme
+	now := a.taskClock()
+	text := c.Content
+	if c.Kind == "file" {
+		text = c.NoteTitle
+	}
+	first := truncateCells(" "+text, colW)
+	meta := []string{}
+	extra := []struct {
+		text  string
+		style lipgloss.Style
+	}{}
+	if c.Due != "" {
+		style := th.Dim
+		if vault.IsOverdue(c, time.Now()) {
+			style = th.Overdue
+		}
+		if c.DueTime != "" {
+			extra = append(extra, struct {
+				text  string
+				style lipgloss.Style
+			}{compactCardDate(c.Due, c.DueTime, now, a.prefs.TimeFormat), style})
+		} else {
+			meta = append(meta, style.Render(c.Due))
+		}
+	}
+	if c.SessionDate != "" && c.SessionTime != "" {
+		extra = append(extra, struct {
+			text  string
+			style lipgloss.Style
+		}{"ses " + compactCardDate(c.SessionDate, c.SessionTime, now, a.prefs.TimeFormat), th.Dim})
+	}
+	if c.Priority != "" {
+		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))
+	}
+	if c.Waiting {
+		meta = append(meta, th.Dim.Render("waiting"))
+	}
+	meta = append(meta, th.Muted.Render(truncateCells(c.NoteTitle, max(4, colW-2-lipgloss.Width(strings.Join(meta, " "))))))
+	second := " " + strings.Join(meta, " ")
+	// A date line is never cut. A line that is too wide for the bar loses the
+	// bar and the leading space.
+	dateLine := func(line string, style lipgloss.Style) string {
+		fits := lipgloss.Width(line) <= colW-1
+		switch {
+		case selected && fits:
+			return th.BorderFocus.Render("▍") + th.Selected.Render(padRight(line, colW-1))
+		case fits:
+			return padRight(" "+style.Render(line), colW)
+		default:
+			return padRight(style.Render(line), colW)
+		}
+	}
+	out := []string{}
+	if selected {
+		bar := th.BorderFocus.Render("▍")
+		out = append(out, bar+th.SelectedFocus.Render(padRight(strings.TrimPrefix(first, " "), colW-1)))
+	} else {
+		out = append(out, padRight(th.Base.Render(first), colW))
+	}
+	for _, e := range extra {
+		out = append(out, dateLine(e.text, e.style))
+	}
+	if selected {
+		bar := th.BorderFocus.Render("▍")
+		out = append(out, bar+th.Selected.Render(padRight(stripAnsi(strings.Join(meta, " ")), colW-1)))
+	} else {
+		out = append(out, padRight(second, colW))
+	}
+	return out
+}
+
+// boardCardHeight is the number of rows that a card takes, with the blank row
+// after it.
+func boardCardHeight(c vault.Task) int {
+	n := 3
+	if c.Due != "" && c.DueTime != "" {
+		n++
+	}
+	if c.SessionDate != "" && c.SessionTime != "" {
+		n++
+	}
+	return n
+}
+
+// boardScrollStart gives the index of the first card to draw in the column
+// with the cursor, so that the selected card stays in view.
+func boardScrollStart(a *App, cards []vault.Task, selected, rows int) int {
+	if selected < 0 || selected >= len(cards) {
+		return 0
+	}
+	off, plain := 0, true
+	for i := 0; i < selected; i++ {
+		h := boardCardHeight(cards[i])
+		off += h
+		plain = plain && h == 3
+	}
+	hsel := boardCardHeight(cards[selected])
+	plain = plain && hsel == 3
+	if off < rows && (plain || off+hsel-1 <= rows) {
+		return 0
+	}
+	start := 0
+	for start < selected && off+hsel > rows {
+		off -= boardCardHeight(cards[start])
+		start++
+	}
+	return start
+}
+
+// compactCardDate writes a date and the start time for a board card: `today
+// 21:00`, `Nov 3 14:00`, or `Jan 5 2027 09:00` for a year other than the
+// current year.
+func compactCardDate(date, clock string, now time.Time, timeFormat string) string {
+	day, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	label := date
+	switch {
+	case err != nil:
+	case date == vault.TodayISO(now):
+		label = "today"
+	case day.Year() == now.Year():
+		label = day.Format("Jan 2")
+	default:
+		label = day.Format("Jan 2 2006")
+	}
+	return label + " " + formatTaskClock(clock, timeFormat)
 }
 
 // renderMonthGrid draws a month with a marker per day.
@@ -1068,6 +1174,12 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 			return
 		}
 		a.setTaskStatusColumn(t, col.id)
+		if col.id == "undated" || col.id == "upcoming" {
+			if t.SessionDate != "" && t.SessionDate <= vault.TodayISO(a.taskClock()) && !t.Checked && !t.Waiting && !t.InProgress {
+				a.notify(fmt.Sprintf("%s stays in Today: work planned %s", t.Content, withTaskClock(t.SessionDate, t.SessionTime, "", a.prefs.TimeFormat)))
+				return
+			}
+		}
 	case "folder":
 		a.notify("Folder boards are read-only. Move the source note to change its folder.")
 		return

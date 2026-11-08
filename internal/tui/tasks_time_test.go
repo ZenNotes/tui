@@ -81,7 +81,7 @@ func TestTasksBoardCardShowsDueTime(t *testing.T) {
 	loadTasksForTest(t, a)
 	_ = path
 	v := newTasksView(a)
-	if got := stripAnsi(v.renderBoard(a, 160, 20, true)); !strings.Contains(got, "2026-11-03 14:00") {
+	if got := stripAnsi(v.renderBoard(a, 160, 20, true)); !strings.Contains(got, "Nov 3 14:00") {
 		t.Fatalf("board: %q", got)
 	}
 }
