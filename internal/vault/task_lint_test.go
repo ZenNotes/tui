@@ -18,9 +18,9 @@ func problemSummary(problems []TaskTokenProblem) []string {
 func TestTaskTokenProblemsFindsBadTimesRulesAndSkipItems(t *testing.T) {
 	body := strings.Join([]string{
 		"# Plan",
-		"- [ ] fine due:2026-11-03T14:00 repeat:2w skip:2027-03-13..2027-03-21",
+		"- [ ] fine due:2026-11-03T14:00 @repeat:2w skip:2027-03-13..2027-03-21",
 		"- [ ] late due:2026-11-03T25:00",
-		"- [ ] often repeat:every-day",
+		"- [ ] often @repeat:every-day",
 		"- [ ] away skip:2027-03-21..2027-03-13,2027-02-30,2027-04-01",
 		"```",
 		"- [ ] fenced due:2026-11-03T99:99",
@@ -30,7 +30,7 @@ func TestTaskTokenProblemsFindsBadTimesRulesAndSkipItems(t *testing.T) {
 	got := problemSummary(TaskTokenProblems("n.md", body))
 	want := []string{
 		"n.md:3 due:2026-11-03T25:00",
-		"n.md:4 repeat:every-day",
+		"n.md:4 @repeat:every-day",
 		"n.md:5 skip:2027-03-21..2027-03-13",
 		"n.md:5 skip:2027-02-30",
 	}
@@ -92,7 +92,7 @@ func TestTaskTokenProblemsIgnoresScheduled(t *testing.T) {
 
 // Each problem says why the token is set aside.
 func TestTaskTokenProblemsGiveAReason(t *testing.T) {
-	body := "- [ ] a due:2026-11-03T25:00 repeat:often skip:2027-02-30\n"
+	body := "- [ ] a due:2026-11-03T25:00 @repeat:often skip:2027-02-30\n"
 	got := TaskTokenProblems("n.md", body)
 	if len(got) != 3 {
 		t.Fatalf("problems: %+v", got)
@@ -101,5 +101,35 @@ func TestTaskTokenProblemsGiveAReason(t *testing.T) {
 		if strings.TrimSpace(p.Reason) == "" {
 			t.Errorf("%s has no reason", p.Token)
 		}
+	}
+}
+
+func TestTaskTokenProblemsListsBadRepeatFields(t *testing.T) {
+	body := strings.Join([]string{
+		"- [ ] a @repeat:fortnightly",
+		"- [ ] b @repeat:3d/done repeat:often",
+		"- [ ] c @repeat:monthly-32 @repeat:yearly-02-30",
+		"- [ ] d @repeat:after-mon/thu @repeat:weekly-mon/thu @repeat:after-quarterly",
+		"- [ ] e repeat:3d repeat:mon,thu",
+		"```",
+		"- [ ] f @repeat:nonsense",
+		"```",
+	}, "\n")
+	got := problemSummary(TaskTokenProblems("n.md", body))
+	want := []string{
+		"n.md:1 @repeat:fortnightly",
+		"n.md:2 @repeat:3d/done",
+		"n.md:3 @repeat:monthly-32",
+		"n.md:3 @repeat:yearly-02-30",
+		"n.md:4 @repeat:after-mon/thu",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems\n got %q\nwant %q", got, want)
+	}
+
+	note := "---\ntags: [task]\nrepeat: 3d/done\n---\n"
+	got = problemSummary(TaskTokenProblems("t.md", note))
+	if want := []string{"t.md:3 repeat:3d/done"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("frontmatter problems\n got %q\nwant %q", got, want)
 	}
 }

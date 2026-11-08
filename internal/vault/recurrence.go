@@ -40,7 +40,7 @@ const (
 	AnchorMonthDay
 )
 
-// RepeatRule is a parsed `repeat:` rule.
+// RepeatRule is a parsed `@repeat:` rule.
 type RepeatRule struct {
 	Unit   RepeatUnit
 	Every  int
@@ -53,12 +53,12 @@ type RepeatRule struct {
 	Ordinal  int
 	Weekday  time.Weekday
 	// FromCompletion counts from the date of completion instead of the
-	// task's own date (the `/done` suffix).
+	// task's own date (the `after-` prefix).
 	FromCompletion bool
 }
 
 var (
-	repeatCountRe  = regexp.MustCompile(`^([1-9]\d{0,2})([dwmqy])(?::(.+))?$`)
+	repeatCountRe  = regexp.MustCompile(`^(\d{1,3})([dwmqy])$`)
 	repeatMDayRe   = regexp.MustCompile(`^\d{1,2}$`)
 	repeatOrdDayRe = regexp.MustCompile(`^(1|2|3|4|last)-([a-z]{3})$`)
 	repeatYearDay  = regexp.MustCompile(`^(\d{2})-(\d{2})$`)
@@ -69,19 +69,34 @@ var repeatWeekdayNames = map[string]time.Weekday{
 	"thu": time.Thursday, "fri": time.Friday, "sat": time.Saturday,
 }
 
-// ParseRepeatRule reads a `repeat:` rule, ignoring case. It reports false for
-// anything outside the grammar, so an out-of-range number or an unreal date
-// never becomes a rule.
+// repeatIntervalNames are the named intervals. Each one is the same as a
+// count of one unit.
+var repeatIntervalNames = map[string]string{
+	"daily": "1d", "weekly": "1w", "monthly": "1m",
+	"quarterly": "1q", "yearly": "1y", "annually": "1y",
+}
+
+var repeatCountUnits = map[string]RepeatUnit{
+	"d": RepeatDays, "w": RepeatWeeks, "m": RepeatMonths, "q": RepeatQuarters, "y": RepeatYears,
+}
+
+// ParseRepeatRule reads the value of a `@repeat:` field, ignoring case. It
+// reports false for anything outside the grammar, so an out-of-range number
+// or an unreal date never becomes a rule.
+//
+// A rule is an interval (`3d`, `2w`, `3m`, `1q`, `1y` or a name such as
+// `weekly`), `after-` and an interval, `weekdays`, or a list of weekdays
+// such as `mon/thu`. An interval may end with an anchor after a hyphen:
+// `2w-mon/thu`, `monthly-15`, `monthly-2-tue`, `quarterly-end`,
+// `yearly-03-14`.
 func ParseRepeatRule(raw string) (RepeatRule, bool) {
 	s := strings.ToLower(raw)
+	if rest, found := strings.CutPrefix(s, "after-"); found {
+		rule, ok := parseRepeatInterval(rest)
+		rule.FromCompletion = ok
+		return rule, ok
+	}
 	var rule RepeatRule
-	if base, ok := strings.CutSuffix(s, "/done"); ok {
-		s = base
-		rule.FromCompletion = true
-	}
-	if s == "" {
-		return RepeatRule{}, false
-	}
 	if s == "weekdays" {
 		rule.Unit, rule.Every, rule.Anchor = RepeatWeeks, 1, AnchorWeekdays
 		rule.Weekdays = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday}
@@ -92,42 +107,25 @@ func ParseRepeatRule(raw string) (RepeatRule, bool) {
 		rule.Weekdays = days
 		return rule, true
 	}
-	m := repeatCountRe.FindStringSubmatch(s)
-	if m == nil {
+	interval, arg, hasArg := strings.Cut(s, "-")
+	rule, ok := parseRepeatInterval(interval)
+	if !ok {
 		return RepeatRule{}, false
 	}
-	rule.Every, _ = strconv.Atoi(m[1])
-	arg := m[3]
-	hasArg := strings.Contains(s, ":")
-	if hasArg && arg == "" {
-		return RepeatRule{}, false
+	if !hasArg {
+		return rule, true
 	}
-	switch m[2] {
-	case "d":
-		rule.Unit = RepeatDays
-		return rule, !hasArg
-	case "w":
-		rule.Unit = RepeatWeeks
-		if !hasArg {
-			return rule, true
-		}
+	switch rule.Unit {
+	case RepeatWeeks:
 		days, ok := parseRepeatWeekdays(arg)
 		if !ok {
 			return RepeatRule{}, false
 		}
 		rule.Anchor, rule.Weekdays = AnchorWeekdays, days
 		return rule, true
-	case "m":
-		rule.Unit = RepeatMonths
-		if !hasArg {
-			return rule, true
-		}
+	case RepeatMonths:
 		return rule, parseRepeatMonthDay(&rule, arg)
-	case "q":
-		rule.Unit = RepeatQuarters
-		if !hasArg {
-			return rule, true
-		}
+	case RepeatQuarters:
 		switch arg {
 		case "start":
 			rule.Anchor = AnchorPeriodStart
@@ -137,18 +135,33 @@ func ParseRepeatRule(raw string) (RepeatRule, bool) {
 			return RepeatRule{}, false
 		}
 		return rule, true
-	default:
-		rule.Unit = RepeatYears
-		if !hasArg {
-			return rule, true
-		}
+	case RepeatYears:
 		return rule, parseRepeatYearDay(&rule, arg)
 	}
+	return RepeatRule{}, false
 }
 
+// parseRepeatInterval reads a count of units such as `3w`, or a name such as
+// `weekly`, which is a count of one. The count is 1 to 999.
+func parseRepeatInterval(s string) (RepeatRule, bool) {
+	if count, ok := repeatIntervalNames[s]; ok {
+		s = count
+	}
+	m := repeatCountRe.FindStringSubmatch(s)
+	if m == nil {
+		return RepeatRule{}, false
+	}
+	every, _ := strconv.Atoi(m[1])
+	if every < 1 {
+		return RepeatRule{}, false
+	}
+	return RepeatRule{Unit: repeatCountUnits[m[2]], Every: every}, true
+}
+
+// parseRepeatWeekdays reads weekday names that a slash separates.
 func parseRepeatWeekdays(s string) ([]time.Weekday, bool) {
 	var days []time.Weekday
-	for _, name := range strings.Split(s, ",") {
+	for _, name := range strings.Split(s, "/") {
 		wd, ok := repeatWeekdayNames[name]
 		if !ok {
 			return nil, false
@@ -261,6 +274,9 @@ const isoDay = "2006-01-02"
 // All arithmetic is on calendar days, so a daylight saving change never
 // moves a date.
 func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday, skips []SkipPeriod, until string) (string, bool) {
+	if rule.FromCompletion {
+		base = today
+	}
 	if !IsValidISODate(base) || !IsValidISODate(today) || rule.Every < 1 {
 		return "", false
 	}
@@ -296,7 +312,7 @@ func NextOccurrence(rule RepeatRule, base, today string, weekStart time.Weekday,
 // false or when the dates pass the search bound. A rule with an anchor can
 // give dates before base in its first period.
 func eachRuleDate(rule RepeatRule, base time.Time, weekStart time.Weekday, firstPeriod int, fn func(date string) bool) {
-	limit := base.Year() + searchYears
+	limit := searchLimit(rule, base)
 	for period := firstPeriod; ; period++ {
 		dates, beyond := repeatPeriodDates(rule, base, period, weekStart, limit)
 		if beyond {
@@ -308,6 +324,24 @@ func eachRuleDate(rule RepeatRule, base time.Time, weekStart time.Weekday, first
 			}
 		}
 	}
+}
+
+// searchLimit is the last year that a search for dates of the rule may reach.
+// It lies searchYears past the base date, and further by the length of one
+// step of the rule, so a long step such as 999y still has a first date.
+func searchLimit(rule RepeatRule, base time.Time) int {
+	stepYears := rule.Every
+	switch rule.Unit {
+	case RepeatDays:
+		stepYears = rule.Every/365 + 1
+	case RepeatWeeks:
+		stepYears = rule.Every*7/365 + 1
+	case RepeatMonths:
+		stepYears = rule.Every/12 + 1
+	case RepeatQuarters:
+		stepYears = rule.Every*3/12 + 1
+	}
+	return base.Year() + searchYears + stepYears
 }
 
 // periodNear returns a period index that is not later than the first period

@@ -1197,6 +1197,7 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 		Now: now, WeekStart: v.WeekStart, Names: v.skipResolver(now), Rand: v.Rand,
 	}
 	targetIndex := 0
+	hasRule := false
 	if indexStr == "task" {
 		task, found := parseTaskFile(relPosix, title, folder, strings.ReplaceAll(string(body), "\r\n", "\n"), dialect)
 		if !found {
@@ -1227,6 +1228,7 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 		for _, t := range ParseTasks(relPosix, title, folder, string(body), opts) {
 			if t.Kind == "" && t.TaskIndex == targetIndex && t.Repeat != "" {
 				v.loadRollContext(&input, opts)
+				hasRule = true
 				break
 			}
 		}
@@ -1234,8 +1236,10 @@ func (v *Vault) ToggleTaskWith(taskID string, dialect TaskDialect, toggle Toggle
 
 	plan, found := PlanTaskRoll(input)
 	finalIndex := targetIndex + plan.Inserted
-	if found && !input.File && plan.Inserted == 0 {
-		// A task with an `@repeat:` rule rolls as the desktop app rolls it.
+	if found && !input.File && plan.Inserted == 0 && !hasRule {
+		// A task whose rule the roll above did not read keeps the way the
+		// desktop app rolls it. A task with a rule and no date left to land
+		// on is only ticked.
 		plan.Body, finalIndex, found = ToggleTaskRepeating(string(body), targetIndex, dialect, now)
 	}
 	if !found {

@@ -12,7 +12,7 @@ func untilTasks(body string) []Task {
 }
 
 func TestParseTasksReadsUntilAndStripsIt(t *testing.T) {
-	body := "- [ ] Water plants due:2026-11-02 repeat:1w UNTIL:2026-12-01 until:2027-01-01\n"
+	body := "- [ ] Water plants due:2026-11-02 @repeat:1w UNTIL:2026-12-01 until:2027-01-01\n"
 	got := untilTasks(body)
 	if len(got) != 1 {
 		t.Fatalf("got %+v", got)
@@ -34,10 +34,10 @@ func TestParseTasksReadsUntilAndStripsIt(t *testing.T) {
 func TestUntilWithoutRepeatIsIgnored(t *testing.T) {
 	for _, line := range []string{
 		"- [ ] A due:2026-11-02 until:2026-12-01",
-		"- [ ] A due:2026-11-02 repeat:nonsense until:2026-12-01",
-		"- [ ] A due:2026-11-02 repeat:1w until:2026-12-01T10:00",
-		"- [ ] A due:2026-11-02 repeat:1w until:2026-02-30",
-		"- [ ] A due:2026-11-02 repeat:1w until:soon",
+		"- [ ] A due:2026-11-02 @repeat:nonsense until:2026-12-01",
+		"- [ ] A due:2026-11-02 @repeat:1w until:2026-12-01T10:00",
+		"- [ ] A due:2026-11-02 @repeat:1w until:2026-02-30",
+		"- [ ] A due:2026-11-02 @repeat:1w until:soon",
 	} {
 		got := untilTasks(line + "\n")
 		if len(got) != 1 || got[0].Until != "" {
@@ -55,52 +55,52 @@ func TestUntilWithoutRepeatIsIgnored(t *testing.T) {
 }
 
 func TestRollStopsAtUntil(t *testing.T) {
-	line := "- [ ] T due:2026-11-02 repeat:1d until:2026-11-03"
+	line := "- [ ] T due:2026-11-02 @repeat:1d until:2026-11-03"
 	// Before the end the roll adds the next copy as before.
 	got, inserted := rollLines(t, []string{line}, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, []string{
-		"- [ ] T due:2026-11-03 repeat:1d until:2026-11-03",
-		"- [x] T due:2026-11-02 repeat:1d until:2026-11-03",
+		"- [ ] T due:2026-11-03 @repeat:1d until:2026-11-03",
+		"- [x] T due:2026-11-02 @repeat:1d until:2026-11-03",
 	})
 	if inserted != 1 {
 		t.Errorf("inserted = %d, want 1", inserted)
 	}
 
 	// On the last date the task is only ticked or cancelled.
-	last := "- [ ] T due:2026-11-03 repeat:1d until:2026-11-03"
+	last := "- [ ] T due:2026-11-03 @repeat:1d until:2026-11-03"
 	got, inserted = rollLines(t, []string{last}, 0, RollComplete, "2026-11-03")
-	equalLines(t, got, []string{"- [x] T due:2026-11-03 repeat:1d until:2026-11-03"})
+	equalLines(t, got, []string{"- [x] T due:2026-11-03 @repeat:1d until:2026-11-03"})
 	if inserted != 0 {
 		t.Errorf("inserted = %d, want 0", inserted)
 	}
 	got, _ = rollLines(t, []string{last}, 0, RollCancel, "2026-11-03")
-	equalLines(t, got, []string{"- [-] T due:2026-11-03 repeat:1d until:2026-11-03"})
+	equalLines(t, got, []string{"- [-] T due:2026-11-03 @repeat:1d until:2026-11-03"})
 
 	// A late tick, past the until date, ends the task too.
 	got, _ = rollLines(t, []string{line}, 0, RollComplete, "2026-11-20")
-	equalLines(t, got, []string{"- [x] T due:2026-11-02 repeat:1d until:2026-11-03"})
+	equalLines(t, got, []string{"- [x] T due:2026-11-02 @repeat:1d until:2026-11-03"})
 
 	// A rule counted from completion stops by the same test.
-	done := "- [ ] T due:2026-11-02 repeat:3d/done until:2026-11-04"
+	done := "- [ ] T due:2026-11-02 @repeat:after-3d until:2026-11-04"
 	got, _ = rollLines(t, []string{done}, 0, RollComplete, "2026-11-02")
-	equalLines(t, got, []string{"- [x] T due:2026-11-02 repeat:3d/done until:2026-11-04"})
+	equalLines(t, got, []string{"- [x] T due:2026-11-02 @repeat:after-3d until:2026-11-04"})
 
 	// Without a due date the roll counts from today.
-	got, _ = rollLines(t, []string{"- [ ] T repeat:1d until:2026-11-02"}, 0, RollComplete, "2026-11-02")
-	equalLines(t, got, []string{"- [x] T repeat:1d until:2026-11-02"})
+	got, _ = rollLines(t, []string{"- [ ] T @repeat:1d until:2026-11-02"}, 0, RollComplete, "2026-11-02")
+	equalLines(t, got, []string{"- [x] T @repeat:1d until:2026-11-02"})
 
 	// Subtasks are not touched when nothing rolls.
 	nested := []string{last, "  - [ ] sub due:2026-11-03"}
 	got, _ = rollLines(t, nested, 0, RollComplete, "2026-11-03")
-	equalLines(t, got, []string{"- [x] T due:2026-11-03 repeat:1d until:2026-11-03", "  - [ ] sub due:2026-11-03"})
+	equalLines(t, got, []string{"- [x] T due:2026-11-03 @repeat:1d until:2026-11-03", "  - [ ] sub due:2026-11-03"})
 }
 
 func TestRollKeepsUntilOnCopy(t *testing.T) {
-	in := "- [ ] T due:2026-11-02 repeat:1w Until:2027-01-01"
+	in := "- [ ] T due:2026-11-02 @repeat:1w Until:2027-01-01"
 	got, _ := rollLines(t, []string{in}, 0, RollComplete, "2026-11-02")
 	equalLines(t, got, []string{
-		"- [ ] T due:2026-11-09 repeat:1w Until:2027-01-01",
-		"- [x] T due:2026-11-02 repeat:1w Until:2027-01-01",
+		"- [ ] T due:2026-11-09 @repeat:1w Until:2027-01-01",
+		"- [x] T due:2026-11-02 @repeat:1w Until:2027-01-01",
 	})
 }
 
@@ -136,12 +136,12 @@ func TestTaskNoteCompletesForGoodAtUntil(t *testing.T) {
 
 func TestTaskTokenProblemsListsUntilProblems(t *testing.T) {
 	body := strings.Join([]string{
-		"- [ ] fine due:2026-11-02 repeat:1w until:2026-12-01",
-		"- [ ] bad date due:2026-11-02 repeat:1w until:2026-12-01T10:00",
+		"- [ ] fine due:2026-11-02 @repeat:1w until:2026-12-01",
+		"- [ ] bad date due:2026-11-02 @repeat:1w until:2026-12-01T10:00",
 		"- [ ] no rule due:2026-11-02 until:2026-12-01",
-		"- [ ] early due:2026-11-10 repeat:1w until:2026-11-02",
-		"- [ ] twice due:2026-11-02 repeat:1w until:2026-12-01 until:2026-12-08",
-		"- [ ] not a date until:soon repeat:1w",
+		"- [ ] early due:2026-11-10 @repeat:1w until:2026-11-02",
+		"- [ ] twice due:2026-11-02 @repeat:1w until:2026-12-01 until:2026-12-08",
+		"- [ ] not a date until:soon @repeat:1w",
 	}, "\n")
 	problems := TaskTokenProblems("n.md", body)
 	var got []string

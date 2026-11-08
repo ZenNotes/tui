@@ -67,10 +67,10 @@ func calDaysListing(tv *tasksView, year int, month time.Month, text string) []in
 func TestMonthViewListsEventOccurrences(t *testing.T) {
 	a, tv := calEventApp(t, map[string]string{
 		"Lecture.md": "---\npage-type: event\nwhen: 2026-11-02T09:00-10:30\nrepeat: 1w\nskip: [2026-11-16]\n---\nBody\n",
-		"Plans.md": "- Gym when:2026-11-02T07:00 repeat:1w/done\n" +
+		"Plans.md": "- Gym when:2026-11-02T07:00 @repeat:after-1w\n" +
 			"- Trip when:2026-11-05..2026-11-07\n" +
-			"- Course when:2026-11-02T18:00 repeat:1w until:2026-11-23\n" +
-			"- Conference when:2027-03-13..2027-03-14 repeat:1y\n",
+			"- Course when:2026-11-02T18:00 @repeat:1w until:2026-11-23\n" +
+			"- Conference when:2027-03-13..2027-03-14 @repeat:1y\n",
 	})
 	cases := []struct {
 		text string
@@ -201,7 +201,7 @@ func TestEventAcrossDaysIsBlockOnFirstAndLastDay(t *testing.T) {
 func TestCalendarNeverWritesNotes(t *testing.T) {
 	notes := map[string]string{
 		"work.md":  "- [ ] Report ^aaaaaa\n",
-		"Plans.md": "- Standup when:2026-11-02T09:00-09:15 repeat:weekdays\n- Write task:[[work#^aaaaaa]] when:2026-11-03T10:00\n",
+		"Plans.md": "- Standup when:2026-11-02T09:00-09:15 @repeat:weekdays\n- Write task:[[work#^aaaaaa]] when:2026-11-03T10:00\n",
 	}
 	a, root := newFeatureTestApp(t)
 	for name, body := range notes {

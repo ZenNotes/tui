@@ -68,7 +68,7 @@ func TestEventNoteIsReadFromFrontmatter(t *testing.T) {
 }
 
 func TestEventNoteKeepsRuleSkipAndLink(t *testing.T) {
-	body := "---\npage-type: event\nwhen: 2026-11-02T09:00-10:30\nrepeat: 1W/done\nuntil: 2027-01-01\nskip: [2026-11-16, @easter]\ntask: \"[[Work#^ab12cd]]\"\n---\n"
+	body := "---\npage-type: event\nwhen: 2026-11-02T09:00-10:30\nrepeat: after-1W\nuntil: 2027-01-01\nskip: [2026-11-16, @easter]\ntask: \"[[Work#^ab12cd]]\"\n---\n"
 	e := oneEvent(t, body)
 	if e.Repeat != "1w" || e.Until != "2027-01-01" || e.TaskLink != "[[Work#^ab12cd]]" {
 		t.Errorf("got %+v", e)
@@ -122,7 +122,7 @@ func TestEventNoteBodyKeepsTasksAndInlineEvents(t *testing.T) {
 }
 
 func TestInlineEventTextAndTokens(t *testing.T) {
-	e := oneEvent(t, "- Lecture #uni when:2026-11-03T09:00-10:30 repeat:1w skip:2026-12-21..2027-01-03 until:2027-06-01 task:[[Work#^ab12cd]] ^lec1\n")
+	e := oneEvent(t, "- Lecture #uni when:2026-11-03T09:00-10:30 @repeat:1w skip:2026-12-21..2027-01-03 until:2027-06-01 task:[[Work#^ab12cd]] ^lec1\n")
 	if e.Text != "Lecture #uni" || e.Repeat != "1w" || e.Until != "2027-06-01" || e.BlockID != "lec1" {
 		t.Errorf("got %+v", e)
 	}
@@ -137,8 +137,8 @@ func TestInlineEventTextAndTokens(t *testing.T) {
 	if plain.Text != "Dentist !high @waiting" {
 		t.Errorf("text = %q", plain.Text)
 	}
-	if got := oneEvent(t, "- Gym when:2026-11-02T07:00 repeat:1w/done\n"); got.Repeat != "1w" {
-		t.Errorf("repeat = %q, want the /done suffix dropped", got.Repeat)
+	if got := oneEvent(t, "- Gym when:2026-11-02T07:00 @repeat:after-1w\n"); got.Repeat != "1w" {
+		t.Errorf("repeat = %q, want the after- prefix dropped", got.Repeat)
 	}
 	if got := oneEvent(t, "- Gym when:2026-11-02 until:2027-01-01\n"); got.Until != "" {
 		t.Errorf("until = %q, want none without a rule", got.Until)
@@ -275,5 +275,16 @@ func TestScanEventsReadsLiveNotesOnly(t *testing.T) {
 	sort.Strings(texts)
 	if !reflect.DeepEqual(texts, []string{"Dentist", "Lecture"}) {
 		t.Errorf("got %v", texts)
+	}
+}
+
+func TestEventLineKeepsABareRepeatTokenInItsText(t *testing.T) {
+	e := oneEvent(t, "- Gym when:2026-11-02T07:00 repeat:1w\n")
+	if e.Repeat != "" || e.Text != "Gym repeat:1w" {
+		t.Errorf("bare token: repeat %q, text %q", e.Repeat, e.Text)
+	}
+	e = oneEvent(t, "- Gym @repeat:1w when:2026-11-02T07:00 repeat:2w\n")
+	if e.Repeat != "1w" || e.Text != "Gym repeat:2w" {
+		t.Errorf("field and bare token: repeat %q, text %q", e.Repeat, e.Text)
 	}
 }

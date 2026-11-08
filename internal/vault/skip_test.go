@@ -42,11 +42,11 @@ func TestParseSkipItemsIgnoresReservedNames(t *testing.T) {
 	if len(periods) != 1 {
 		t.Fatalf("periods: %v", periods)
 	}
-	got := scanOne(t, "- [ ] A due:2027-03-08 repeat:1w skip:@spring-break", DialectApp)
+	got := scanOne(t, "- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break", DialectApp)
 	if got.Content != "A" || len(got.Skip) != 0 {
 		t.Fatalf("got content %q skip %v", got.Content, got.Skip)
 	}
-	mixed := scanOne(t, "- [ ] A due:2027-03-08 repeat:1w skip:@spring-break,2027-03-15", DialectApp)
+	mixed := scanOne(t, "- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break,2027-03-15", DialectApp)
 	if !reflect.DeepEqual(mixed.Skip, []string{"2027-03-15"}) {
 		t.Fatalf("mixed skip: %v", mixed.Skip)
 	}
@@ -54,8 +54,12 @@ func TestParseSkipItemsIgnoresReservedNames(t *testing.T) {
 
 func TestParseTasksCollectsSkipAcrossTokensAndStripsThem(t *testing.T) {
 	for _, dialect := range []TaskDialect{DialectApp, DialectCLI} {
-		got := scanOne(t, "- [ ] Assignment repeat:1w skip:2027-03-13..2027-03-21 skip:2027-02-30 skip:2027-04-02", dialect)
-		if got.Content != "Assignment" {
+		got := scanOne(t, "- [ ] Assignment @repeat:1w skip:2027-03-13..2027-03-21 skip:2027-02-30 skip:2027-04-02", dialect)
+		wantContent := "Assignment"
+		if dialect == DialectCLI {
+			wantContent = "Assignment @repeat:1w"
+		}
+		if got.Content != wantContent {
 			t.Errorf("dialect %v: content %q", dialect, got.Content)
 		}
 		if want := []string{"2027-03-13..2027-03-21", "2027-04-02"}; !reflect.DeepEqual(got.Skip, want) {
@@ -73,7 +77,7 @@ func TestParseTasksCollectsSkipAcrossTokensAndStripsThem(t *testing.T) {
 }
 
 func TestParseTasksReadsSkipKeyInAnyCase(t *testing.T) {
-	got := scanOne(t, "- [ ] A due:2027-03-08 repeat:1w SKIP:2027-03-13..2027-03-21", DialectApp)
+	got := scanOne(t, "- [ ] A due:2027-03-08 @repeat:1w SKIP:2027-03-13..2027-03-21", DialectApp)
 	if want := []string{"2027-03-13..2027-03-21"}; !reflect.DeepEqual(got.Skip, want) || got.Content != "A" {
 		t.Fatalf("got %+v", got)
 	}

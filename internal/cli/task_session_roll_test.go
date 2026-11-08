@@ -77,79 +77,79 @@ func TestTaskToggleCopiesWorkSessions(t *testing.T) {
 	}{
 		{
 			name: "repeat on named days", today: "2026-11-02",
-			work:      "intro\n- [ ] Water plants repeat:mon,thu ^ab12cd\noutro\n",
+			work:      "intro\n- [ ] Water plants @repeat:mon/thu ^ab12cd\noutro\n",
 			plans:     "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n",
-			wantWork:  "intro\n- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\noutro\n",
+			wantWork:  "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\noutro\n",
 			wantPlans: "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n- Water plants task:[[Work#^{ID}]] when:2026-11-05T09:00-09:15\n",
 		},
 		{
 			name: "due and session", today: "2026-11-02",
-			work:      "- [ ] T due:2026-11-04T17:00-17:30 repeat:3d ^ab12cd\n",
+			work:      "- [ ] T due:2026-11-04T17:00-17:30 @repeat:3d ^ab12cd\n",
 			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02T09:30-10:00\n",
-			wantWork:  "- [ ] T due:2026-11-07T17:00-17:30 repeat:3d ^{ID}\n- [x] T due:2026-11-04T17:00-17:30 repeat:3d ^ab12cd\n",
+			wantWork:  "- [ ] T due:2026-11-07T17:00-17:30 @repeat:3d ^{ID}\n- [x] T due:2026-11-04T17:00-17:30 @repeat:3d ^ab12cd\n",
 			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02T09:30-10:00\n- T task:[[Work#^{ID}]] when:2026-11-05T09:30-10:00\n",
 		},
 		{
 			name: "count from completion", today: "2026-11-04",
-			work:      "- [ ] T due:2026-11-03 repeat:3d/done ^ab12cd\n",
+			work:      "- [ ] T due:2026-11-03 @repeat:after-3d ^ab12cd\n",
 			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02\n",
-			wantWork:  "- [ ] T due:2026-11-08 repeat:3d/done ^{ID}\n- [x] T due:2026-11-03 repeat:3d/done ^ab12cd\n",
+			wantWork:  "- [ ] T due:2026-11-08 @repeat:after-3d ^{ID}\n- [x] T due:2026-11-03 @repeat:after-3d ^ab12cd\n",
 			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02\n- T task:[[Work#^{ID}]] when:2026-11-07\n",
 		},
 		{
 			name: "two sessions", today: "2026-11-02",
-			work:      "- [ ] T repeat:1w ^ab12cd\n",
+			work:      "- [ ] T @repeat:1w ^ab12cd\n",
 			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02T09:00-10:00\n- T task:[[Work#^ab12cd]] when:2026-11-03T14:00-16:00\n",
-			wantWork:  "- [ ] T repeat:1w ^{ID}\n- [x] T repeat:1w ^ab12cd\n",
+			wantWork:  "- [ ] T @repeat:1w ^{ID}\n- [x] T @repeat:1w ^ab12cd\n",
 			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02T09:00-10:00\n- T task:[[Work#^{ID}]] when:2026-11-09T09:00-10:00\n- T task:[[Work#^ab12cd]] when:2026-11-03T14:00-16:00\n- T task:[[Work#^{ID}]] when:2026-11-10T14:00-16:00\n",
 		},
 		{
 			name: "skip period", today: "2027-03-08",
-			work:      "- [ ] Assignment due:2027-03-12T23:59 repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
+			work:      "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
 			plans:     "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n",
-			wantWork:  "- [ ] Assignment due:2027-03-26T23:59 repeat:1w skip:2027-03-13..2027-03-21 ^{ID}\n- [x] Assignment due:2027-03-12T23:59 repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
+			wantWork:  "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^{ID}\n- [x] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
 			wantPlans: "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n- Assignment task:[[Work#^{ID}]] when:2027-03-22T09:00-11:00\n",
 		},
 		{
 			name: "session across midnight", today: "2026-11-02",
-			work:      "- [ ] T repeat:1w ^ab12cd\n",
+			work:      "- [ ] T @repeat:1w ^ab12cd\n",
 			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02T22:00..2026-11-03T02:00\n",
-			wantWork:  "- [ ] T repeat:1w ^{ID}\n- [x] T repeat:1w ^ab12cd\n",
+			wantWork:  "- [ ] T @repeat:1w ^{ID}\n- [x] T @repeat:1w ^ab12cd\n",
 			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02T22:00..2026-11-03T02:00\n- T task:[[Work#^{ID}]] when:2026-11-09T22:00..2026-11-10T02:00\n",
 		},
 		{
 			name: "repeating and dangling sessions", today: "2026-11-02",
-			work:      "- [ ] Water plants repeat:mon,thu ^ab12cd\n",
-			plans:     "- Water plants task:[[Work#^ab12cd]] when:2026-11-03T09:00-09:15\n- Water plants task:[[Work#^ab12cd]] when:2026-11-02T08:00 repeat:1w\n- Water plants task:[[Work#^zz99zz]] when:2026-11-01T08:00\n",
-			wantWork:  "- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\n",
-			wantPlans: "- Water plants task:[[Work#^ab12cd]] when:2026-11-03T09:00-09:15\n- Water plants task:[[Work#^{ID}]] when:2026-11-05T09:00-09:15\n- Water plants task:[[Work#^ab12cd]] when:2026-11-02T08:00 repeat:1w\n- Water plants task:[[Work#^zz99zz]] when:2026-11-01T08:00\n",
+			work:      "- [ ] Water plants @repeat:mon/thu ^ab12cd\n",
+			plans:     "- Water plants task:[[Work#^ab12cd]] when:2026-11-03T09:00-09:15\n- Water plants task:[[Work#^ab12cd]] when:2026-11-02T08:00 @repeat:1w\n- Water plants task:[[Work#^zz99zz]] when:2026-11-01T08:00\n",
+			wantWork:  "- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\n",
+			wantPlans: "- Water plants task:[[Work#^ab12cd]] when:2026-11-03T09:00-09:15\n- Water plants task:[[Work#^{ID}]] when:2026-11-05T09:00-09:15\n- Water plants task:[[Work#^ab12cd]] when:2026-11-02T08:00 @repeat:1w\n- Water plants task:[[Work#^zz99zz]] when:2026-11-01T08:00\n",
 		},
 		{
 			name: "no session", today: "2026-11-02",
-			work:      "- [ ] T due:2026-11-02 repeat:1d ^keep\n  - [ ] Sub ^sub1\n",
+			work:      "- [ ] T due:2026-11-02 @repeat:1d ^keep\n  - [ ] Sub ^sub1\n",
 			plans:     "- Other task:[[Work#^zz99zz]] when:2026-11-02\n",
-			wantWork:  "- [ ] T due:2026-11-03 repeat:1d\n  - [ ] Sub\n- [x] T due:2026-11-02 repeat:1d ^keep\n  - [ ] Sub ^sub1\n",
+			wantWork:  "- [ ] T due:2026-11-03 @repeat:1d\n  - [ ] Sub\n- [x] T due:2026-11-02 @repeat:1d ^keep\n  - [ ] Sub ^sub1\n",
 			wantPlans: "- Other task:[[Work#^zz99zz]] when:2026-11-02\n",
 		},
 		{
 			name: "no date and no session", today: "2026-11-02",
-			work:      "- [ ] T repeat:3d\n",
+			work:      "- [ ] T @repeat:3d\n",
 			plans:     "- Other task:[[Work#^zz99zz]] when:2026-11-02\n",
-			wantWork:  "- [ ] T repeat:3d due:2026-11-05\n- [x] T repeat:3d\n",
+			wantWork:  "- [ ] T @repeat:3d due:2026-11-05\n- [x] T @repeat:3d\n",
 			wantPlans: "- Other task:[[Work#^zz99zz]] when:2026-11-02\n",
 		},
 		{
 			name: "at the until date", today: "2026-12-14",
-			work:      "- [ ] Lab repeat:1w until:2026-12-14 ^ab12cd\n",
+			work:      "- [ ] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
 			plans:     "- Lab task:[[Work#^ab12cd]] when:2026-12-14T09:00\n",
-			wantWork:  "- [x] Lab repeat:1w until:2026-12-14 ^ab12cd\n",
+			wantWork:  "- [x] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
 			wantPlans: "- Lab task:[[Work#^ab12cd]] when:2026-12-14T09:00\n",
 		},
 		{
 			name: "copy carries no until", today: "2026-12-07",
-			work:      "- [ ] Lab repeat:1w until:2026-12-14 ^ab12cd\n",
+			work:      "- [ ] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
 			plans:     "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 until:2026-12-20\n",
-			wantWork:  "- [ ] Lab repeat:1w until:2026-12-14 ^{ID}\n- [x] Lab repeat:1w until:2026-12-14 ^ab12cd\n",
+			wantWork:  "- [ ] Lab @repeat:1w until:2026-12-14 ^{ID}\n- [x] Lab @repeat:1w until:2026-12-14 ^ab12cd\n",
 			wantPlans: "- Lab task:[[Work#^ab12cd]] when:2026-12-07T09:00 until:2026-12-20\n- Lab task:[[Work#^{ID}]] when:2026-12-14T09:00\n",
 		},
 	} {
@@ -207,7 +207,7 @@ func TestTaskToggleWarnsWhenCategoryNoteIsNotWritable(t *testing.T) {
 	}
 	fixClock(t, "2026-11-02")
 	root := writeVaultNotes(t, map[string]string{
-		"inbox/Work.md":  "- [ ] Water plants repeat:mon,thu ^ab12cd\n",
+		"inbox/Work.md":  "- [ ] Water plants @repeat:mon/thu ^ab12cd\n",
 		"quick/Plans.md": "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n",
 	})
 	dir := filepath.Join(root, "quick")
@@ -224,7 +224,7 @@ func TestTaskToggleWarnsWhenCategoryNoteIsNotWritable(t *testing.T) {
 		t.Fatalf("stderr does not name Plans.md: %q", errText)
 	}
 	gotWork, _ := masked(t, readVaultNote(t, root, "inbox/Work.md"))
-	if want := "- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\n"; gotWork != want {
+	if want := "- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\n"; gotWork != want {
 		t.Fatalf("Work.md:\n%s\nwant:\n%s", gotWork, want)
 	}
 	if got, want := readVaultNote(t, root, "quick/Plans.md"), "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n"; got != want {

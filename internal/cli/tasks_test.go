@@ -5,9 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // A `[-]` cancelled task is abandoned, so `zn task list` leaves it out by
@@ -73,7 +76,7 @@ func TestTaskTogglePrintsWhereARecurringTaskWent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "- [x] water due:2026-01-01") || !strings.Contains(string(data), "- [ ] water @repeat:daily due:") {
+	if !strings.Contains(string(data), "- [x] water @repeat:daily due:2026-01-01") || !strings.Contains(string(data), "- [ ] water @repeat:daily due:") {
 		t.Fatalf("%q", data)
 	}
 }
@@ -198,6 +201,92 @@ func TestTaskListPlainMatchesReleasedForUpstreamRepeat(t *testing.T) {
 	}
 }
 
+// listReleasedRepeatJSON lists testdata/released-repeat with the flags and
+// returns the tasks, and the tasks of the golden file made by zn v0.17.1.
+func listReleasedRepeatJSON(t *testing.T, golden string, flags ...string) (got, want []map[string]any) {
+	t.Helper()
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("testdata", "released-repeat"))); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", golden))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &want); err != nil {
+		t.Fatal(err)
+	}
+	args := append([]string{"task", "list", "--json", "--vault", root}, flags...)
+	out := captureOutput(t, func() {
+		if code := Main(args); code != 0 {
+			t.Errorf("zn %v exited %d", args, code)
+		}
+	})
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("zn %v: %v\n%s", args, err, out)
+	}
+	return got, want
+}
+
+var repeatFieldInText = regexp.MustCompile(`(?i)@repeat:(\S+)`)
+
+// The JSON of a vault with only the `@repeat:` values of released zn is the
+// JSON of zn v0.17.1 plus one `repeat` key for each task, and that key holds
+// the lower-cased value of the task's `@repeat:` field.
+func TestTaskListJSONAddsOnlyRepeatForUpstreamRules(t *testing.T) {
+	for _, tc := range []struct {
+		golden string
+		flags  []string
+	}{
+		{"released-repeat.json", nil},
+		{"released-repeat-all.json", []string{"--all"}},
+	} {
+		got, want := listReleasedRepeatJSON(t, tc.golden, tc.flags...)
+		if len(got) != len(want) || len(got) == 0 {
+			t.Fatalf("%s: %d tasks, want %d", tc.golden, len(got), len(want))
+		}
+		for i, task := range got {
+			raw, _ := task["rawText"].(string)
+			field := repeatFieldInText.FindStringSubmatch(raw)
+			if field == nil && task["repeat"] != nil {
+				t.Errorf("%s: task %d has repeat %v and no field", tc.golden, i, task["repeat"])
+			}
+			if field != nil && task["repeat"] != strings.ToLower(field[1]) {
+				t.Errorf("%s: task %d has repeat %v for %q", tc.golden, i, task["repeat"], raw)
+			}
+			delete(task, "repeat")
+			if !reflect.DeepEqual(task, want[i]) {
+				t.Errorf("%s: task %d differs from zn v0.17.1:\n got %v\nwant %v", tc.golden, i, task, want[i])
+			}
+		}
+	}
+}
+
+// The content of a task keeps its `@repeat:` field in the CLI grammar, and the
+// JSON of the CLI reports no fields, as zn v0.17.1 does. The app grammar takes
+// the field out of the content and reports it as a field.
+func TestTaskListJSONKeepsReleasedContentAndFields(t *testing.T) {
+	got, want := listReleasedRepeatJSON(t, "released-repeat.json")
+	for i, task := range got {
+		raw, _ := task["rawText"].(string)
+		if task["content"] != want[i]["content"] || (strings.Contains(raw, "@repeat:") && !strings.Contains(task["content"].(string), "@repeat:")) {
+			t.Errorf("task %d: content %q, want %q", i, task["content"], want[i]["content"])
+		}
+		if _, present := task["fields"]; present {
+			t.Errorf("task %d: the CLI JSON reports fields: %v", i, task["fields"])
+		}
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", "released-repeat", "inbox", "chores.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := vault.ParseTasks("inbox/chores.md", "chores", vault.FolderInbox, string(data), vault.ParseTasksOptions{Dialect: vault.DialectApp})
+	if len(app) == 0 || app[0].Content != "Water the plants" || app[0].Fields["repeat"] != "daily" || app[0].Repeat != "daily" {
+		t.Errorf("app grammar: %+v", app)
+	}
+}
+
 // A task note's `scheduled` key gives no JSON key and does not move on a roll:
 // the date counts from `due`.
 func TestTaskNoteScheduledKeyIsNotRead(t *testing.T) {
@@ -243,7 +332,7 @@ func TestTaskListShowsNoEventsOrSessions(t *testing.T) {
 	fixClock(t, "2026-11-02")
 	root := writeVaultNotes(t, map[string]string{
 		"inbox/Meeting.md": "---\npage-type: event\nwhen: 2026-11-09T14:00-15:00\nrepeat: 1w\n---\n\n# Team meeting\n",
-		"inbox/Work.md":    "- [ ] Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd\n",
+		"inbox/Work.md":    "- [ ] Water plants @repeat:mon/thu skip:@Holiday until:2026-12-31 ^ab12cd\n",
 		"inbox/Essay.md":   "---\npage-type: task\nstatus: open\ndue: 2026-11-10\n---\n\n# Essay\n",
 		"quick/Plans.md": "- Water plants task:[[Work#^ab12cd]] when:2026-11-09T09:00-09:15\n" +
 			"- Essay task:[[Essay]] when:2026-11-08T10:00\n- Lunch when:2026-11-09T12:00\n",
@@ -298,13 +387,13 @@ func listTaskJSON(t *testing.T, note string) []map[string]any {
 
 // The JSON reports a task's time of day and repeat rule next to its dates.
 func TestTaskListJSONCarriesTimesAndRepeat(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] Water plants due:2026-11-03T14:00 repeat:Mon,Thu\n")
+	tasks := listTaskJSON(t, "- [ ] Water plants due:2026-11-03T14:00 @repeat:Mon/Thu\n")
 	if len(tasks) != 1 {
 		t.Fatalf("got %+v", tasks)
 	}
 	got := tasks[0]
 	if got["due"] != "2026-11-03" || got["dueTime"] != "14:00" ||
-		got["repeat"] != "mon,thu" || got["content"] != "Water plants" {
+		got["repeat"] != "mon/thu" || got["content"] != "Water plants @repeat:Mon/Thu" {
 		t.Fatalf("got %+v", got)
 	}
 }
@@ -325,7 +414,7 @@ func TestTaskListJSONOmitsSchedulingKeysWhenUnset(t *testing.T) {
 // The JSON lists a task's valid skip items in their written form and drops
 // the reversed ones.
 func TestTaskListJSONCarriesValidSkipItems(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] A repeat:1w skip:2027-03-13..2027-03-21,2027-04-02,2027-03-21..2027-03-13\n")
+	tasks := listTaskJSON(t, "- [ ] A @repeat:1w skip:2027-03-13..2027-03-21,2027-04-02,2027-03-21..2027-03-13\n")
 	if len(tasks) != 1 {
 		t.Fatalf("got %+v", tasks)
 	}
@@ -333,14 +422,14 @@ func TestTaskListJSONCarriesValidSkipItems(t *testing.T) {
 	if !reflect.DeepEqual(got, []any{"2027-03-13..2027-03-21", "2027-04-02"}) {
 		t.Fatalf("skip: %+v", tasks[0])
 	}
-	if tasks[0]["content"] != "A" {
+	if tasks[0]["content"] != "A @repeat:1w" {
 		t.Fatalf("content: %+v", tasks[0])
 	}
 }
 
 // A task without a skip token has no skip key in its JSON.
 func TestTaskListJSONOmitsSkipWhenUnset(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] A repeat:1w\n- [ ] B skip:@spring-break\n")
+	tasks := listTaskJSON(t, "- [ ] A @repeat:1w\n- [ ] B skip:@spring-break\n")
 	if len(tasks) != 2 {
 		t.Fatalf("got %+v", tasks)
 	}
@@ -382,11 +471,11 @@ func TestTaskToggleCompletesPageTypeTaskNote(t *testing.T) {
 // The JSON lists the until date of a repeating task, and leaves it out when
 // the task has none or the date does not count.
 func TestTaskListJSONCarriesUntil(t *testing.T) {
-	tasks := listTaskJSON(t, "- [ ] A repeat:1w until:2027-03-21\n- [ ] B repeat:1w\n- [ ] C until:2027-03-21\n")
+	tasks := listTaskJSON(t, "- [ ] A @repeat:1w until:2027-03-21\n- [ ] B @repeat:1w\n- [ ] C until:2027-03-21\n")
 	if len(tasks) != 3 {
 		t.Fatalf("got %+v", tasks)
 	}
-	if tasks[0]["until"] != "2027-03-21" || tasks[0]["content"] != "A" {
+	if tasks[0]["until"] != "2027-03-21" || tasks[0]["content"] != "A @repeat:1w" {
 		t.Fatalf("A: %+v", tasks[0])
 	}
 	for _, task := range tasks[1:] {

@@ -151,7 +151,7 @@ func TestAgentForClientMatchesTheDesktop(t *testing.T) {
 }
 
 const rollWorkNote = "inbox/Work.md"
-const rollWorkBody = "intro\n- [ ] Water plants repeat:mon,thu ^ab12cd\noutro\n"
+const rollWorkBody = "intro\n- [ ] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
 const rollSession = "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n"
 
 // A roll that copies a work session into a category note records that note
@@ -191,7 +191,7 @@ func TestMCPRecordsOnlyTheCategoryNotesInScope(t *testing.T) {
 	root := t.TempDir()
 	writeNotes(t, root, map[string]string{
 		".zennotes/vault.json":     `{"primaryNotesLocation":"root"}`,
-		"Projects/Work.md":         "- [ ] Water plants repeat:mon,thu ^ab12cd\n",
+		"Projects/Work.md":         "- [ ] Water plants @repeat:mon/thu ^ab12cd\n",
 		"Projects/Plans.md":        rollSession,
 		"Projects/Clients/Plan.md": rollSession,
 	})

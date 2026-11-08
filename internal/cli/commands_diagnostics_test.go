@@ -180,12 +180,12 @@ func TestDoctorWarnsAboutBadTaskTokens(t *testing.T) {
 
 	root := t.TempDir()
 	writeVaultFile(t, root, "a.md", "# A\n\n- [ ] late due:2026-11-03T25:00\n")
-	writeVaultFile(t, root, "b.md", "# B\n\n\n\n- [ ] odd repeat:sometimes\n")
+	writeVaultFile(t, root, "b.md", "# B\n\n\n\n- [ ] odd @repeat:sometimes\n")
 	out, code := doctorText(t, root)
 	if !strings.Contains(out, "WARN") {
 		t.Fatalf("no warning line:\n%s", out)
 	}
-	for _, want := range []string{"a.md:3", "due:2026-11-03T25:00", "b.md:5", "repeat:sometimes"} {
+	for _, want := range []string{"a.md:3", "due:2026-11-03T25:00", "b.md:5", "@repeat:sometimes"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output lacks %q:\n%s", want, out)
 		}
@@ -199,7 +199,7 @@ func TestDoctorWarnsAboutBadTaskTokens(t *testing.T) {
 func TestDoctorCountsOneBadTokenInSingular(t *testing.T) {
 	isolatedCLI(t)
 	root := t.TempDir()
-	writeVaultFile(t, root, "a.md", "- [ ] odd repeat:fortnightly\n")
+	writeVaultFile(t, root, "a.md", "- [ ] odd @repeat:fortnightly\n")
 	out, _ := doctorText(t, root)
 	if !strings.Contains(out, "1 task time, repeat rule or skip item is not valid and is ignored") {
 		t.Fatalf("warning not in the singular:\n%s", out)
@@ -240,7 +240,7 @@ func TestDoctorScansOnlySelectedWorkspace(t *testing.T) {
 func TestDoctorListsBadSkipItems(t *testing.T) {
 	isolatedCLI(t)
 	root := t.TempDir()
-	writeVaultFile(t, root, "s.md", "- [ ] away repeat:1w skip:2027-03-21..2027-03-13,2027-02-30,2027-04-01\n")
+	writeVaultFile(t, root, "s.md", "- [ ] away @repeat:1w skip:2027-03-21..2027-03-13,2027-02-30,2027-04-01\n")
 	out, _ := doctorText(t, root)
 	for _, want := range []string{"s.md:1", "skip:2027-03-21..2027-03-13", "skip:2027-02-30"} {
 		if !strings.Contains(out, want) {
@@ -256,7 +256,7 @@ func TestDoctorListsBadSkipItems(t *testing.T) {
 func TestDoctorIgnoresReservedSkipNames(t *testing.T) {
 	isolatedCLI(t)
 	root := t.TempDir()
-	writeVaultFile(t, root, "s.md", "- [ ] away repeat:1w skip:@holidays,@school\n")
+	writeVaultFile(t, root, "s.md", "- [ ] away @repeat:1w skip:@holidays,@school\n")
 	out, _ := doctorText(t, root)
 	if strings.Contains(out, "WARN") || strings.Contains(out, "@holidays") {
 		t.Fatalf("a reserved skip name was reported:\n%s", out)

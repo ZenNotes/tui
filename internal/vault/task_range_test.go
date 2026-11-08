@@ -92,22 +92,22 @@ func TestSetTaskDueKeepsExistingRange(t *testing.T) {
 
 func TestRollKeepsRanges(t *testing.T) {
 	lines := []string{
-		"- [ ] Weekly review due:2026-11-02 repeat:1w",
+		"- [ ] Weekly review due:2026-11-02 @repeat:1w",
 		"  Bring the notebook.",
 		"  - plain bullet",
 		"  - [x] Send summary due:2026-11-04T17:00-18:00",
 	}
 	got, _ := rollLines(t, lines, 0, RollComplete, "2026-11-02")
 	want := []string{
-		"- [ ] Weekly review due:2026-11-09 repeat:1w",
+		"- [ ] Weekly review due:2026-11-09 @repeat:1w",
 		"  Bring the notebook.",
 		"  - plain bullet",
 		"  - [ ] Send summary due:2026-11-11T17:00-18:00",
 	}
 	equalLines(t, got[:4], want)
 
-	got, _ = rollLines(t, []string{"- [ ] T due:2026-11-02T09:00-09:15 repeat:1d"}, 0, RollComplete, "2026-11-02")
-	if got[0] != "- [ ] T due:2026-11-03T09:00-09:15 repeat:1d" {
+	got, _ = rollLines(t, []string{"- [ ] T due:2026-11-02T09:00-09:15 @repeat:1d"}, 0, RollComplete, "2026-11-02")
+	if got[0] != "- [ ] T due:2026-11-03T09:00-09:15 @repeat:1d" {
 		t.Fatalf("got %q", got[0])
 	}
 }

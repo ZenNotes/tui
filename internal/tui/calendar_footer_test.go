@@ -54,7 +54,7 @@ const footerLongText = "Meet Ana about the quarterly budget and the hiring plan 
 	"and then write down what we agreed so that nobody forgets it"
 
 var footerWork = map[string]string{
-	"Work.md":  "- [ ] " + footerLongText + " due:2026-11-05T17:00 repeat:1w ^ab12cd\n",
+	"Work.md":  "- [ ] " + footerLongText + " due:2026-11-05T17:00 @repeat:1w ^ab12cd\n",
 	"Plans.md": "- " + footerLongText + " task:[[Work#^ab12cd]] when:2026-11-03T14:00-15:30\n",
 }
 
@@ -163,7 +163,7 @@ func TestFooterBlankOnEmptySlotAndFollowsFocus(t *testing.T) {
 func TestFooterShowsEventDetails(t *testing.T) {
 	files := map[string]string{"Plans.md": "- Spring break when:2027-03-13..2027-03-21\n" +
 		"- Night shift when:2026-11-03T22:00..2026-11-04T02:00\n" +
-		"- Dentist when:2026-11-03T14:00-15:00 repeat:1w\n"}
+		"- Dentist when:2026-11-03T14:00-15:00 @repeat:1w\n"}
 
 	a, tv, _ := calCursorApp(t, files, calDay, false)
 	calDownTo(a, tv, 14)
@@ -212,8 +212,8 @@ func TestFooterShowsDanglingLink(t *testing.T) {
 
 func TestFooterShowsRepeatUntil(t *testing.T) {
 	files := map[string]string{
-		"Work.md":  "- [ ] Standup due:2026-11-03T14:00 repeat:1w until:2026-12-14\n",
-		"Plans.md": "- Review when:2026-11-03T16:00 repeat:1w until:2026-11-23\n",
+		"Work.md":  "- [ ] Standup due:2026-11-03T14:00 @repeat:1w until:2026-12-14\n",
+		"Plans.md": "- Review when:2026-11-03T16:00 @repeat:1w until:2026-11-23\n",
 	}
 	a, tv, _ := calCursorApp(t, files, calDay, false)
 	calDownTo(a, tv, 14)

@@ -88,13 +88,13 @@ func firstTaskOf(t *testing.T, root, rel string) vault.Task {
 }
 
 const (
-	rollWork  = "intro\n- [ ] Water plants repeat:mon,thu ^ab12cd\noutro\n"
+	rollWork  = "intro\n- [ ] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
 	rollPlans = "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n"
 )
 
 // wantRolledWork is Work.md after a roll on 2026-11-02.
 func wantRolledWork(mark string) string {
-	return "intro\n- [ ] Water plants repeat:mon,thu ^{ID}\n- [" + mark + "] Water plants repeat:mon,thu ^ab12cd\noutro\n"
+	return "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [" + mark + "] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
 }
 
 const wantRolledPlans = "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n" +
@@ -160,13 +160,13 @@ func TestTasksViewRollCopiesSessions(t *testing.T) {
 	})
 	t.Run("cancel with a skip", func(t *testing.T) {
 		notes := map[string]string{
-			"inbox/Work.md":  "- [ ] Assignment due:2027-03-12T23:59 repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
+			"inbox/Work.md":  "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n",
 			"quick/Plans.md": "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n",
 		}
 		a, root := sessionRollApp(t, notes, "2027-03-08")
 		a.setTaskCancelled(firstTaskOf(t, root, "inbox/Work.md"), true)
-		wantWork := "- [ ] Assignment due:2027-03-26T23:59 repeat:1w skip:2027-03-13..2027-03-21 ^{ID}\n" +
-			"- [-] Assignment due:2027-03-12T23:59 repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n"
+		wantWork := "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^{ID}\n" +
+			"- [-] Assignment due:2027-03-12T23:59 @repeat:1w skip:2027-03-13..2027-03-21 ^ab12cd\n"
 		if got := maskRollID(t, readRollNote(t, root, "inbox/Work.md")); got != wantWork {
 			t.Errorf("Work.md:\n%s\nwant:\n%s", got, wantWork)
 		}
@@ -179,10 +179,10 @@ func TestTasksViewRollCopiesSessions(t *testing.T) {
 }
 
 const (
-	skipTask  = "- [ ] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break\n"
+	skipTask  = "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break\n"
 	skipEvent = "---\npage-type: event\nwhen: 2027-03-13..2027-03-21\n---\n"
-	skipWant  = "- [ ] Assignment due:2027-03-22T23:59 repeat:1w skip:@spring-break\n" +
-		"- [x] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break\n"
+	skipWant  = "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w skip:@spring-break\n" +
+		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break\n"
 )
 
 func TestTasksViewRollResolvesNamedSkip(t *testing.T) {
@@ -216,14 +216,14 @@ func TestTasksViewRollResolvesNamedSkip(t *testing.T) {
 
 func TestRollReportsSessionsNotCopied(t *testing.T) {
 	notes := map[string]string{
-		"inbox/Work.md": "- [ ] T due:2026-11-02 repeat:1w ^ab12cd\n",
+		"inbox/Work.md": "- [ ] T due:2026-11-02 @repeat:1w ^ab12cd\n",
 		"inbox/Meeting.md": "---\npage-type: event\nwhen: 2026-11-02T09:00\n" +
 			"task: \"[[Work#^ab12cd]]\"\n---\n",
 	}
 	a, root := sessionRollApp(t, notes, "2026-11-02")
 	a.toggleTask(firstTaskOf(t, root, "inbox/Work.md"))
 	got := readRollNote(t, root, "inbox/Work.md")
-	if !strings.HasPrefix(got, "- [ ] T due:2026-11-09 repeat:1w\n") {
+	if !strings.HasPrefix(got, "- [ ] T due:2026-11-09 @repeat:1w\n") {
 		t.Errorf("Work.md:\n%s", got)
 	}
 	if got, want := readRollNote(t, root, "inbox/Meeting.md"), notes["inbox/Meeting.md"]; got != want {

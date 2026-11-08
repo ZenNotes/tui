@@ -7,7 +7,7 @@ import (
 )
 
 // TaskTokenProblem is one task token that the parsers set aside: a time that
-// is not a valid `HH:MM`, a `repeat:` rule outside the grammar, a `skip:`
+// is not a valid `HH:MM`, a `@repeat:` rule outside the grammar, a `skip:`
 // item that is not a real day or a forward range, or an `until:` value that
 // does not end a rule. Line is 1-based, and Token
 // is the token as written, for example `due:2026-11-03T25:00`. Reason says
@@ -50,7 +50,7 @@ func tokenReason(token string) string {
 	switch key {
 	case "due":
 		return dueReason(token)
-	case "repeat":
+	case "repeat", "@repeat":
 		return "the rule is not valid"
 	case "skip":
 		return "the item is not a real day or a forward range"
@@ -152,9 +152,9 @@ func lintCheckboxes(lines []string, add func(line int, token string), addWhy fun
 				add(i+1, "due:"+tm[1])
 			}
 		}
-		for _, tm := range inlineRepeatRe.FindAllStringSubmatch(tail, -1) {
+		for _, tm := range repeatFieldRe.FindAllStringSubmatch(tail, -1) {
 			if badRepeat(tm[1]) {
-				add(i+1, "repeat:"+tm[1])
+				add(i+1, "@repeat:"+tm[1])
 			}
 		}
 		for _, tm := range inlineSkipRe.FindAllStringSubmatch(tail, -1) {
@@ -167,7 +167,7 @@ func lintCheckboxes(lines []string, add func(line int, token string), addWhy fun
 }
 
 // lintInlineUntil checks the `until:` tokens of one checkbox line. The first
-// one is read against the line's own `repeat:` rule and `due:` date, and each
+// one is read against the line's own `@repeat:` rule and `due:` date, and each
 // later one is set aside.
 func lintInlineUntil(line int, tail string, addWhy func(line int, token, reason string)) {
 	tokens := inlineUntilRe.FindAllStringSubmatch(tail, -1)
@@ -175,7 +175,7 @@ func lintInlineUntil(line int, tail string, addWhy func(line int, token, reason 
 		return
 	}
 	ruleOK := false
-	if rm := inlineRepeatRe.FindStringSubmatch(tail); rm != nil {
+	if rm := repeatFieldRe.FindStringSubmatch(tail); rm != nil {
 		_, ruleOK = ParseRepeatRule(rm[1])
 	}
 	due := ""

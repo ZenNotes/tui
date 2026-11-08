@@ -109,8 +109,8 @@ func TestTaskNoteRollCountsFromDueAndFromTodayOnDone(t *testing.T) {
 
 	// `/done` counts from the day of completion, and the dates move by the
 	// distance from the base field to the next date.
-	done := rollNote("scheduled: 2026-10-01", "due: 2026-10-03", "repeat: 1w/done")
-	wantDone := rollNote("scheduled: 2026-10-01", "due: 2026-11-18", "repeat: 1w/done", "lastCompleted: 2026-11-11")
+	done := rollNote("scheduled: 2026-10-01", "due: 2026-10-03", "repeat: after-1w")
+	wantDone := rollNote("scheduled: 2026-10-01", "due: 2026-11-18", "repeat: after-1w", "lastCompleted: 2026-11-11")
 	if got := rollNoteAt(t, done, RollComplete, "2026-11-11"); got != wantDone {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, wantDone)
 	}
@@ -166,9 +166,38 @@ func TestTaskNoteRollDropsListItemsAfterBlankAndCommentLines(t *testing.T) {
 }
 
 func TestTaskNoteCancelCountsFromTodayOnDone(t *testing.T) {
-	in := rollNote("due: 2026-10-03", "repeat: 1w/done")
-	want := rollNote("due: 2026-11-18", "repeat: 1w/done", "lastCompleted: 2026-11-11")
+	in := rollNote("due: 2026-10-03", "repeat: after-1w")
+	want := rollNote("due: 2026-11-18", "repeat: after-1w", "lastCompleted: 2026-11-11")
 	if got := rollNoteAt(t, in, RollCancel, "2026-11-11"); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestTaskNoteRepeatValues(t *testing.T) {
+	for _, tc := range []struct {
+		value, today, due, want string
+	}{
+		{"mon/thu", "2026-11-02", "2026-11-02", "2026-11-05"},
+		{"weekdays", "2026-11-06", "2026-11-06", "2026-11-09"},
+		{"after-3d", "2026-11-11", "2026-10-03", "2026-11-14"},
+		{"after-weekly", "2026-11-11", "2026-10-03", "2026-11-18"},
+		{"monthly", "2027-02-01", "2027-01-31", "2027-02-28"},
+		{"2w-mon/thu", "2026-11-05", "2026-11-05", "2026-11-16"},
+		{"monthly-last-fri", "2026-11-27", "2026-11-27", "2026-12-25"},
+		{"quarterly-end", "2026-12-31", "2026-12-31", "2027-03-31"},
+		{"yearly-03-15", "2026-03-15", "2026-03-15", "2027-03-15"},
+	} {
+		in := rollNote("due: "+tc.due, "repeat: "+tc.value)
+		want := rollNote("due: "+tc.want, "repeat: "+tc.value, "lastCompleted: "+tc.today)
+		if got := rollNoteAt(t, in, RollComplete, tc.today); got != want {
+			t.Errorf("repeat: %s\n got %q\nwant %q", tc.value, got, want)
+		}
+	}
+	for _, value := range []string{"mon,thu", "3d/done", "1m:15", "after-mon/thu"} {
+		in := rollNote("due: 2026-11-02", "repeat: "+value)
+		want := strings.Replace(in, "status: open", "status: done", 1)
+		if got := rollNoteAt(t, in, RollComplete, "2026-11-02"); !strings.Contains(got, "status: done") || strings.Contains(got, "lastCompleted") {
+			t.Errorf("repeat: %s rolled; got %q, want a plain tick like %q", value, got, want)
+		}
 	}
 }

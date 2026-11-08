@@ -101,7 +101,7 @@ func TestVaultBlockIdsListsEveryLineEnd(t *testing.T) {
 
 func TestRollCopiesNeverCarryBlockIds(t *testing.T) {
 	in := []string{
-		"- [ ] T due:2026-11-02 repeat:1d ^keep",
+		"- [ ] T due:2026-11-02 @repeat:1d ^keep",
 		"  - [ ] Sub ^sub1",
 		"  - [ ] Dated due:2026-11-02 ^sub2",
 	}
@@ -110,18 +110,18 @@ func TestRollCopiesNeverCarryBlockIds(t *testing.T) {
 		t.Fatalf("inserted = %d, want 3", inserted)
 	}
 	want := []string{
-		"- [ ] T due:2026-11-03 repeat:1d",
+		"- [ ] T due:2026-11-03 @repeat:1d",
 		"  - [ ] Sub",
 		"  - [ ] Dated due:2026-11-03",
-		"- [x] T due:2026-11-02 repeat:1d ^keep",
+		"- [x] T due:2026-11-02 @repeat:1d ^keep",
 		"  - [ ] Sub ^sub1",
 		"  - [ ] Dated due:2026-11-02 ^sub2",
 	}
 	equalLines(t, got, want)
 
 	// A task with no due date gets one on the copy, and the id still goes.
-	got, _ = rollLines(t, []string{"- [ ] T repeat:1d ^keep"}, 0, RollComplete, "2026-11-02")
-	equalLines(t, got, []string{"- [ ] T repeat:1d due:2026-11-03", "- [x] T repeat:1d ^keep"})
+	got, _ = rollLines(t, []string{"- [ ] T @repeat:1d ^keep"}, 0, RollComplete, "2026-11-02")
+	equalLines(t, got, []string{"- [ ] T @repeat:1d due:2026-11-03", "- [x] T @repeat:1d ^keep"})
 }
 
 func TestToggleTaskAcceptsBlockId(t *testing.T) {

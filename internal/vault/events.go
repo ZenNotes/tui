@@ -47,7 +47,7 @@ type Event struct {
 	// and when the event has no end.
 	EndDate string
 	EndTime string
-	// Repeat is the rule in lower case, without the `/done` suffix.
+	// Repeat is the rule in lower case, without the `after-` prefix.
 	Repeat string
 	// Until is set only when Repeat is set.
 	Until string
@@ -63,7 +63,7 @@ var (
 	eventListItemRe = regexp.MustCompile(`^\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+(.*)$`)
 	eventCheckboxRe = regexp.MustCompile(`^\[.\]`)
 	eventWhenRe     = regexp.MustCompile(`(?:^|\s)when:(\S+)`)
-	eventRepeatRe   = regexp.MustCompile(`(?i)(?:^|\s)repeat:(\S+)`)
+	eventRepeatRe   = regexp.MustCompile(`(?i)(?:^|\s)@repeat:([\p{L}\d][\p{L}\d/_-]*)`)
 	eventSkipRe     = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
 	eventUntilRe    = regexp.MustCompile(`(?i)(?:^|\s)until:(\S+)`)
 	// A `task:` value that starts with `[[` ends at the first `]]`, spaces
@@ -249,9 +249,9 @@ func cutSpans(text string, spans [][]int) string {
 	return text
 }
 
-// eventRepeat drops the `/done` suffix of a rule, which an event does not use.
+// eventRepeat drops the `after-` prefix of a rule, which an event does not use.
 func eventRepeat(rule string) string {
-	return strings.TrimSuffix(rule, "/done")
+	return strings.TrimPrefix(rule, "after-")
 }
 
 // eventSkip splits skip values into the date items and the `@name` items. A

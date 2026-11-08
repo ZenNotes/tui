@@ -140,7 +140,7 @@ func TestSessionDateIsFirstCurrentSessionEndingTodayOrLater(t *testing.T) {
 			"- T task:[[Work#^ab12cd]] when:2026-11-07",
 		}, "2026-11-07", "", ""},
 		{"a repeating session is not current", []string{
-			"- T task:[[Work#^ab12cd]] when:2026-11-05 repeat:1w",
+			"- T task:[[Work#^ab12cd]] when:2026-11-05 @repeat:1w",
 			"- T task:[[Work#^ab12cd]] when:2026-11-08",
 		}, "2026-11-08", "", ""},
 	}

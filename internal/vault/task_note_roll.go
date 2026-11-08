@@ -13,7 +13,7 @@ import (
 // `completedDate` is removed, because an open note has none.
 //
 // The next date and the offset follow the rules of RollTaskInBody: the rule
-// counts from `due`, else today, and from today when it ends in `/done`. The
+// counts from `due`, else today, and from today when it starts with `after-`. The
 // date keeps its `THH:MM`, and a note with no date gets `due`. A `scheduled`
 // key is not read and stays as written.
 //

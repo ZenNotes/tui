@@ -26,13 +26,13 @@ func metaSpans(line string) []string {
 }
 
 func TestEditorStylesRepeatAndSkipTokens(t *testing.T) {
-	got := metaSpans("- [ ] Water plants repeat:2w:mon,thu skip:2027-03-13..2027-03-21,2027-04-01")
-	want := []string{"repeat:2w:mon,thu", "skip:2027-03-13..2027-03-21,2027-04-01"}
+	got := metaSpans("- [ ] Water plants @repeat:2w-mon/thu skip:2027-03-13..2027-03-21,2027-04-01")
+	want := []string{"@repeat:2w-mon/thu", "skip:2027-03-13..2027-03-21,2027-04-01"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("styled %q, want %q", got, want)
 	}
-	got = metaSpans("- [ ] Trim Repeat:1M:Start SKIP:2027-03-13")
-	want = []string{"Repeat:1M:Start", "SKIP:2027-03-13"}
+	got = metaSpans("- [ ] Trim @Repeat:monthly-Start SKIP:2027-03-13")
+	want = []string{"@Repeat:monthly-Start", "SKIP:2027-03-13"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("keys must match in any case: styled %q, want %q", got, want)
 	}

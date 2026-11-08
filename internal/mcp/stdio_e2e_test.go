@@ -520,7 +520,12 @@ func TestStdioReviewFixes(t *testing.T) {
 			if got := e2eField(t, e2eOK(t, cs, "toggle_task", map[string]any{"id": "Projects/Toggle.md#0"}), "id"); got != "Projects/Toggle.md#1" {
 				t.Fatalf("toggle_task returned %s", got)
 			}
-			if got := e2eDisk(t, b.root, "Projects/Toggle.md"); got != want {
+			wantToggle := want
+			if b.name == "local" {
+				// A toggle in a local vault leaves the rule on the finished line.
+				wantToggle = "- [ ] water @repeat:daily due:" + next + "\n- [x] water @repeat:daily due:2026-01-01\n"
+			}
+			if got := e2eDisk(t, b.root, "Projects/Toggle.md"); got != wantToggle {
 				t.Fatalf("toggle_task wrote %q", got)
 			}
 

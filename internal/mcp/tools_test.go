@@ -106,7 +106,7 @@ func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "plants.md")
-	note := "intro\n- [ ] Water plants due:2026-11-02 repeat:mon,thu\noutro\n"
+	note := "intro\n- [ ] Water plants due:2026-11-02 @repeat:mon/thu\noutro\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +118,8 @@ func TestToggleTaskToolInsertsNextOccurrence(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "intro\n- [ ] Water plants due:2026-11-05 repeat:mon,thu\n" +
-		"- [x] Water plants due:2026-11-02 repeat:mon,thu\noutro\n"
+	want := "intro\n- [ ] Water plants due:2026-11-05 @repeat:mon/thu\n" +
+		"- [x] Water plants due:2026-11-02 @repeat:mon/thu\noutro\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -133,7 +133,7 @@ func TestToggleTaskToolStopsAtUntil(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "plants.md")
-	note := "- [ ] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	note := "- [ ] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestToggleTaskToolStopsAtUntil(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "- [x] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	want := "- [x] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -189,7 +189,7 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "inbox", "work.md")
-	note := "- [ ] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break\n"
+	note := "- [ ] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break\n"
 	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -201,8 +201,8 @@ func TestToggleTaskToolResolvesNamedSkip(t *testing.T) {
 	if isErr {
 		t.Fatalf("toggle_task: %s", text)
 	}
-	want := "- [ ] Assignment due:2027-03-22T23:59 repeat:1w skip:@spring-break\n" +
-		"- [x] Assignment due:2027-03-08T23:59 repeat:1w skip:@spring-break\n"
+	want := "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w skip:@spring-break\n" +
+		"- [x] Assignment due:2027-03-08T23:59 @repeat:1w skip:@spring-break\n"
 	got, err := os.ReadFile(path)
 	if err != nil || string(got) != want {
 		t.Fatalf("note (%v):\n%s\nwant:\n%s", err, got, want)
@@ -250,7 +250,7 @@ func withoutNewID(text string) string {
 func TestToggleTaskToolCopiesWorkSessions(t *testing.T) {
 	root := t.TempDir()
 	writeNotes(t, root, map[string]string{
-		"inbox/Work.md":  "intro\n- [ ] Water plants repeat:mon,thu ^ab12cd\noutro\n",
+		"inbox/Work.md":  "intro\n- [ ] Water plants @repeat:mon/thu ^ab12cd\noutro\n",
 		"quick/Plans.md": "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n",
 	})
 	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
@@ -264,7 +264,7 @@ func TestToggleTaskToolCopiesWorkSessions(t *testing.T) {
 	if strings.Contains(strings.ToLower(text), "warning") || !strings.Contains(text, `"checked": true`) {
 		t.Fatalf("result is not the toggled task: %s", text)
 	}
-	wantWork := "intro\n- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\noutro\n"
+	wantWork := "intro\n- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
 	if got := withoutNewID(readNote(t, root, "inbox/Work.md")); got != wantWork {
 		t.Fatalf("Work.md:\n%s\nwant:\n%s", got, wantWork)
 	}
@@ -283,7 +283,7 @@ func TestScopedToggleWritesOnlyNotesInScope(t *testing.T) {
 	session := "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n"
 	writeNotes(t, root, map[string]string{
 		".zennotes/vault.json":     `{"primaryNotesLocation":"root"}`,
-		"Projects/Work.md":         "- [ ] Water plants repeat:mon,thu ^ab12cd\n",
+		"Projects/Work.md":         "- [ ] Water plants @repeat:mon/thu ^ab12cd\n",
 		"Projects/Plans.md":        session,
 		"Projects/Clients/Plan.md": session,
 		"Journal/Plan.md":          session,
@@ -300,7 +300,7 @@ func TestScopedToggleWritesOnlyNotesInScope(t *testing.T) {
 			t.Fatalf("result mentions %q: %s", leak, text)
 		}
 	}
-	wantWork := "- [ ] Water plants repeat:mon,thu ^{ID}\n- [x] Water plants repeat:mon,thu ^ab12cd\n"
+	wantWork := "- [ ] Water plants @repeat:mon/thu ^{ID}\n- [x] Water plants @repeat:mon/thu ^ab12cd\n"
 	if got := withoutNewID(readNote(t, root, "Projects/Work.md")); got != wantWork {
 		t.Fatalf("Work.md:\n%s", got)
 	}

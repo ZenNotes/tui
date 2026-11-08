@@ -164,7 +164,7 @@ func TestEventsNeverListAsTasks(t *testing.T) {
 	a := sessionApp("note", map[string]string{
 		"Work": "- [ ] Draft report ^aaaaaa\n",
 		"Plans": `- Draft task:[[Work#^aaaaaa]] when:2026-11-05T09:30
-- Standup when:2026-11-05T10:00 repeat:weekly
+- Standup when:2026-11-05T10:00 @repeat:weekly
 - Holiday when:2026-11-06
 `,
 	})

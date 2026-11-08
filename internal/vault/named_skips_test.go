@@ -124,7 +124,7 @@ func TestNamedSkipUsesTheEventsOwnSkips(t *testing.T) {
 
 func TestEventOccurrencesHonourNamedSkips(t *testing.T) {
 	spring := noteEvent("Spring Break", FolderInbox, "when: 2027-03-13..2027-03-21\n")
-	lab := ParseEvents("Plans.md", "Plans", FolderInbox, "- Lab when:2027-03-01T14:00-16:00 repeat:1w skip:@spring-break\n")
+	lab := ParseEvents("Plans.md", "Plans", FolderInbox, "- Lab when:2027-03-01T14:00-16:00 @repeat:1w skip:@spring-break\n")
 	if len(lab) != 1 {
 		t.Fatalf("events: %+v", lab)
 	}
@@ -148,7 +148,7 @@ func TestSkipNamesStayOutOfSkipField(t *testing.T) {
 	if want := []string{"Spring-Break", "x"}; !reflect.DeepEqual(names, want) {
 		t.Errorf("names: %v, want %v", names, want)
 	}
-	task := scanOne(t, "- [ ] A due:2027-03-08 repeat:1w skip:@spring-break,2027-04-02", DialectApp)
+	task := scanOne(t, "- [ ] A due:2027-03-08 @repeat:1w skip:@spring-break,2027-04-02", DialectApp)
 	if want := []string{"2027-04-02"}; !reflect.DeepEqual(task.Skip, want) {
 		t.Errorf("task skip: %v", task.Skip)
 	}

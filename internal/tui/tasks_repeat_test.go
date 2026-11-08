@@ -59,11 +59,11 @@ func readRepeatNote(t *testing.T, path string) string {
 	return string(raw)
 }
 
-const repeatingLine = "- [ ] Water plants due:2026-11-02 repeat:mon,thu\n"
+const repeatingLine = "- [ ] Water plants due:2026-11-02 @repeat:mon/thu\n"
 
 func wantRolled(mark string) string {
-	return "- [ ] Water plants due:2026-11-05 repeat:mon,thu\n" +
-		"- [" + mark + "] Water plants due:2026-11-02 repeat:mon,thu\n"
+	return "- [ ] Water plants due:2026-11-05 @repeat:mon/thu\n" +
+		"- [" + mark + "] Water plants due:2026-11-02 @repeat:mon/thu\n"
 }
 
 func TestTasksViewToggleInsertsNextOccurrence(t *testing.T) {
@@ -105,10 +105,10 @@ func TestTasksViewCancelInsertsNextOccurrence(t *testing.T) {
 		}
 	})
 	t.Run("reopening inserts nothing", func(t *testing.T) {
-		in := "- [-] Water plants due:2026-11-02 repeat:mon,thu\n"
+		in := "- [-] Water plants due:2026-11-02 @repeat:mon/thu\n"
 		a, path := repeatTasksApp(t, in, "2026-11-02")
 		a.setTaskCancelled(repeatTaskAt(t, path), false)
-		want := "- [ ] Water plants due:2026-11-02 repeat:mon,thu\n"
+		want := "- [ ] Water plants due:2026-11-02 @repeat:mon/thu\n"
 		if got := readRepeatNote(t, path); got != want {
 			t.Errorf("note = %q, want %q", got, want)
 		}
@@ -118,7 +118,7 @@ func TestTasksViewCancelInsertsNextOccurrence(t *testing.T) {
 func TestTasksViewInProgressDoesNotRoll(t *testing.T) {
 	a, path := repeatTasksApp(t, repeatingLine, "2026-11-02")
 	a.setTaskInProgress(repeatTaskAt(t, path), true)
-	want := "- [/] Water plants due:2026-11-02 repeat:mon,thu\n"
+	want := "- [/] Water plants due:2026-11-02 @repeat:mon/thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
@@ -170,7 +170,7 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: "https://remote-vault.invalid"}
 	task := repeatTaskAt(t, path)
 	a.toggleTask(task)
-	want := "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"
+	want := "- [x] Water plants due:2026-11-02 @repeat:mon/thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("toggle: note = %q, want %q", got, want)
 	}
@@ -178,14 +178,14 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.setTaskCancelled(task, true)
-	want = "- [-] Water plants due:2026-11-02 repeat:mon,thu\n"
+	want = "- [-] Water plants due:2026-11-02 @repeat:mon/thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("cancel: note = %q, want %q", got, want)
 	}
 
 	// A task with a work session and a `skip:@` item is only ticked: the
 	// session note stays as it was.
-	line := "- [ ] Water plants due:2026-11-02 repeat:mon,thu skip:@Holiday ^ab12cd\n"
+	line := "- [ ] Water plants due:2026-11-02 @repeat:mon/thu skip:@Holiday ^ab12cd\n"
 	session := "- Water plants task:[[note#^ab12cd]] when:2026-11-03T09:00-09:15\n"
 	plans := filepath.Join(filepath.Dir(path), "Plans.md")
 	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
@@ -195,7 +195,7 @@ func TestTasksViewOnRemoteTargetDoesNotRoll(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.toggleTask(repeatTaskAt(t, path))
-	want = "- [x] Water plants due:2026-11-02 repeat:mon,thu skip:@Holiday ^ab12cd\n"
+	want = "- [x] Water plants due:2026-11-02 @repeat:mon/thu skip:@Holiday ^ab12cd\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("session toggle: note = %q, want %q", got, want)
 	}
@@ -242,7 +242,7 @@ func TestEditorToggleOnRemoteTargetDoesNotRoll(t *testing.T) {
 	a.opts.Backend = a.backend
 	a.opts.Target = backend.Target{Kind: backend.KindRemote, BaseURL: "https://remote-vault.invalid"}
 	buf.ed.ToggleCheckboxAtCursor()
-	if got, want := buf.ed.Text(), "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"; got != want {
+	if got, want := buf.ed.Text(), "- [x] Water plants due:2026-11-02 @repeat:mon/thu\n"; got != want {
 		t.Errorf("buffer = %q, want %q", got, want)
 	}
 }
@@ -265,7 +265,7 @@ func TestTypedXInCheckboxDoesNotRoll(t *testing.T) {
 	buf := openRepeatBuffer(t, a)
 	buf.ed.SetCursor(vim.Pos{Line: 0, Col: 3})
 	buf.ed.Feed("rx")
-	want := "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"
+	want := "- [x] Water plants due:2026-11-02 @repeat:mon/thu\n"
 	if got := buf.ed.Text(); got != want {
 		t.Errorf("buffer = %q, want %q", got, want)
 	}
@@ -290,24 +290,24 @@ func TestPlainTaskChangesKeepCRLF(t *testing.T) {
 }
 
 func TestBoardDoneColumnChecksForwardedTask(t *testing.T) {
-	a, path := repeatTasksApp(t, "- [>] Water plants due:2026-11-02 repeat:mon,thu\n", "2026-11-02")
+	a, path := repeatTasksApp(t, "- [>] Water plants due:2026-11-02 @repeat:mon/thu\n", "2026-11-02")
 	a.setTaskStatusColumn(repeatTaskAt(t, path), "done")
-	want := "- [x] Water plants due:2026-11-02 repeat:mon,thu\n"
+	want := "- [x] Water plants due:2026-11-02 @repeat:mon/thu\n"
 	if got := readRepeatNote(t, path); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 }
 
 const (
-	untilLine = "- [ ] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	untilLine = "- [ ] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
 	untilNote = "---\ntags: [task]\nstatus: open\ndue: 2026-11-03\nrepeat: 1d\nuntil: 2026-11-03\n---\n"
 )
 
 // On the last date the Tasks view, the board, the editor and a cancel only
 // change the one line, and a task note is finished for good.
 func TestTasksViewBoardAndEditorStopAtUntil(t *testing.T) {
-	ticked := "- [x] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
-	cancelled := "- [-] Water plants due:2026-11-03 repeat:1d until:2026-11-03\n"
+	ticked := "- [x] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
+	cancelled := "- [-] Water plants due:2026-11-03 @repeat:1d until:2026-11-03\n"
 
 	t.Run("tasks view toggle", func(t *testing.T) {
 		a, path := repeatTasksApp(t, untilLine, "2026-11-03")

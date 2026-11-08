@@ -23,7 +23,6 @@ var (
 	taskLineRe       = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[)( |x|X|>|-|/)(\].*)$`)
 	cliFenceRe       = regexp.MustCompile("^(\\s{0,3})(`{3,}|~{3,})")
 	inlineDueRe      = regexp.MustCompile(`(?i)(?:^|\s)due:\s*(\S+)`)
-	inlineRepeatRe   = regexp.MustCompile(`(?i)(?:^|\s)repeat:(\S+)`)
 	inlineSkipRe     = regexp.MustCompile(`(?i)(?:^|\s)skip:(\S+)`)
 	inlineUntilRe    = regexp.MustCompile(`(?i)(?:^|\s)until:(\S+)`)
 	inlinePriorityRe = regexp.MustCompile(`(?i)(?:^|\s)!(high|med|medium|low|h|m|l)\b`)
@@ -404,13 +403,13 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 		t.due, t.dueTime, t.dueEnd = SplitDateTime(dm[1])
 		stripped = inlineDueRe.ReplaceAllString(stripped, " ")
 	}
-	// Every repeat token leaves the content, valid or not. Only the first one
-	// sets the rule, and only a rule that parses does.
-	if rm := inlineRepeatRe.FindStringSubmatch(stripped); rm != nil {
+	// The rule is the first `@repeat:` field, and only a rule that parses
+	// counts. The field stays in the text here: the app grammar strips it with
+	// the other fields below and the CLI grammar leaves it, as for any field.
+	if rm := repeatFieldRe.FindStringSubmatch(tail); rm != nil {
 		if _, ok := ParseRepeatRule(rm[1]); ok {
 			t.repeat = strings.ToLower(rm[1])
 		}
-		stripped = inlineRepeatRe.ReplaceAllString(stripped, " ")
 	}
 	// Several skip tokens add up. Like repeat, every token leaves the content
 	// and only its valid items are kept.

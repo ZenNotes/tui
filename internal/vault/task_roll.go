@@ -19,7 +19,7 @@ const (
 
 // RollTaskInBody completes or cancels the task at targetIndex, counted in the
 // given grammar. An open, in-progress or waiting task that carries a valid
-// `repeat:` rule also gets its next occurrence: an open copy of the line and
+// `@repeat:` rule also gets its next occurrence: an open copy of the line and
 // its indented block is inserted directly above it, with `due:` moved to the
 // next date and the original keeping its own dates. A `scheduled:` token is
 // plain text and stays as written.
@@ -29,12 +29,12 @@ const (
 // date.
 //
 // The next date counts from `due:`, else today, and from today when the rule
-// ends in `/done`. It is the first date of the rule after that and after today
-// that no `skip:` period covers and that is not past the `until:` date. The copied subtasks' dates move by the same
-// number of days as the task's `due:`, and each keeps its `THH:MM`. A task
-// with no `due:` gets `due:` on the copy. The copies drop a block id that
-// ends their line, and the originals keep theirs, so an id stays on one line.
-// now and weekStart are inputs so the
+// starts with `after-`. It is the first date of the rule after that and after
+// today that no `skip:` period covers and that is not past the `until:` date.
+// The copied subtasks' dates move by the same number of days as the task's
+// `due:`, and each keeps its `THH:MM`. A task with no `due:` gets `due:` on the
+// copy. The copies drop a block id that ends their line, and the originals
+// keep theirs, so an id stays on one line. now and weekStart are inputs so the
 // caller chooses the clock and the first day of the week.
 //
 // Only local notes roll. A remote vault's server parses the note itself, so
