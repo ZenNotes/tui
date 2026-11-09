@@ -110,6 +110,8 @@ func NoteTasksMode(val string) string {
 
 type noteDefaults struct {
 	Due       string
+	DueTime   string
+	DueEnd    string
 	Priority  string
 	Status    string
 	TasksMode string
@@ -134,8 +136,8 @@ func parseNoteDefaults(body string) noteDefaults {
 		val := Unquote(strings.TrimSpace(trimmed[colon+1:]))
 		switch key {
 		case "due":
-			if IsValidISODate(val) {
-				d.Due = val
+			if date, clock, end := SplitDateTime(val); date != "" {
+				d.Due, d.DueTime, d.DueEnd = date, clock, end
 			}
 		case "priority":
 			if p := NormalizePriority(val); p != "" {
@@ -157,8 +159,40 @@ func firstScalar(v []string) string {
 	return v[0]
 }
 
+// hasTaskPageType reports whether the frontmatter says `page-type: task`.
+func hasTaskPageType(block string) bool {
+	return hasPageType(block, TaskFileTag)
+}
+
+// hasPageType reports whether the frontmatter says `page-type: <want>`. The
+// frontmatter reader lower-cases keys, so the key is matched here as written:
+// only the lower-case `page-type` counts, with the exact value, bare, quoted,
+// or as the only item of a list.
+func hasPageType(block, want string) bool {
+	var own []string
+	capturing := false
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if capturing && fmLeadWsRe.MatchString(line) && fmListItemRe.MatchString(line) {
+			own = append(own, line)
+			continue
+		}
+		capturing = false
+		if kv := fmKvRe.FindStringSubmatch(line); kv != nil && kv[1] == "page-type" {
+			own = append(own, line)
+			capturing = true
+		}
+	}
+	if len(own) == 0 {
+		return false
+	}
+	values := ParseFrontmatterFields(strings.Join(own, "\n"))["page-type"]
+	return len(values) == 1 && values[0] == want
+}
+
 // parseTaskFile returns the whole-note task when the frontmatter `tags`
-// include `task`. Metadata comes from frontmatter; the body is free-form.
+// include `task` or its `page-type` is `task`. Metadata comes from
+// frontmatter; the body is free-form.
 func parseTaskFile(path, title string, folder NoteFolder, body string, dialect TaskDialect) (Task, bool) {
 	block, _, ok := Frontmatter(body)
 	if !ok {
@@ -175,7 +209,7 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		}
 		tags = append(tags, tag)
 	}
-	if !hasTaskTag {
+	if !hasTaskTag && !hasTaskPageType(block) {
 		return Task{}, false
 	}
 	// "open" is the effective state of a note that says nothing, not a
@@ -190,6 +224,7 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 	if t := strings.TrimSpace(firstScalar(fm["title"])); t != "" {
 		content = t
 	}
+	due, dueTime, dueEnd := splitFrontmatterDateTime(firstScalar(fm["due"]))
 	task := Task{
 		ID:            path + "#task",
 		SourcePath:    path,
@@ -202,15 +237,22 @@ func parseTaskFile(path, title string, folder NoteFolder, body string, dialect T
 		Checked:       doneStatuses[status],
 		Cancelled:     cancelledStatuses[status],
 		InProgress:    inProgressStatuses[status],
-		Due:           normalizeDueDate(firstScalar(fm["due"])),
+		Due:           due,
+		DueTime:       dueTime,
+		DueEnd:        dueEnd,
 		Priority:      NormalizePriority(firstScalar(fm["priority"])),
 		Waiting:       status == "waiting",
 		Fields:        fields,
 		Status:        status,
 		Tags:          tags,
 		Kind:          "file",
-		Scheduled:     normalizeDueDate(firstScalar(fm["scheduled"])),
+		Repeat:        frontmatterRepeat(firstScalar(fm["repeat"])),
+		Skip:          frontmatterSkip(fm["skip"]),
 		CompletedDate: normalizeDueDate(firstScalar(fm["completeddate"])),
+		LastCompleted: normalizeDueDate(firstScalar(fm["lastcompleted"])),
+	}
+	if task.Repeat != "" {
+		task.Until = validUntil(Unquote(strings.TrimSpace(firstScalar(fm["until"]))))
 	}
 	if dialect == DialectCLI {
 		// The CLI's JSON keeps the desktop CLI's key set, but says which status
@@ -267,10 +309,12 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 		}
 		checkedChar := m[2]
 		tail := strings.TrimPrefix(m[3], "]")
+		// A block id that ends the line is not part of the text.
+		tail, blockID := splitBlockID(tail)
 		tokens := extractTaskTokens(tail, opts.Dialect)
-		due := tokens.due
+		due, dueTime, dueEnd := tokens.due, tokens.dueTime, tokens.dueEnd
 		if due == "" {
-			due = defaults.Due
+			due, dueTime, dueEnd = defaults.Due, defaults.DueTime, defaults.DueEnd
 		}
 		priority := tokens.priority
 		if priority == "" {
@@ -309,11 +353,18 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 			InProgress: checkedChar == "/",
 			Forwarded:  checkedChar == ">",
 			Due:        due,
+			DueTime:    dueTime,
+			DueEnd:     dueEnd,
 			Priority:   priority,
 			Waiting:    tokens.waiting,
 			Fields:     fields,
 			Status:     status,
 			Tags:       tokens.tags,
+
+			Repeat:  tokens.repeat,
+			Skip:    tokens.skip,
+			Until:   tokens.until,
+			BlockID: blockID,
 		})
 		taskIndex++
 	}
@@ -321,11 +372,14 @@ func ParseTasks(path, title string, folder NoteFolder, body string, opts ParseTa
 }
 
 type taskTokens struct {
-	due, priority string
-	waiting       bool
-	fields        map[string]string
-	tags          []string
-	stripped      string
+	due, dueTime, dueEnd, priority string
+	repeat                         string
+	skip, skipNames                []string
+	until                          string
+	waiting                        bool
+	fields                         map[string]string
+	tags                           []string
+	stripped                       string
 }
 
 // inlineStatus is the `@status:` a checkbox line carries, or the note's
@@ -344,10 +398,28 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 	t := taskTokens{fields: map[string]string{}, tags: []string{}}
 	stripped := tail
 	if dm := inlineDueRe.FindStringSubmatch(stripped); dm != nil {
-		if IsValidISODate(dm[1]) {
-			t.due = dm[1]
-		}
+		t.due, t.dueTime, t.dueEnd = SplitDateTime(dm[1])
 		stripped = inlineDueRe.ReplaceAllString(stripped, " ")
+	}
+	// The rule is the first `@repeat:` field, and only a rule that parses
+	// counts. The field stays in the text here: the app grammar strips it with
+	// the other fields below and the CLI grammar leaves it, as for any field.
+	if rm := repeatFieldRe.FindStringSubmatch(tail); rm != nil {
+		if _, ok := ParseRepeatRule(rm[1]); ok {
+			t.repeat = strings.ToLower(rm[1])
+		}
+	}
+	// Several `@skip:` fields add up, and only their valid items are kept. The
+	// fields stay in the text here, as `@repeat:` does.
+	for _, m := range skipFieldRe.FindAllStringSubmatch(tail, -1) {
+		items, _, names := ParseSkipItems(m[1])
+		t.skip = append(t.skip, items...)
+		t.skipNames = append(t.skipNames, names...)
+	}
+	// Only the first `@until:` field can set the end date, and only for a task
+	// with a valid rule and a date without a time.
+	if um := untilFieldRe.FindStringSubmatch(tail); um != nil && t.repeat != "" {
+		t.until = validUntil(um[1])
 	}
 	if pm := inlinePriorityRe.FindStringSubmatch(stripped); pm != nil {
 		t.priority = NormalizePriority(pm[1])
@@ -384,6 +456,15 @@ func extractTaskTokens(tail string, dialect TaskDialect) taskTokens {
 	}
 	t.stripped = strings.TrimSpace(wsCollapseRe.ReplaceAllString(stripped, " "))
 	return t
+}
+
+// validUntil returns value when it is a real `YYYY-MM-DD` date with no time,
+// and "" otherwise.
+func validUntil(value string) string {
+	if isoDateRe.MatchString(value) && IsValidISODate(value) {
+		return value
+	}
+	return ""
 }
 
 // SplitTaskID splits `<path>#<index>` into its halves; indexStr is the
@@ -547,6 +628,18 @@ func SetTaskCancelled(markdown string, taskIndex int, cancelled bool) string {
 	return out
 }
 
+// appendTaskToken adds token to the end of the text of a task line. A block id
+// that ends the text stays the last item, because a block id counts only at
+// the end of a line.
+func appendTaskToken(tail, token string) string {
+	rest, id := splitBlockID(tail)
+	out := trailingWsRe.ReplaceAllString(rest, "") + " " + token
+	if id != "" {
+		out += " ^" + id
+	}
+	return out
+}
+
 func taskTail(m []string) (string, bool) {
 	if !strings.HasPrefix(m[3], "]") {
 		return "", false
@@ -568,7 +661,7 @@ func SetTaskWaiting(markdown string, taskIndex int, waiting bool) string {
 		has := waitingTokenRe.MatchString(tail)
 		next := tail
 		if waiting && !has {
-			next = trailingWsRe.ReplaceAllString(tail, "") + " @waiting"
+			next = appendTaskToken(tail, "@waiting")
 		} else if !waiting && has {
 			next = tidyTail(waitingTokenRe.ReplaceAllString(tail, "$1"))
 		}
@@ -587,28 +680,63 @@ func SetTaskPriority(markdown string, taskIndex int, priority string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(priorityTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if priority != "" {
-			next += " !" + priority
+			next = appendTaskToken(cleaned, "!"+priority)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
 	return out
 }
 
-// SetTaskDue replaces, inserts or removes the `due:YYYY-MM-DD` token.
+// SetTaskDue replaces, inserts or removes the `due:` token. A date-only value
+// keeps the time and the end time the task already has, a `YYYY-MM-DDTHH:MM`
+// value replaces date and times together, and an empty value removes the token
+// and its times.
 func SetTaskDue(markdown string, taskIndex int, due string) string {
 	out, _ := editTaskAtIndex(markdown, taskIndex, func(m []string) (string, bool) {
 		tail, ok := taskTail(m)
 		if !ok {
 			return "", false
 		}
+		if sm := inlineDueRe.FindStringSubmatch(tail); sm != nil {
+			_, start, end := SplitDateTime(sm[1])
+			due = dueKeepingTime(due, start, end)
+		}
 		cleaned := multiSpaceRe.ReplaceAllString(dueTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if due != "" {
-			next += " due:" + due
+			next = appendTaskToken(cleaned, "due:"+due)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
 	return out
+}
+
+// dueKeepingTime appends the existing start time, and the end time when there
+// is one, to a date-only value. A value that already carries a time, or is
+// empty, is returned as it is.
+func dueKeepingTime(due, start, end string) string {
+	if due == "" || start == "" || len(due) != len("2006-01-02") {
+		return due
+	}
+	if end != "" {
+		return due + "T" + start + "-" + end
+	}
+	return due + "T" + start
+}
+
+// SetTaskNoteDue sets the frontmatter `due` of a task note with the same time
+// rules as SetTaskDue: a date-only value keeps the note's current times, a
+// date-time value replaces it, and an empty value removes the key.
+func SetTaskNoteDue(body, due string) string {
+	if block, _, ok := Frontmatter(body); ok {
+		_, start, end := splitFrontmatterDateTime(firstScalar(ParseFrontmatterFields(block)["due"]))
+		due = dueKeepingTime(due, start, end)
+	}
+	var value *string
+	if due != "" {
+		value = StrPtr(due)
+	}
+	return setFrontmatterLines(body, []frontmatterLine{{key: "due", value: value}})
 }
 
 // SetTaskField replaces, inserts or removes an inline `@key:value` token.
@@ -625,7 +753,7 @@ func SetTaskField(markdown string, taskIndex int, key, value string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(tokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if value != "" {
-			next += " @" + key + ":" + value
+			next = appendTaskToken(cleaned, "@"+key+":"+value)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
@@ -681,7 +809,9 @@ func taskBlockEnd(lines []string, start, baseIndent int) int {
 // ForwardTaskSubtree flips the task at taskIndex to `[>]`, appends linkToken
 // to it, and flips its open subtasks to `[>]` too. childLines is the subtree
 // as it read before the flip, re-based to the parent's indent, so the caller
-// can place it under a copy in the destination note.
+// can place it under a copy in the destination note. The record loses
+// a block id that ends the task line or any line of its subtree; the copy
+// keeps them.
 func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body string, childLines []string) {
 	if taskIndex < 0 {
 		return markdown, nil
@@ -698,6 +828,8 @@ func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body 
 		return markdown, nil
 	}
 	tail := trailingWsRe.ReplaceAllString(m[3][1:], "")
+	// The record leaves its block id to the open copy.
+	tail = stripBlockID(tail)
 	nextTail := tail
 	if linkToken != "" && !strings.Contains(tail, linkToken) {
 		nextTail = tail + " " + linkToken
@@ -722,6 +854,8 @@ func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body 
 		if cm := taskLineRe.FindStringSubmatch(lines[i]); cm != nil && (cm[2] == " " || cm[2] == "/") {
 			lines[i] = cm[1] + ">" + cm[3]
 		}
+		// Every line of the subtree leaves its block id to the copy.
+		lines[i] = stripBlockID(lines[i])
 	}
 	return strings.Join(lines, "\n"), childLines
 }
@@ -1016,21 +1150,31 @@ func TaskFilePriorityValue(priority string) string {
 	return ""
 }
 
+// TaskMarkerPageType names the setting value that marks a task note with
+// `page-type: task` rather than the `task` tag.
+const TaskMarkerPageType = "page-type"
+
 // ComposeTaskFileInput describes a new whole-note task.
 type ComposeTaskFileInput struct {
 	Title       string
 	Status      string
 	Priority    string
 	Due         string
-	Scheduled   string
 	Tags        []string
 	DateCreated string
 	Body        string
+	// Marker is TaskMarkerPageType to write `page-type: task` instead of the
+	// `task` tag. Empty or anything else writes the tag.
+	Marker string
 }
 
 // ComposeTaskFile builds a task-file note in the TaskNotes shape.
 func ComposeTaskFile(in ComposeTaskFileInput) string {
+	pageType := in.Marker == TaskMarkerPageType
 	tags := []string{TaskFileTag}
+	if pageType {
+		tags = nil
+	}
 	for _, t := range in.Tags {
 		if t != "" && t != TaskFileTag {
 			tags = append(tags, t)
@@ -1040,17 +1184,20 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 	if status == "" {
 		status = "open"
 	}
-	lines := []string{"---", "title: " + YAMLValue(in.Title), "status: " + status}
+	lines := []string{"---", "title: " + YAMLValue(in.Title)}
+	if pageType {
+		lines = append(lines, "page-type: "+TaskFileTag)
+	}
+	lines = append(lines, "status: "+status)
 	if p := TaskFilePriorityValue(in.Priority); p != "" {
 		lines = append(lines, "priority: "+p)
 	}
 	if in.Due != "" {
 		lines = append(lines, "due: "+in.Due)
 	}
-	if in.Scheduled != "" {
-		lines = append(lines, "scheduled: "+in.Scheduled)
+	if len(tags) > 0 {
+		lines = append(lines, "tags: ["+strings.Join(tags, ", ")+"]")
 	}
-	lines = append(lines, "tags: ["+strings.Join(tags, ", ")+"]")
 	if in.DateCreated != "" {
 		lines = append(lines, "dateCreated: "+in.DateCreated)
 	}
@@ -1062,6 +1209,10 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 // but Done. Tasks without a due date have their own group, as in the desktop
 // app since ZenNotes 2.76 (#990): they used to land in Today. A daily-note task
 // is dated by InferDailyTaskDueDates before it gets here, so it stays in Today.
+// A `scheduled:` token or key places nothing. A time of day never moves a task
+// between groups: groups are judged by dates alone. An open task that is not
+// waiting and whose session date is today or earlier is in Today. Only its
+// due date makes it overdue.
 func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 	todayISO := TodayISO(today)
 	g := TaskGroups{}
@@ -1075,6 +1226,11 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 			g.Done = append(g.Done, task)
 		case task.Waiting:
 			g.Waiting = append(g.Waiting, task)
+		case task.SessionDate != "" && task.SessionDate <= todayISO:
+			g.Today = append(g.Today, task)
+			if task.Due != "" && task.Due < todayISO {
+				g.OverdueCount++
+			}
 		case task.Due == "":
 			g.Undated = append(g.Undated, task)
 		case task.Due < todayISO:
@@ -1097,18 +1253,15 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 		if ad != bd {
 			return ad < bd
 		}
+		if at, bt := timeSortKey(a.DueTime), timeSortKey(b.DueTime); at != bt {
+			return at < bt
+		}
 		if a.SourcePath != b.SourcePath {
 			return a.SourcePath < b.SourcePath
 		}
 		return a.TaskIndex < b.TaskIndex
 	}
-	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
-	byPriorityThenDue := func(a, b Task) bool {
-		if rank[a.Priority] != rank[b.Priority] {
-			return rank[a.Priority] < rank[b.Priority]
-		}
-		return byDueThenPath(a, b)
-	}
+	byPriorityThenDue := lessByPriority
 	byPath := func(a, b Task) bool {
 		if a.SourcePath != b.SourcePath {
 			return a.SourcePath < b.SourcePath
@@ -1128,8 +1281,9 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 // OrderTaskGroups orders each Tasks list group the way the desktop's Order
 // menu says (#989): "note" keeps every group in its notes' line order, which
 // J and K rearrange; "priority" puts high before medium before low before
-// none in the live groups, ties by due date and then line order, and leaves
-// forwarded, done and cancelled in line order.
+// none in the live groups, ties by due date, then by time of day (timed
+// tasks first, earliest first), then line order, and leaves forwarded, done and
+// cancelled in line order. The "note" order ignores times.
 func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
 	byLine := func(a, b Task) bool {
 		if a.SourcePath != b.SourcePath {
@@ -1137,30 +1291,13 @@ func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
 		}
 		return a.TaskIndex < b.TaskIndex
 	}
-	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
-	byPriority := func(a, b Task) bool {
-		if rank[a.Priority] != rank[b.Priority] {
-			return rank[a.Priority] < rank[b.Priority]
-		}
-		ad, bd := a.Due, b.Due
-		if ad == "" {
-			ad = "9999-99-99"
-		}
-		if bd == "" {
-			bd = "9999-99-99"
-		}
-		if ad != bd {
-			return ad < bd
-		}
-		return byLine(a, b)
-	}
-	live := byLine
-	if order == "priority" {
-		live = byPriority
-	}
 	out := g
 	for _, group := range []*[]Task{&out.Today, &out.Upcoming, &out.Undated, &out.Waiting} {
 		*group = append([]Task(nil), (*group)...)
+		live := byLine
+		if order == "priority" {
+			live = lessByPriority
+		}
 		sortTasks(*group, live)
 	}
 	for _, group := range []*[]Task{&out.Done, &out.Forwarded, &out.Cancelled} {
@@ -1168,6 +1305,50 @@ func OrderTaskGroups(g TaskGroups, order string) TaskGroups {
 		sortTasks(*group, byLine)
 	}
 	return out
+}
+
+// timeSortKey orders HH:MM values so that an untimed task sorts after every
+// timed one.
+func timeSortKey(hhmm string) string {
+	if hhmm == "" {
+		return "99:99"
+	}
+	return hhmm
+}
+
+// lessByPriority orders high before medium before low before none, then by
+// date, then by time of day with timed tasks first, then by line. A task with
+// a session date is placed by the date and the time of its session, and not
+// by its due date and time.
+func lessByPriority(a, b Task) bool {
+	rank := map[string]int{"high": 0, "med": 1, "low": 2, "": 3}
+	if rank[a.Priority] != rank[b.Priority] {
+		return rank[a.Priority] < rank[b.Priority]
+	}
+	ad, at := a.Due, a.DueTime
+	if a.SessionDate != "" {
+		ad, at = a.SessionDate, a.SessionTime
+	}
+	bd, bt := b.Due, b.DueTime
+	if b.SessionDate != "" {
+		bd, bt = b.SessionDate, b.SessionTime
+	}
+	if ad == "" {
+		ad = "9999-99-99"
+	}
+	if bd == "" {
+		bd = "9999-99-99"
+	}
+	if ad != bd {
+		return ad < bd
+	}
+	if ak, bk := timeSortKey(at), timeSortKey(bt); ak != bk {
+		return ak < bk
+	}
+	if a.SourcePath != b.SourcePath {
+		return a.SourcePath < b.SourcePath
+	}
+	return a.TaskIndex < b.TaskIndex
 }
 
 func sortTasks(tasks []Task, less func(a, b Task) bool) {

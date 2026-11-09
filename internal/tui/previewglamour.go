@@ -104,14 +104,19 @@ var (
 	blankRe       = regexp.MustCompile(`^\s*$`)
 	wikiTokenRe   = regexp.MustCompile(`⟦([^⟧]*)⟧`)
 	renderedTagRe = regexp.MustCompile(`(^|[\s(])(#[\p{L}\p{N}_][\p{L}\p{N}_/-]*)`)
-	renderedMeta  = regexp.MustCompile(`(^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`)
-	sgrRe         = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	taskStateRe   = regexp.MustCompile(`(?m)^(\s*)([-*+]|\d+[.)])\s+\[([/>\-])\]\s?(.*)$`)
-	calloutLineRe = regexp.MustCompile(`(?m)^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	itemMarkerRe  = regexp.MustCompile(`^\s*` + itemMarkerPattern + `\s`)
-	texOpenRe     = regexp.MustCompile(`^ {0,3}\\\[\s*$`)
-	texLineRe     = regexp.MustCompile(`^ {0,3}\\\[.*\\\]\s*$`)
-	texEnvRe      = regexp.MustCompile(`^ {0,3}\\begin\{((?:equation|align|gather|multline|alignat|flalign|eqnarray)\*?|tikzpicture)\}`)
+	// previewMetaRe finds the task metadata of a rendered row. `when:` is
+	// checked after the match, with metaTokenAccepted.
+	previewMetaRe = regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+|when:\S+)`)
+	// previewTaskLinkRe finds a `task:` link in a rendered row, after the
+	// links have a style. A link is one token because its spaces are hard.
+	previewTaskLinkRe = regexp.MustCompile(`(?:^|\s)((?i:task:)\x1b\[0m\S*)`)
+	sgrRe             = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	taskStateRe       = regexp.MustCompile(`(?m)^(\s*)([-*+]|\d+[.)])\s+\[([/>\-])\]\s?(.*)$`)
+	calloutLineRe     = regexp.MustCompile(`(?m)^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
+	itemMarkerRe      = regexp.MustCompile(`^\s*` + itemMarkerPattern + `\s`)
+	texOpenRe         = regexp.MustCompile(`^ {0,3}\\\[\s*$`)
+	texLineRe         = regexp.MustCompile(`^ {0,3}\\\[.*\\\]\s*$`)
+	texEnvRe          = regexp.MustCompile(`^ {0,3}\\begin\{((?:equation|align|gather|multline|alignat|flalign|eqnarray)\*?|tikzpicture)\}`)
 )
 
 // texBlockEnd returns one past the last line of a block-level \[…\] or
@@ -372,11 +377,21 @@ func activeSGR(prefix string) string {
 // styleInline replaces a token inside a rendered row with a styled version
 // and restores the surrounding style after it.
 func styleInline(row string, re *regexp.Regexp, group int, style lipgloss.Style, keepMatch bool) string {
+	return styleInlineIf(row, re, group, style, keepMatch, nil)
+}
+
+// styleInlineIf is styleInline for the matches that accept allows. The text of
+// a match, without its escape codes, is what accept gets. A nil accept allows
+// every match.
+func styleInlineIf(row string, re *regexp.Regexp, group int, style lipgloss.Style, keepMatch bool, accept func(string) bool) string {
 	out := strings.Builder{}
 	last := 0
 	for _, m := range re.FindAllStringSubmatchIndex(row, -1) {
 		s, e := m[2*group], m[2*group+1]
 		if s < 0 {
+			continue
+		}
+		if accept != nil && !accept(xansi.Strip(row[s:e])) {
 			continue
 		}
 		out.WriteString(row[last:s])
@@ -409,8 +424,11 @@ func (a *App) postStyleRow(row string) string {
 	if strings.Contains(row, "#") {
 		row = styleInline(row, regexp.MustCompile(`(?:^|[\s(])(#[\p{L}\p{N}_][\p{L}\p{N}_/-]*)`), 1, th.Tag, true)
 	}
-	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") {
-		row = styleInline(row, regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
+	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") || strings.Contains(row, "when:") {
+		row = styleInlineIf(row, previewMetaRe, 1, lipgloss.NewStyle().Foreground(th.Purple), true, metaTokenAccepted)
+	}
+	if strings.Contains(row, "task:") {
+		row = styleInline(row, previewTaskLinkRe, 1, lipgloss.NewStyle().Foreground(th.Purple), true)
 	}
 	return strings.ReplaceAll(row, "\u00a0", " ")
 }

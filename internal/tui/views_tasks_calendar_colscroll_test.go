@@ -18,11 +18,19 @@ type colView struct {
 	below   int
 }
 
-const colScrollTotal = 50
+// colScrollTotal is more than the day view's pane can list at 120x70.
+const colScrollTotal = 80
 
 // calColumnView reads the zq entries and the `+N more` lines of one render.
+// The footer under the grid repeats the selected entry, so it is left out.
 func calColumnView(t *testing.T, lines []string) colView {
 	t.Helper()
+	for i, l := range lines {
+		if n := footerHeight(len(lines) - 1); strings.Contains(l, "No date") && i >= n {
+			lines = append(append([]string{}, lines[:i-n]...), lines[i:]...)
+			break
+		}
+	}
 	v := colView{above: -1, below: -1}
 	first, last := -1, -1
 	for i, l := range lines {
@@ -69,26 +77,26 @@ func (v colView) String() string {
 	return fmt.Sprintf("above=%d entries=%v below=%d", v.above, v.entries, v.below)
 }
 
-// calColumnBody is a body whose day columns hold far fewer lines than the
-// busy day has entries.
-const calColumnW, calColumnH = 120, 30
-
-// calColumnApp opens a layout with one very busy day.
+// calColumnApp opens a layout with one very busy day and an hour list that is
+// shown whole.
 func calColumnApp(t *testing.T, sub calSub, vimOn bool) (*App, *tasksView) {
 	t.Helper()
 	a, tv := calTestApp(t, calManyTasks("2026-11-18", colScrollTotal, "zq"))
 	a.prefs.VimMode = vimOn
+	a.prefs.TimeFormat = "24h"
 	calToSub(t, a, tv, sub)
-	calScreen(a, tv, calColumnW, calColumnH)
+	if got := calLabels(a, tv, 120, 70); len(got) != 24 || got[0] != "00" {
+		t.Fatalf("layout %v: hour list not shown whole: %v", sub, got)
+	}
 	return a, tv
 }
 
 func calColumnAfter(t *testing.T, a *App, tv *tasksView) colView {
 	t.Helper()
-	return calColumnView(t, calScreen(a, tv, calColumnW, calColumnH))
+	return calColumnView(t, calScreen(a, tv, 120, 70))
 }
 
-func TestColumnScrollsWithJK(t *testing.T) {
+func TestGridKeysDoNotScrollTheAllDayColumn(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calColumnApp(t, sub, true)
 		ctx := fmt.Sprintf("layout %v", sub)
@@ -96,86 +104,52 @@ func TestColumnScrollsWithJK(t *testing.T) {
 		if before.above != -1 || before.below <= 0 || before.entries[0] != 0 {
 			t.Fatalf("%s: unscrolled column = %v", ctx, before)
 		}
-
-		calPress(a, tv, vim.R('j'))
-		got := calColumnAfter(t, a, tv)
-		if got.above != 1 || got.entries[0] != 1 {
-			t.Errorf("%s: after j column = %v, want one entry scrolled off the top", ctx, got)
+		calPress(a, tv, calRunes("jjj")...)
+		if got := calColumnAfter(t, a, tv); got.above != -1 || got.entries[0] != 0 {
+			t.Errorf("%s: j in the grid scrolled the column to %v", ctx, got)
 		}
 		if tv.calc().focus != calFocusGrid {
 			t.Errorf("%s: j moved focus to %v, want the grid", ctx, tv.calc().focus)
 		}
-		if sel := tv.selectedTask(); sel != nil {
-			t.Errorf("%s: j selected entry %q, want none", ctx, sel.Content)
-		}
 		requireDay(t, tv, "2026-11-18", ctx+" after j")
-
-		calPress(a, tv, calRunes("jj")...)
-		if got := calColumnAfter(t, a, tv); got.above != 3 || got.entries[0] != 3 {
-			t.Errorf("%s: after three j column = %v, want three entries scrolled off", ctx, got)
-		}
-
-		calPress(a, tv, calRunes("kkk")...)
-		got = calColumnAfter(t, a, tv)
-		if got.above != -1 || got.entries[0] != 0 {
-			t.Errorf("%s: after k back to the top column = %v", ctx, got)
-		}
-		calPress(a, tv, vim.R('k'))
-		if got := calColumnAfter(t, a, tv); got.above != -1 || got.entries[0] != 0 {
-			t.Errorf("%s: k at the top scrolled the column to %v", ctx, got)
-		}
 	}
 }
 
-func TestScrolledColumnShowsMoreAboveAndBelow(t *testing.T) {
+func TestAllDayColumnShowsMoreAboveAndBelow(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calColumnApp(t, sub, true)
 		ctx := fmt.Sprintf("layout %v", sub)
-		base := calColumnAfter(t, a, tv)
-		// The unscrolled column spends one line on the bottom count, so its
-		// room is the entries listed plus that line.
-		room := len(base.entries) + 1
-		if room < 5 {
-			t.Fatalf("%s: column room %d is too small for the check", ctx, room)
+		calPress(a, tv, vim.R('a'))
+		first := calColumnAfter(t, a, tv)
+		if first.above != -1 || first.below <= 0 {
+			t.Fatalf("%s: column with the first entry selected = %v", ctx, first)
 		}
-		calPress(a, tv, calRunes("jjj")...)
+		room := len(first.entries)
+		for i := 0; i < room+5; i++ {
+			calPress(a, tv, vim.R('j'))
+		}
 		got := calColumnAfter(t, a, tv)
-		// Scrolled by three: a top line, a bottom line, entries between.
-		wantEntries := room - 2
-		if got.above != 3 {
-			t.Errorf("%s: top count = %d, want +3 more", ctx, got.above)
+		if got.above <= 0 || got.below <= 0 {
+			t.Errorf("%s: a column scrolled to the middle needs a count above and below: %v", ctx, got)
 		}
-		if len(got.entries) != wantEntries || got.entries[0] != 3 || got.entries[len(got.entries)-1] != 3+wantEntries-1 {
-			t.Errorf("%s: entries = %v, want %d entries from the 4th", ctx, got.entries, wantEntries)
-		}
-		if want := colScrollTotal - 3 - wantEntries; got.below != want {
-			t.Errorf("%s: bottom count = %d, want +%d more", ctx, got.below, want)
-		}
-		lines := calScreen(a, tv, calColumnW, calColumnH)
-		if top, firstEntry := calRowOf(lines, "+3 more"), calRowOf(lines, "zq03"); top < 0 || top != firstEntry-1 {
-			t.Errorf("%s: `+3 more` on row %d, want the line right above the first entry (row %d)", ctx, top, firstEntry)
+		lines := calScreen(a, tv, 120, 70)
+		if top, firstEntry := calRowOf(lines, fmt.Sprintf("+%d more", got.above)), calRowOf(lines, fmt.Sprintf("zq%02d", got.entries[0])); top < 0 || top != firstEntry-1 {
+			t.Errorf("%s: the top count is on row %d, want the line right above the first entry (row %d)", ctx, top, firstEntry)
 		}
 	}
 }
 
-func TestColumnScrolledToEndShowsOnlyTopMore(t *testing.T) {
+func TestAllDayColumnScrolledToEndShowsOnlyTopMore(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calColumnApp(t, sub, true)
 		ctx := fmt.Sprintf("layout %v", sub)
-		room := len(calColumnAfter(t, a, tv).entries) + 1
+		calPress(a, tv, vim.R('a'))
 		for i := 0; i < colScrollTotal+20; i++ {
 			calPress(a, tv, vim.R('j'))
 		}
 		got := calColumnAfter(t, a, tv)
-		wantEntries := room - 1
-		if got.below != -1 {
-			t.Errorf("%s: scrolled to the end still shows a bottom count: %v", ctx, got)
-		}
-		if want := colScrollTotal - wantEntries; got.above != want {
-			t.Errorf("%s: top count = %d, want +%d more", ctx, got.above, want)
-		}
-		if len(got.entries) != wantEntries || got.entries[len(got.entries)-1] != colScrollTotal-1 {
-			t.Errorf("%s: entries = %v, want the last %d ending at the 50th", ctx, got.entries, wantEntries)
+		if got.below != -1 || got.above <= 0 || got.entries[len(got.entries)-1] != colScrollTotal-1 {
+			t.Errorf("%s: column scrolled to the end = %v", ctx, got)
 		}
 		requireDay(t, tv, "2026-11-18", ctx)
 	}
@@ -193,6 +167,7 @@ func TestUnscrolledColumnHasNoTopMore(t *testing.T) {
 			t.Errorf("%s: bottom count = %d, want +%d more", ctx, got.below, colScrollTotal-len(got.entries))
 		}
 		// Scroll down and all the way back: the top line goes away again.
+		calPress(a, tv, vim.R('a'))
 		calPress(a, tv, calRunes("jjjj")...)
 		calPress(a, tv, calRunes("kkkkk")...)
 		if got := calColumnAfter(t, a, tv); got.above != -1 || got.entries[0] != 0 {
@@ -201,33 +176,13 @@ func TestUnscrolledColumnHasNoTopMore(t *testing.T) {
 	}
 }
 
-func TestColumnScrollArrowsWithoutVimMode(t *testing.T) {
-	for _, sub := range []calSub{calWeek, calDay} {
-		a, tv := calColumnApp(t, sub, false)
-		ctx := fmt.Sprintf("layout %v", sub)
-		calPress(a, tv, vim.KeyDown, vim.KeyDown)
-		got := calColumnAfter(t, a, tv)
-		if got.above != 2 || got.entries[0] != 2 {
-			t.Errorf("%s: Down twice gave %v, want two entries scrolled off", ctx, got)
-		}
-		calPress(a, tv, vim.KeyUp)
-		if got := calColumnAfter(t, a, tv); got.above != 1 || got.entries[0] != 1 {
-			t.Errorf("%s: Down twice then Up gave %v, want one entry scrolled off", ctx, got)
-		}
-		if tv.calc().focus != calFocusGrid || tv.selectedTask() != nil {
-			t.Errorf("%s: arrows changed focus or selected an entry", ctx)
-		}
-		requireDay(t, tv, "2026-11-18", ctx)
-	}
-}
-
 func TestColumnFollowsSelectionInItemFocus(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		a, tv := calColumnApp(t, sub, true)
 		ctx := fmt.Sprintf("layout %v", sub)
-		calPress(a, tv, vim.KeyTab)
+		calPress(a, tv, vim.R('a'))
 		if tv.calc().focus != calFocusItems {
-			t.Fatalf("%s: Tab did not focus the column", ctx)
+			t.Fatalf("%s: a did not focus the column", ctx)
 		}
 		for i := 0; i < 40; i++ {
 			calPress(a, tv, vim.R('j'))

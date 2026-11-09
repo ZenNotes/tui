@@ -5,14 +5,21 @@ import (
 	"github.com/ZenNotes/tui/internal/vault"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Shared saved queries have the desktop's substring semantics. The terminal's
 // structured operators remain available behind an explicit where: prefix.
 func filterTaskQuery(tasks []vault.Task, query string) []vault.Task {
+	return filterTaskQueryOn(tasks, query, time.Now())
+}
+
+// filterTaskQueryOn is filterTaskQuery with "today" given for the structured
+// date operators.
+func filterTaskQueryOn(tasks []vault.Task, query string, today time.Time) []vault.Task {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if strings.HasPrefix(q, "where:") {
-		return filterTasks(tasks, strings.TrimSpace(q[len("where:"):]))
+		return filterTasksOn(tasks, strings.TrimSpace(q[len("where:"):]), today)
 	}
 	if q == "" {
 		return tasks

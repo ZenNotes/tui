@@ -248,7 +248,7 @@ func (a *App) switchTarget(target backend.Target) {
 			return
 		}
 	}
-	b, err := backend.New(target, backend.Options{SyncTitleHeading: a.prefs.SyncTitleHeadingOnRename})
+	b, err := backend.New(target, backend.Options{SyncTitleHeading: a.prefs.SyncTitleHeadingOnRename, WeekStartSunday: a.prefs.CalendarWeekStart == "sunday"})
 	if err != nil {
 		a.notifyError(err.Error())
 		return
@@ -668,12 +668,19 @@ func (a *App) setTaskStateAtCursor(buf *noteBuffer, state string) error {
 		var next string
 		switch state {
 		case "cancel":
+			if !t.Cancelled && a.rollsRepeatingTasks() {
+				if rolledBody, rolled := a.rollTaskBody(body, t, vault.RollCancel); rolled {
+					next = rolledBody
+					break
+				}
+			}
 			next = vault.SetTaskCancelled(body, t.TaskIndex, !t.Cancelled)
 		default:
 			next = vault.SetTaskInProgress(body, t.TaskIndex, !t.InProgress)
 		}
 		return next, next != body
 	})
+	a.endRoll(err)
 	if err != nil {
 		return err
 	}
@@ -908,7 +915,11 @@ func (a *App) newTaskFile(target string) error {
 		if title == "" {
 			return
 		}
-		body := "---\ntags: [" + vault.TaskFileTag + "]\nstatus: open\n---\n\n# " + title + "\n\n"
+		marker := "tags: [" + vault.TaskFileTag + "]"
+		if a.prefs.TaskNoteMarker == vault.TaskMarkerPageType {
+			marker = "page-type: " + vault.TaskFileTag
+		}
+		body := "---\n" + marker + "\nstatus: open\n---\n\n# " + title + "\n\n"
 		meta, err := a.backend.CreateNote(a.ctx, folder, title, sub, &body)
 		if err != nil {
 			a.notifyError(err.Error())

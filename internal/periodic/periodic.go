@@ -447,6 +447,26 @@ func DateOf(kind Kind, subpath, title string, settings vault.VaultSettings, prim
 	return time.Time{}, false
 }
 
+// DailyNoteDate gives the day of a note, as YYYY-MM-DD, when daily notes are
+// enabled, the note is in the inbox and its folder and title match a daily
+// note pattern. rel is the path of the note in the vault.
+func DailyNoteDate(rel, title string, settings vault.VaultSettings, primaryAtRoot bool) (string, bool) {
+	if !settings.DailyNotes.Enabled {
+		return "", false
+	}
+	paths := settings.SystemFolderPaths
+	folder, ok := vault.FolderForRelativePath(rel, paths)
+	if !ok || folder != vault.FolderInbox {
+		return "", false
+	}
+	sub := vault.FolderSubpathOf(rel, folder, primaryAtRoot, paths)
+	date, ok := DateOf(Daily, sub, title, settings, primaryAtRoot)
+	if !ok {
+		return "", false
+	}
+	return date.Format("2006-01-02"), true
+}
+
 func resolveDate(kind Kind, n patternMatch, pattern vault.DateNotePattern, primaryAtRoot bool, subpath, title string) (time.Time, bool) {
 	if !n.hasYear {
 		return time.Time{}, false

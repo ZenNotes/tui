@@ -105,50 +105,71 @@ func noteText(ctx context.Context, b Backend, rel string) (string, bool) {
 }
 
 // runRecording runs a tool, recording its edit when it rewrites a note of a
-// local vault. Run gives each write its turn, so the record cannot race. Recording never stands in the way of the edit the user asked
-// for: if the record cannot be written, the tool still runs and the change is
-// simply not offered for review.
-func runRecording(ctx context.Context, tool string, a args, b Backend, agent string, run func() (any, error)) (any, error) {
+// local vault. Run gives each write its turn, so the record cannot race.
+// Recording never stands in the way of the edit the user asked for: if the
+// record cannot be written, the tool still runs and the change is simply not
+// offered for review. The tool gets a context. For toggle_task and update_task,
+// this context makes the backend record each other note that the tool writes.
+func runRecording(ctx context.Context, tool string, a args, b Backend, agent string, run func(ctx context.Context) (any, error)) (any, error) {
 	noteOf, ok := recordedTools[tool]
 	// A remote vault's notes are written by its server; recording there needs
 	// the server's own change.
 	if !ok || b.Kind() != backend.KindLocal {
-		return run()
+		return run(ctx)
 	}
 	rel := noteOf(a)
 	if rel == "" {
-		return run()
+		return run(ctx)
 	}
 	if !reviewAgentEditsEnabled() {
-		return run()
+		return run(ctx)
 	}
+	if tool == "toggle_task" || tool == "update_task" {
+		// A roll copies work sessions into other notes. Each one gets a
+		// record before the roll writes it. The note of the task is already
+		// recorded here.
+		ctx = backend.WithAroundNoteWrites(ctx, func(other string) func() {
+			if other == rel {
+				return func() {}
+			}
+			return recordEdit(ctx, b, other, tool, agent)
+		})
+	}
+	finish := recordEdit(ctx, b, rel, tool, agent)
+	result, runErr := run(ctx)
+	finish()
+	return result, runErr
+}
+
+// recordEdit writes the record of a note before an edit. The function that it
+// returns notes how the note looks after the edit. The caller holds the lock
+// of the note.
+func recordEdit(ctx context.Context, b Backend, rel, tool, agent string) func() {
 	before, ok := noteText(ctx, b, rel)
 	// Not a note we can read (the tool reports its own error), or one too
 	// large to keep copies of.
 	if !ok || !vault.AgentEditRecordable(before) {
-		return run()
+		return func() {}
 	}
 	existing := vault.ReadAgentEdit(b.Root(), rel)
 	started := vault.BeginAgentEdit(existing, before)
 	if err := vault.WriteAgentEdit(b.Root(), rel, started); err != nil {
 		fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not record the edit to %s: %v", rel, err)))
-		return run()
+		return func() {}
 	}
-
-	result, runErr := run()
-
-	after, ok := noteText(ctx, b, rel)
-	var finish error
-	if !ok || after == before {
-		// Nothing changed (no match, a task that moved, a failed write): the
-		// record goes back to what it was.
-		finish = vault.WriteAgentEdit(b.Root(), rel, existing)
-	} else {
-		entry := vault.AgentEditEntry{At: time.Now().UnixMilli(), Agent: agent, Tool: tool}
-		finish = vault.WriteAgentEdit(b.Root(), rel, vault.FinishAgentEdit(started, after, entry))
+	return func() {
+		after, ok := noteText(ctx, b, rel)
+		var finish error
+		if !ok || after == before {
+			// Nothing changed (no match, a task that moved, a failed write): the
+			// record goes back to what it was.
+			finish = vault.WriteAgentEdit(b.Root(), rel, existing)
+		} else {
+			entry := vault.AgentEditEntry{At: time.Now().UnixMilli(), Agent: agent, Tool: tool}
+			finish = vault.WriteAgentEdit(b.Root(), rel, vault.FinishAgentEdit(started, after, entry))
+		}
+		if finish != nil {
+			fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not finish the record for %s: %v", rel, finish)))
+		}
 	}
-	if finish != nil {
-		fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not finish the record for %s: %v", rel, finish)))
-	}
-	return result, runErr
 }

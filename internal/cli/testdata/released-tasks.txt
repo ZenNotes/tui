@@ -1,0 +1,9 @@
+[ ]  inbox/errand.md#task                      errand  due:2026-11-15  !med
+[ ]  inbox/notes.md#0                          Water the plants
+[ ]  inbox/plans.md#0                          Draft scheduled:2026-11-05T09:30 the report
+[ ]  inbox/plans.md#1                          Review the deck scheduled:2026-11-06  due:2026-11-09
+[ ]  inbox/plans.md#2                          Book the room scheduled:2026-11-07T25:99  due:2026-11-12
+[ ]  inbox/plans.md#3                          Prepare the trip  due:2026-11-20
+[ ]  inbox/plans.md#4                          Pack the bag scheduled:2026-11-18T08:00
+[ ]  inbox/plans.md#5                          Call the vendor  due:2026-11-04  !high
+[ ]  inbox/plans.md#6                          Send the notes #team  due:2026-11-08

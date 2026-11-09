@@ -94,6 +94,10 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 		a.refreshTagMenu(buf)
 		return a.afterKey()
 	}
+	if a.calendarStepChord(k) {
+		a.surfaceKey(k)
+		return a.afterKey()
+	}
 	if a.chordKey(k, false) {
 		return a.afterKey()
 	}

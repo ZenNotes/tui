@@ -1,0 +1,5 @@
+[ ]  inbox/Work.md#0                           Water plants repeat:mon,thu skip:@Holiday until:2026-12-31 ^ab12cd
+[ ]  inbox/Work.md#1                           Send the invoice  due:2026-11-12
+[ ]  inbox/Work.md#2                           A @repeat:weekly @until:2027-03-10 @skip:spring-break
+[ ]  inbox/Work.md#3                           B @repeat:monthly-15  due:2027-03-08
+[ ]  inbox/Essay.md#task                       Essay  due:2026-11-10

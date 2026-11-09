@@ -65,6 +65,12 @@ func cmdTaskList(ctx context.Context, b backend.Backend, args Args) error {
 		due := ""
 		if t.Due != "" {
 			due = "  due:" + t.Due
+			if t.DueTime != "" {
+				due += "T" + t.DueTime
+				if t.DueEnd != "" {
+					due += "-" + t.DueEnd
+				}
+			}
 		}
 		pri := ""
 		if t.Priority != "" {

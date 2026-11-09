@@ -3,6 +3,7 @@ package tui
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/ZenNotes/tui/internal/vault"
 )
@@ -86,4 +87,39 @@ func assertTaskQueryIDs(t *testing.T, tasks []vault.Task, want []string) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("matched tasks = %v, want %v", got, want)
 	}
+}
+
+func queryDay(t *testing.T, date string) time.Time {
+	t.Helper()
+	d, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d.Add(12 * time.Hour)
+}
+
+func TestStructuredFilterDueTodayMatchesTimedTask(t *testing.T) {
+	tasks := []vault.Task{
+		{ID: "timed", Content: "timed", Due: "2026-11-03", DueTime: "14:00"},
+		{ID: "other", Content: "other", Due: "2026-11-04"},
+	}
+	got := filterTasksOn(tasks, "due:today", queryDay(t, "2026-11-03"))
+	assertTaskQueryIDs(t, got, []string{"timed"})
+}
+
+// A `scheduled:` term in the filter is the `@field` match it has always been:
+// it compares a custom field of that name and reads no date of the task.
+func TestWhereScheduledMatchesFieldAsReleased(t *testing.T) {
+	today := queryDay(t, "2026-11-05")
+	tasks := []vault.Task{
+		{ID: "A", Content: "A", Fields: map[string]string{"scheduled": "2026-11-05"}},
+		{ID: "B", Content: "B", Scheduled: "2026-11-05"},
+		{ID: "C", Content: "C"},
+	}
+	assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "where: scheduled:2026-11-05", today), []string{"A"})
+	for _, value := range []string{"today", "any", "none", "overdue"} {
+		assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "where: scheduled:"+value, today), nil)
+	}
+	// Without the prefix the words stay a plain substring search.
+	assertTaskQueryIDs(t, filterTaskQueryOn(tasks, "scheduled:today", today), nil)
 }

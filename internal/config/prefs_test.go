@@ -262,3 +262,90 @@ func TestPrefsAutosaveRejectsANonBoolean(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// No task_note_marker key means tag.
+func TestPrefsTaskNoteMarkerDefaultsToTag(t *testing.T) {
+	if got := DefaultPrefs().TaskNoteMarker; got != "tag" {
+		t.Fatalf("default: %q", got)
+	}
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	prefs, _, err := LoadPrefs()
+	if err != nil || prefs.TaskNoteMarker != "tag" {
+		t.Fatalf("no file: marker %q, err %v", prefs.TaskNoteMarker, err)
+	}
+	writeTerminalConfig(t, `images = "auto"`)
+	prefs, _, err = LoadPrefs()
+	if err != nil || prefs.TaskNoteMarker != "tag" {
+		t.Fatalf("no key: marker %q, err %v", prefs.TaskNoteMarker, err)
+	}
+	writeTerminalConfig(t, `task_note_marker = "page-type"`)
+	prefs, _, err = LoadPrefs()
+	if err != nil || prefs.TaskNoteMarker != "page-type" {
+		t.Fatalf("page-type must load as page-type: marker %q, err %v", prefs.TaskNoteMarker, err)
+	}
+}
+
+// An unknown marker is not an error when zn loads; it behaves as tag.
+func TestPrefsUnknownTaskNoteMarkerLoadsAsTag(t *testing.T) {
+	writeTerminalConfig(t, `task_note_marker = "foo"`)
+	prefs, _, err := LoadPrefs()
+	if err != nil {
+		t.Fatalf("LoadPrefs must not fail on task_note_marker = \"foo\": %v", err)
+	}
+	if prefs.TaskNoteMarker != "tag" {
+		t.Fatalf("task_note_marker = \"foo\" loaded as %q, want tag", prefs.TaskNoteMarker)
+	}
+}
+
+// The configuration check of zn doctor names the key and the allowed values.
+func TestValidateConfigRejectsUnknownTaskNoteMarker(t *testing.T) {
+	writeTerminalConfig(t, `task_note_marker = "foo"`)
+	err := ValidateConfig()
+	if err == nil {
+		t.Fatal("ValidateConfig accepted task_note_marker = \"foo\"")
+	}
+	for _, want := range []string{"terminal.task_note_marker", "tag, page-type"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	for _, ok := range []string{`task_note_marker = "tag"`, `task_note_marker = "page-type"`} {
+		writeTerminalConfig(t, ok)
+		if err := ValidateConfig(); err != nil {
+			t.Errorf("%s must validate: %v", ok, err)
+		}
+	}
+}
+
+// The starter file carries an active `task_note_marker = "tag"` under
+// [terminal] and a comment naming both values.
+func TestStarterConfigNamesTaskNoteMarker(t *testing.T) {
+	section := DefaultConfigTOML
+	start := strings.Index(section, "[terminal]")
+	if start < 0 {
+		t.Fatal("starter config has no [terminal] table")
+	}
+	section = section[start+len("[terminal]"):]
+	if end := strings.Index(section, "\n["); end >= 0 {
+		section = section[:end]
+	}
+	active, comments := false, ""
+	for _, line := range strings.Split(section, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			comments += line + "\n"
+			continue
+		}
+		if strings.ReplaceAll(line, " ", "") == `task_note_marker="tag"` {
+			active = true
+		}
+	}
+	if !active {
+		t.Fatalf("[terminal] has no active task_note_marker = \"tag\" line:\n%s", section)
+	}
+	for _, want := range []string{"tag", "page-type"} {
+		if !strings.Contains(comments, want) {
+			t.Errorf("[terminal] comments do not name %s:\n%s", want, comments)
+		}
+	}
+}

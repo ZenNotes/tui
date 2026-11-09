@@ -27,7 +27,7 @@ func ValidateConfig() error {
 // lenientKeys are checked only when strict (zn doctor): LoadPrefs falls back
 // to their defaults, so a bad value never stops zn from starting.
 var lenientKeys = map[string]map[string]bool{
-	"terminal": {"math": true, "view_mode_field": true, "render_timeout": true, "render_concurrency": true},
+	"terminal": {"math": true, "view_mode_field": true, "task_note_marker": true, "render_timeout": true, "render_concurrency": true},
 }
 
 func validateKnownValues(doc map[string]any, strict bool) error {
@@ -67,7 +67,7 @@ func validateKnownValues(doc map[string]any, strict bool) error {
 		"editor":     {"default_view_mode": {"edit", "split", "preview"}, "line_number_mode": {"off", "absolute", "relative", "hybrid"}, "completed_task_style": {"none", "gray", "strikethrough", "gray-strikethrough"}, "time_format": {"12h", "24h"}},
 		"view":       {"tasks_view_mode": {"list", "kanban", "board", "calendar"}, "calendar_week_start": {"monday", "sunday"}, "note_sort_order": {"none", "name-asc", "name-desc", "updated-desc", "updated-asc", "created-desc", "created-asc"}},
 		"appearance": {"theme_mode": {"dark", "light", "system", "auto"}},
-		"terminal":   {"images": {"auto", "kitty", "off"}, "math": {"typst", "latex"}},
+		"terminal":   {"images": {"auto", "kitty", "off"}, "math": {"typst", "latex"}, "task_note_marker": {"tag", "page-type"}},
 	}
 	for section, keys := range enums {
 		table, _ := doc[section].(map[string]any)

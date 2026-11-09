@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
@@ -104,10 +105,19 @@ func ResolveTargetFromArgs(args Args) (backend.Target, error) {
 	return backend.ResolveTargetWithSource(args.Str("vault"), args.Str("server"), args.Str("token"), args.Str("workspace-source"))
 }
 
+// taskClock is the clock task toggles run on. Tests replace it to fix the
+// date.
+var taskClock = time.Now
+
 // OpenBackend binds a target with the user's portable preferences applied.
 func OpenBackend(target backend.Target) (backend.Backend, error) {
 	prefs, _, _ := config.LoadPrefs()
-	return backend.New(target, backend.Options{SyncTitleHeading: prefs.SyncTitleHeadingOnRename})
+	return backend.New(target, backend.Options{
+		SyncTitleHeading: prefs.SyncTitleHeadingOnRename,
+		WeekStartSunday:  prefs.CalendarWeekStart == "sunday",
+		Now:              taskClock,
+		TaskWarning:      func(message string) { fmt.Fprintln(stderr, "warning: "+message) },
+	})
 }
 
 func run(argv []string) (code int, err error) {

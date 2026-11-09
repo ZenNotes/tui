@@ -59,6 +59,11 @@ type remotePollMsg struct{}
 
 // App is the whole terminal UI.
 type App struct {
+	// taskNow is the clock the task paths read; nil means time.Now. Tests set
+	// it to fix the date a repeating task rolls from.
+	taskNow func() time.Time
+	// rollPending holds what the last task roll still has to write.
+	rollPending        rollEffects
 	remoteWatchCancel  context.CancelFunc
 	remoteState        string
 	remoteRefreshArmed bool
@@ -255,6 +260,11 @@ func newApp(ctx context.Context, opts Options, prefs config.Prefs, systemDark bo
 		sidebarWidth: 32,
 		ignoredPaths: map[string]time.Time{},
 		jumpIdx:      -1,
+	}
+	if local, ok := opts.Backend.(*backend.Local); ok {
+		// The screen is active, so a roll warning goes to the status line and
+		// never to stderr.
+		local.Vault().TaskWarning = func(message string) { a.notifyError(message) }
 	}
 	sel, selErr := themeSelection(prefs)
 	if err := a.setTheme(sel); err != nil || selErr != nil {
@@ -483,6 +493,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.err == nil && a.idx != nil {
 			a.idx.tasks = m.tasks
+			a.idx.events = m.events
 			a.idx.tasksAt = time.Now()
 			a.sidebar.rebuild(a)
 			a.refreshViews()

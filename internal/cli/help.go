@@ -31,6 +31,22 @@ type helpSection struct {
 	rows    []helpRow
 }
 
+// taskSyntaxRows documents what zn reads on a task line, on an event line or
+// in the frontmatter of a task note or an event note. It is not a command list,
+// so it stays out of helpSections, which commandSpecs turns into commands.
+var taskSyntaxRows = []helpRow{
+	{"due:YYYY-MM-DD[THH:MM[-HH:MM]]", "Due date with an optional 24-hour time or time range. If the time is not HH:MM, zn does not use the time and keeps the date. An end time must be later than the start time. A time sets the order of the tasks in a day. It never moves a task to another group", ""},
+	{"@repeat:<rule>", "Repeat a task. When you finish an open task in a local vault, zn writes an open copy above it with the next date. The original becomes the finished record. In zn tui and with update_task, a cancel does the same. The next date is after today. zn counts from the earliest work session. If the task has no work session, zn counts from due:. If it has no due:, zn counts from the due key of the note, and then from today. A remote vault rolls only the values of the desktop app. Another app reads an extension as an ordinary task. In a note with tasks that repeat, the ids from `task list` can change", "daily  weekly  monthly  yearly  annually  3d  2w  6m  1y  weekdays  mon/thu  after-3d (count from the day when you finish the task).  Extensions: 3q  quarterly  2w-mon/thu  monthly-15  monthly-start  monthly-end  monthly-2-tue  monthly-last-fri  quarterly-start  quarterly-end  yearly-03-14"},
+	{"@until:YYYY-MM-DD", "Last date of a task or event that repeats. The date is included. It works on checkbox lines, inline events, task notes and event notes. Without @repeat: it does nothing. If a task has no date left, zn finishes the task and removes its rule", ""},
+	{"@skip:<item>", "A day that a task or event does not use when it repeats. The item is a day, a range or a name. One field holds one item, so write the field again for more items. A name is the title of an event note, with hyphens for spaces", "@skip:2027-03-13  @skip:2027-03-13/2027-03-21  @skip:Spring-Break"},
+	{"page-type: task", "Frontmatter that marks a note as a task note, like tags: [task]. Write the key and the value in lower case. A task note reads status, due, repeat, until and skip from its frontmatter. When you finish a task note with a correct repeat rule, zn moves its due date to the next date and sets the status to open. The setting task_note_marker in [terminal] sets the mark of a new task note from zn tui: tag (default) or page-type", ""},
+	{"when:YYYY-MM-DD[THH:MM[-HH:MM]]", "A list item that is not a checkbox and has one when: token is an event in the zn tui calendar. A range across days uses a slash. Code, frontmatter and prose such as \"when: soon\" are not events. A remote vault shows no events.", "when:2027-03-13/2027-03-21  when:2026-11-03T22:00/2026-11-04T02:00"},
+	{"page-type: event", "Frontmatter of an event note. It reads when, title, repeat, until, skip and task. An event takes the same @repeat: values as a task. It does not use after-, and zn drops that prefix", ""},
+	{"page-type: event-list", "Frontmatter of a category note. This note holds small events, one on each line. zn tui writes new events and work sessions into it. The frontmatter key events: false stops the inline events of a note", ""},
+	{"task:[[Note#^id]]", "Mark an event as a work session of a task. The link names a note and the block id at the end of the task line (a ^id after a space). For a task note, write task:[[Title]]. zn tui writes the block id when it makes a work session. Do not change a block id at the end of a task line", ""},
+	{"where: session:today", "Task filter in zn tui, like due:. The other values are overdue, none, any or the start of a date, such as session:2026-11. The session date is the start of the first work session that did not end. If all work sessions ended, it is the last one", ""},
+}
+
 var helpSections = []helpSection{
 	{"NOTES", []helpRow{
 		{"list", "List notes, most recent first", "--folder <f>  --tag <t>  --limit <n>  --json"},
@@ -65,7 +81,7 @@ var helpSections = []helpSection{
 	}},
 	{"TASKS", []helpRow{
 		{"task list", "Open checkbox tasks across all notes but the template folder", "--unchecked  --all  --tag <t>  --include-excluded  --json"},
-		{"task toggle <id>", "Flip a task checkbox by its id", ""},
+		{"task toggle <id>", "Flip a task checkbox by its id: path#index, or path#^blockid for a task line that ends with a block id. When you finish a task with @repeat:, zn writes its next copy above it", ""},
 		{"task watch", "Print task status changes as they happen. A server that cannot push them is asked every --interval seconds (default 5)", "--interval <s>  --include-excluded  --json"},
 	}},
 	{"COMMENTS", []helpRow{
@@ -115,7 +131,7 @@ var helpSections = []helpSection{
 		{"config set <key> <value>", "Validate and save a portable preference", "--json"},
 		{"config edit", "Open config.toml in $EDITOR", ""},
 		{"status", "Show the selected workspace, its source and config location", "--json"},
-		{"doctor", "Check configuration, workspace access and server connectivity", "--json"},
+		{"doctor", "Check configuration, workspace access and server connectivity. It warns about task and event values that zn does not use. Each warning has the path, the line and the token", "--json"},
 		{"completion <shell>", "Print Bash, Zsh, Fish or PowerShell completions", ""},
 		{"update", "Update the CLI using its installation owner", "--check  --version <v>  --json"},
 	}},
@@ -306,6 +322,8 @@ func RenderHelp(argv []string) string {
 		out = append(out, s.section(sec.heading, sec.rows, width)...)
 		out = append(out, "")
 	}
+	out = append(out, s.section("TASK SYNTAX", taskSyntaxRows, width)...)
+	out = append(out, "")
 	out = append(out, s.section("GLOBAL FLAGS", globalFlags, width)...)
 	out = append(out, "")
 	out = append(out, s.section("ENVIRONMENT", environmentRows, width)...)

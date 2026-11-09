@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
@@ -83,6 +84,7 @@ func (v *tasksView) setMode(mode string) {
 		v.mode = "kanban"
 	case "calendar":
 		v.mode = "calendar"
+		v.calc().zoom = 0
 	default:
 		v.mode = "list"
 	}
@@ -91,8 +93,8 @@ func (v *tasksView) setMode(mode string) {
 // refresh recomputes rows, columns and calendar buckets.
 func (v *tasksView) refresh(a *App) {
 	all := a.displayTasks()
-	v.tasks = filterTaskQuery(all, v.filter)
-	groups := vault.OrderTaskGroups(vault.GroupTasks(v.tasks, time.Now()), a.prefs.TasksListOrder)
+	v.tasks = filterTaskQueryOn(all, v.filter, a.taskClock())
+	groups := vault.OrderTaskGroups(vault.GroupTasks(v.tasks, a.taskClock()), a.prefs.TasksListOrder)
 	v.rows = nil
 	add := func(name string, tasks []vault.Task, extra string) {
 		if len(tasks) == 0 {
@@ -124,6 +126,7 @@ func (v *tasksView) refresh(a *App) {
 		v.list.cursor++
 	}
 	v.buildColumns(a)
+	v.calc().setSources(all, a.idx.events, a.taskWeekStart())
 	v.calc().rebuild(v.tasks, v.day)
 }
 
@@ -131,6 +134,12 @@ func (v *tasksView) refresh(a *App) {
 // note title, `key:value` terms match tag, note, due, priority, status,
 // folder or any custom field.
 func filterTasks(tasks []vault.Task, filter string) []vault.Task {
+	return filterTasksOn(tasks, filter, time.Now())
+}
+
+// filterTasksOn is filterTasks with "today" given, so `due:today`,
+// and `due:overdue` judge against that day.
+func filterTasksOn(tasks []vault.Task, filter string, today time.Time) []vault.Task {
 	terms := strings.Fields(strings.ToLower(strings.TrimSpace(filter)))
 	if len(terms) == 0 {
 		return tasks
@@ -139,7 +148,7 @@ func filterTasks(tasks []vault.Task, filter string) []vault.Task {
 	for _, t := range tasks {
 		ok := true
 		for _, term := range terms {
-			if !taskMatchesTerm(t, term) {
+			if !taskMatchesTerm(t, term, today) {
 				ok = false
 				break
 			}
@@ -151,7 +160,7 @@ func filterTasks(tasks []vault.Task, filter string) []vault.Task {
 	return out
 }
 
-func taskMatchesTerm(t vault.Task, term string) bool {
+func taskMatchesTerm(t vault.Task, term string, today time.Time) bool {
 	negate := false
 	if strings.HasPrefix(term, "-") && len(term) > 1 {
 		negate = true
@@ -171,15 +180,30 @@ func taskMatchesTerm(t vault.Task, term string) bool {
 		case "due":
 			switch val {
 			case "today":
-				match = t.Due == vault.TodayISO(time.Now())
+				match = t.Due == vault.TodayISO(today)
 			case "overdue":
-				match = vault.IsOverdue(t, time.Now())
+				match = vault.IsOverdue(t, today)
 			case "none":
 				match = t.Due == ""
 			case "any":
 				match = t.Due != ""
 			default:
 				match = strings.HasPrefix(t.Due, val)
+			}
+		case "session":
+			// Only the joined work session counts. A `@session:` field
+			// does not.
+			switch val {
+			case "today":
+				match = t.SessionDate == vault.TodayISO(today)
+			case "overdue":
+				match = vault.IsTaskOpen(t) && t.SessionDate != "" && t.SessionDate < vault.TodayISO(today)
+			case "none":
+				match = t.SessionDate == ""
+			case "any":
+				match = t.SessionDate != ""
+			default:
+				match = strings.HasPrefix(t.SessionDate, val)
 			}
 		case "priority", "prio", "p":
 			match = t.Priority == val || (val == "none" && t.Priority == "")
@@ -294,7 +318,7 @@ func (v *tasksView) buildColumns(a *App) {
 		for _, c := range []struct{ id, title string }{{"today", "Today"}, {"upcoming", "Upcoming"}, {"undated", "No due date"}, {"in-progress", "In progress"}, {"waiting", "Waiting"}, {"done", "Done"}} {
 			cols = append(cols, kanbanColumn{id: c.id, title: v.columnTitle(a, c.id, c.title)})
 		}
-		today := vault.TodayISO(time.Now())
+		today := vault.TodayISO(a.taskClock())
 		for _, t := range v.tasks {
 			if t.Cancelled || t.Forwarded {
 				continue
@@ -307,6 +331,7 @@ func (v *tasksView) buildColumns(a *App) {
 				id = "waiting"
 			case t.InProgress:
 				id = "in-progress"
+			case t.SessionDate != "" && t.SessionDate <= today:
 			case t.Due == "":
 				id = "undated"
 			case t.Due > today:
@@ -532,12 +557,15 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 	}
 	meta := []string{}
 	if t.Due != "" {
-		due := "due " + t.Due
+		due := "due " + withTaskClock(t.Due, t.DueTime, t.DueEnd, a.prefs.TimeFormat)
 		if vault.IsOverdue(t, time.Now()) {
 			meta = append(meta, th.Overdue.Render(due))
 		} else {
 			meta = append(meta, th.Dim.Render(due))
 		}
+	}
+	if t.SessionDate != "" {
+		meta = append(meta, th.Dim.Render("session "+withTaskClock(t.SessionDate, t.SessionTime, t.SessionEnd, a.prefs.TimeFormat)))
 	}
 	if t.Priority != "" {
 		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority))
@@ -616,40 +644,13 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 		}
 		cardRows := h - 2
 		start := 0
-		if ci == v.col && v.card*3 >= cardRows {
-			start = v.card - cardRows/3 + 1
+		if ci == v.col {
+			start = boardScrollStart(a, col.cards, v.card, cardRows)
 		}
 		v.boardStarts[ci] = start
 		for i := start; i < len(col.cards) && len(lines) < h; i++ {
-			c := col.cards[i]
 			selected := focused && ci == v.col && i == v.card
-			text := c.Content
-			if c.Kind == "file" {
-				text = c.NoteTitle
-			}
-			first := truncateCells(" "+text, colW)
-			meta := []string{}
-			if c.Due != "" {
-				if vault.IsOverdue(c, time.Now()) {
-					meta = append(meta, th.Overdue.Render(c.Due))
-				} else {
-					meta = append(meta, th.Dim.Render(c.Due))
-				}
-			}
-			if c.Priority != "" {
-				meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))
-			}
-			if c.Waiting {
-				meta = append(meta, th.Dim.Render("waiting"))
-			}
-			meta = append(meta, th.Muted.Render(truncateCells(c.NoteTitle, max(4, colW-2-lipgloss.Width(strings.Join(meta, " "))))))
-			second := " " + strings.Join(meta, " ")
-			if selected {
-				bar := th.BorderFocus.Render("▍")
-				lines = append(lines, bar+th.SelectedFocus.Render(padRight(strings.TrimPrefix(first, " "), colW-1)), bar+th.Selected.Render(padRight(stripAnsi(strings.Join(meta, " ")), colW-1)))
-			} else {
-				lines = append(lines, padRight(th.Base.Render(first), colW), padRight(second, colW))
-			}
+			lines = append(lines, boardCardLines(a, col.cards[i], colW, selected)...)
 			if len(lines) < h {
 				lines = append(lines, strings.Repeat(" ", colW))
 			}
@@ -660,6 +661,138 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 		}
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, blocks...)
+}
+
+// boardCardLines draws one card: its title, a line for a due date that has a
+// time, a line for a work session that has a time, and a line with the other
+// details. A card with no time has the title line and the details line only.
+func boardCardLines(a *App, c vault.Task, colW int, selected bool) []string {
+	th := a.theme
+	now := a.taskClock()
+	text := c.Content
+	if c.Kind == "file" {
+		text = c.NoteTitle
+	}
+	first := truncateCells(" "+text, colW)
+	meta := []string{}
+	extra := []struct {
+		text  string
+		style lipgloss.Style
+	}{}
+	if c.Due != "" {
+		style := th.Dim
+		if vault.IsOverdue(c, time.Now()) {
+			style = th.Overdue
+		}
+		if c.DueTime != "" {
+			extra = append(extra, struct {
+				text  string
+				style lipgloss.Style
+			}{compactCardDate(c.Due, c.DueTime, now, a.prefs.TimeFormat), style})
+		} else {
+			meta = append(meta, style.Render(c.Due))
+		}
+	}
+	if c.SessionDate != "" && c.SessionTime != "" {
+		extra = append(extra, struct {
+			text  string
+			style lipgloss.Style
+		}{"ses " + compactCardDate(c.SessionDate, c.SessionTime, now, a.prefs.TimeFormat), th.Dim})
+	}
+	if c.Priority != "" {
+		meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))
+	}
+	if c.Waiting {
+		meta = append(meta, th.Dim.Render("waiting"))
+	}
+	meta = append(meta, th.Muted.Render(truncateCells(c.NoteTitle, max(4, colW-2-lipgloss.Width(strings.Join(meta, " "))))))
+	second := " " + strings.Join(meta, " ")
+	// A date line is never cut. A line that is too wide for the bar loses the
+	// bar and the leading space.
+	dateLine := func(line string, style lipgloss.Style) string {
+		fits := lipgloss.Width(line) <= colW-1
+		switch {
+		case selected && fits:
+			return th.BorderFocus.Render("▍") + th.Selected.Render(padRight(line, colW-1))
+		case fits:
+			return padRight(" "+style.Render(line), colW)
+		default:
+			return padRight(style.Render(line), colW)
+		}
+	}
+	out := []string{}
+	if selected {
+		bar := th.BorderFocus.Render("▍")
+		out = append(out, bar+th.SelectedFocus.Render(padRight(strings.TrimPrefix(first, " "), colW-1)))
+	} else {
+		out = append(out, padRight(th.Base.Render(first), colW))
+	}
+	for _, e := range extra {
+		out = append(out, dateLine(e.text, e.style))
+	}
+	if selected {
+		bar := th.BorderFocus.Render("▍")
+		out = append(out, bar+th.Selected.Render(padRight(stripAnsi(strings.Join(meta, " ")), colW-1)))
+	} else {
+		out = append(out, padRight(second, colW))
+	}
+	return out
+}
+
+// boardCardHeight is the number of rows that a card takes, with the blank row
+// after it.
+func boardCardHeight(c vault.Task) int {
+	n := 3
+	if c.Due != "" && c.DueTime != "" {
+		n++
+	}
+	if c.SessionDate != "" && c.SessionTime != "" {
+		n++
+	}
+	return n
+}
+
+// boardScrollStart gives the index of the first card to draw in the column
+// with the cursor, so that the selected card stays in view.
+func boardScrollStart(a *App, cards []vault.Task, selected, rows int) int {
+	if selected < 0 || selected >= len(cards) {
+		return 0
+	}
+	off, plain := 0, true
+	for i := 0; i < selected; i++ {
+		h := boardCardHeight(cards[i])
+		off += h
+		plain = plain && h == 3
+	}
+	hsel := boardCardHeight(cards[selected])
+	plain = plain && hsel == 3
+	if off < rows && (plain || off+hsel-1 <= rows) {
+		return 0
+	}
+	start := 0
+	for start < selected && off+hsel > rows {
+		off -= boardCardHeight(cards[start])
+		start++
+	}
+	return start
+}
+
+// compactCardDate writes a date and the start time for a board card: `today
+// 21:00`, `Nov 3 14:00`, or `Jan 5 2027 09:00` for a year other than the
+// current year.
+func compactCardDate(date, clock string, now time.Time, timeFormat string) string {
+	day, err := time.ParseInLocation("2006-01-02", date, time.Local)
+	label := date
+	switch {
+	case err != nil:
+	case date == vault.TodayISO(now):
+		label = "today"
+	case day.Year() == now.Year():
+		label = day.Format("Jan 2")
+	default:
+		label = day.Format("Jan 2 2006")
+	}
+	return label + " " + formatTaskClock(clock, timeFormat)
 }
 
 // renderMonthGrid draws a month with a marker per day.
@@ -738,7 +871,8 @@ func (v *tasksView) ownsKey(a *App, k vim.Key) bool {
 	case "kanban":
 		return k.IsRune('g')
 	case "calendar":
-		return v.calc().focus == calFocusGrid && (k.IsRune('[') || k.IsRune(']'))
+		c := v.calc()
+		return c.focus == calFocusGrid && c.sub == calMonth && (k.IsRune('[') || k.IsRune(']'))
 	}
 	return false
 }
@@ -768,6 +902,10 @@ func (v *tasksView) handleKey(a *App, k vim.Key) bool {
 			v.mode = "calendar"
 		default:
 			v.mode = "list"
+		}
+		if v.mode == "calendar" {
+			v.calc().zoom = 0
+			v.openAtTime(a)
 		}
 		a.prefs.TasksViewMode = v.mode
 		v.refresh(a)
@@ -933,6 +1071,8 @@ func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
 		a.shiftTaskDue(*t, -1)
 	case k.IsRune('y'):
 		a.copyText(t.RawText)
+	case k.IsRune('W'):
+		a.scheduleSession(*t)
 	default:
 		return false
 	}
@@ -1037,6 +1177,12 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 			return
 		}
 		a.setTaskStatusColumn(t, col.id)
+		if col.id == "undated" || col.id == "upcoming" {
+			if t.SessionDate != "" && t.SessionDate <= vault.TodayISO(a.taskClock()) && !t.Checked && !t.Waiting && !t.InProgress {
+				a.notify(fmt.Sprintf("%s remains in Today. Its work session is on %s", t.Content, withTaskClock(t.SessionDate, t.SessionTime, "", a.prefs.TimeFormat)))
+				return
+			}
+		}
 	case "folder":
 		a.notify("Folder boards are read-only. Move the source note to change its folder.")
 		return
@@ -1053,16 +1199,32 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 
 func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	t := v.selectedTask()
+	if k.IsRune('z') && a.prefs.VimMode && v.calc().sub != calMonth {
+		v.calc().cycleZoom()
+		return true
+	}
+	if v.calendarJumpKey(a, k) {
+		return true
+	}
 	if v.calc().focus != calFocusGrid {
 		// With Vim off a focused task, like the list, takes no letters.
 		if !a.listKeyAllowed(k) {
 			return false
 		}
+		if v.createKey(a, k) || v.eventKey(a, k) {
+			return true
+		}
 		switch {
 		case k.IsRune(':'):
 			a.openLocalEx()
-		case k.Is("esc") || k.IsRune('h') || k.Is("left"):
-			v.calc().focus = calFocusGrid
+		case k.Is("esc"):
+			v.calc().leaveItems(v.day)
+		case v.calc().focus == calFocusItems && v.calc().sub != calMonth && (k.IsRune('h') || k.Is("left")):
+			v.paneStepDay(a, -1)
+		case v.calc().focus == calFocusItems && v.calc().sub != calMonth && (k.IsRune('l') || k.Is("right")):
+			v.paneStepDay(a, 1)
+		case k.IsRune('h') || k.Is("left"):
+			v.calc().leaveItems(v.day)
 		case k.Is("tab"):
 			v.calc().cycleFocus(v.day)
 		case k.IsRune('j') || k.Is("down"):
@@ -1070,7 +1232,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				if c.strip < len(c.undated)-1 {
 					c.strip++
 				}
-			} else if c.cursor < len(c.dayEntries(v.day))-1 {
+			} else if !c.paneBlank(v.day) && c.cursor < c.lastItem(v.day) {
 				c.cursor++
 			}
 		case k.IsRune('k') || k.Is("up"):
@@ -1078,29 +1240,18 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				if c.strip > 0 {
 					c.strip--
 				}
-			} else if c.cursor > 0 {
+			} else if !c.paneBlank(v.day) && c.cursor > 0 {
 				c.cursor--
 			}
 		case k.Is("enter") || k.IsRune('o'):
-			if t != nil {
+			if c := v.calc(); c.focus == calFocusItems && c.cursor < len(c.dayEntries(v.day)) {
+				a.openCalEntry(c.dayEntries(v.day)[c.cursor])
+			} else if t != nil {
 				a.openTaskSource(*t)
 			}
-		case a.bound(k, "nav.toggleTask"):
+		case a.bound(k, "nav.toggleTask"), a.bound(k, "nav.contextMenu"), k.IsRune('T'), k.IsRune('@'):
 			if t != nil {
-				a.toggleTask(*t)
-			}
-		case a.bound(k, "nav.contextMenu"):
-			if t != nil {
-				a.taskMenu(*t)
-			}
-		case k.IsRune('T'):
-			// As in the desktop calendar: T moves the task to today, @ picks a date.
-			if t != nil {
-				a.setTaskDue(*t, vault.TodayISO(calendarNow()))
-			}
-		case k.IsRune('@'):
-			if t != nil {
-				v.calendarDueMenu(a, *t)
+				v.taskActionKey(a, k, t)
 			}
 		default:
 			return v.taskEditKey(a, k, t)
@@ -1110,14 +1261,20 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	if !a.listKeyAllowed(k) && !k.Is("enter") && !k.Is("left") && !k.Is("right") && !k.Is("up") && !k.Is("down") {
 		return false
 	}
-	columns := v.calc().sub != calMonth
+	hourList := v.calc().sub != calMonth
+	if v.createKey(a, k) || v.eventKey(a, k) {
+		return true
+	}
 	switch {
 	case k.Is("esc"):
 		v.calc().sub = (v.calc().sub + 1) % 3
-	case columns && (k.IsRune('j') || k.Is("down")):
-		v.calc().scrollColumn(v.day, 1)
-	case columns && (k.IsRune('k') || k.Is("up")):
-		v.calc().scrollColumn(v.day, -1)
+		// The month and the columns order a day's entries differently.
+		v.calc().cursor = 0
+		v.openAtTime(a)
+	case hourList && (k.IsRune('j') || k.Is("down")):
+		v.calc().moveSlot(1)
+	case hourList && (k.IsRune('k') || k.Is("up")):
+		v.calc().moveSlot(-1)
 	case k.IsRune('h') || k.Is("left"):
 		v.selectDay(a, v.day.AddDate(0, 0, -1))
 	case k.IsRune('l') || k.Is("right"):
@@ -1130,18 +1287,34 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		v.pageDay(a, -1)
 	case a.bound(k, "nav.halfPageDown"):
 		v.pageDay(a, 1)
-	case k.IsRune('[') || k.IsRune('H'):
+	case k.IsRune('H') || (!hourList && k.IsRune('[')):
 		v.month = v.month.AddDate(0, -1, 0)
 		v.selectDay(a, v.day.AddDate(0, -1, 0))
-	case k.IsRune(']') || k.IsRune('L'):
+	case k.IsRune('L') || (!hourList && k.IsRune(']')):
 		v.month = v.month.AddDate(0, 1, 0)
 		v.selectDay(a, v.day.AddDate(0, 1, 0))
+	case hourList && k.IsRune('}'):
+		v.calc().jumpEdge(v.day, 1)
+	case hourList && k.IsRune('{'):
+		v.calc().jumpEdge(v.day, -1)
+	case hourList && k.IsRune('T') && t != nil:
+		v.taskActionKey(a, k, t)
+	case hourList && (k.IsRune('t') || k.Is("home")):
+		v.goToNow(a)
 	case k.IsRune('t') || k.IsRune('T'):
 		now := calendarNow()
 		v.month = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
 		v.selectDay(a, now)
+	case hourList && (k.Is("tab") || k.IsCtrl('n')):
+		v.stepEntry(a, 1)
+	case hourList && (k.Is("shift+tab") || k.IsCtrl('p')):
+		v.stepEntry(a, -1)
 	case k.Is("tab"):
 		return v.calc().cycleFocus(v.day)
+	case hourList && k.IsRune('a'):
+		v.focusAllDay()
+	case hourList && k.Is("enter"):
+		v.gridEnter(a)
 	case k.Is("enter"):
 		if !v.calc().cycleFocus(v.day) {
 			a.openPeriodicOn(periodic.Daily, v.day)
@@ -1151,7 +1324,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 	case k.IsRune(':'):
 		a.openLocalEx()
 	default:
-		return false
+		return hourList && t != nil && v.taskActionKey(a, k, t)
 	}
 	return true
 }
@@ -1194,6 +1367,7 @@ func (v *tasksView) selectDay(a *App, day time.Time) {
 	}
 	v.calc().cursor = 0
 	v.calc().colScroll = 0
+	v.calc().pin = ""
 }
 
 func (v *tasksView) hintTargets(a *App, p *pane) []hintTarget {
@@ -1229,13 +1403,71 @@ func (a *App) openTaskSource(t vault.Task) {
 	}
 }
 
+// taskClock is the time the task paths read: the App's clock seam, else the
+// wall clock.
+func (a *App) taskClock() time.Time {
+	if a.taskNow != nil {
+		return a.taskNow()
+	}
+	return time.Now()
+}
+
+// taskWeekStart is the first day of the week that `repeat:` rules counted in
+// weeks use, taken from the calendar preference.
+func (a *App) taskWeekStart() time.Weekday {
+	if a.prefs.CalendarWeekStart == "sunday" {
+		return time.Sunday
+	}
+	return time.Monday
+}
+
+// rollsRepeatingTasks reports whether completing a repeating task also writes
+// its next occurrence. A remote server parses the note itself, so a remote
+// target keeps the plain change and never inserts a line.
+func (a *App) rollsRepeatingTasks() bool {
+	if a.backend != nil && a.backend.Kind() == backend.KindRemote {
+		return false
+	}
+	return a.opts.Target.Kind != backend.KindRemote
+}
+
+// rollTaskBody completes or cancels t in body, writing the next occurrence of
+// a repeating task or moving a task note's dates forward. A repeating task
+// that has no next date is finished and loses its rule. A task that does
+// not repeat gets the plain change, which toggleTask applies itself; rolled
+// is false for it, so the other callers can make their own plain change.
+func (a *App) rollTaskBody(body string, t vault.Task, action vault.RollAction) (next string, rolled bool) {
+	a.rollPending = rollEffects{}
+	if plan, ok, planned := a.planTaskRoll(body, t, action); planned {
+		if !ok {
+			return body, false
+		}
+		a.rollPending = rollEffects{copies: plan.Copies, ownNote: plan.InOwnNote}
+		return plan.Body, plan.Rolled || plan.Ended
+	}
+	now, weekStart := a.taskClock(), a.taskWeekStart()
+	if t.Kind == "file" {
+		return vault.RollTaskFileInBody(body, action, now, weekStart)
+	}
+	next, inserted, ok := vault.RollTaskInBody(body, t.TaskIndex, vault.DialectApp, action, now, weekStart)
+	if !ok {
+		return body, false
+	}
+	return next, inserted > 0
+}
+
 func (a *App) toggleTask(t vault.Task) {
 	err := a.mutateNote(t.SourcePath, func(body string) (string, bool) {
+		if a.rollsRepeatingTasks() {
+			next, _ := a.rollTaskBody(body, t, vault.RollComplete)
+			return next, next != body
+		}
 		if t.Kind == "file" {
 			return vault.ToggleFileTaskInBody(body, t.Checked, time.Now()), true
 		}
 		return vault.ToggleTaskInBody(body, t.TaskIndex, vault.DialectApp)
 	})
+	a.endRoll(err)
 	if err != nil {
 		a.notifyError(err.Error())
 		return
@@ -1248,6 +1480,7 @@ func (a *App) editTaskLine(t vault.Task, edit func(body string) string) {
 		next := edit(body)
 		return next, next != body
 	})
+	a.endRoll(err)
 	if err != nil {
 		a.notifyError(err.Error())
 		return
@@ -1267,7 +1500,7 @@ func (a *App) setTaskPriority(t vault.Task, p string) {
 func (a *App) setTaskDue(t vault.Task, due string) {
 	a.editTaskLine(t, func(body string) string {
 		if t.Kind == "file" {
-			return vault.SetTaskFileField(body, "due", due)
+			return vault.SetTaskNoteDue(body, due)
 		}
 		return vault.SetTaskDue(body, t.TaskIndex, due)
 	})
@@ -1293,6 +1526,11 @@ func (a *App) setTaskWaiting(t vault.Task, waiting bool) {
 
 func (a *App) setTaskCancelled(t vault.Task, cancelled bool) {
 	a.editTaskLine(t, func(body string) string {
+		if cancelled && !t.Cancelled && a.rollsRepeatingTasks() {
+			if next, rolled := a.rollTaskBody(body, t, vault.RollCancel); rolled {
+				return next
+			}
+		}
 		if t.Kind == "file" {
 			return vault.SetTaskFileCancelled(body, cancelled)
 		}
@@ -1322,8 +1560,14 @@ func (a *App) setTaskField(t vault.Task, key, value string) {
 func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 	a.editTaskLine(t, func(body string) string {
 		checked := func(v bool) {
+			if v && !t.Checked && !t.Cancelled && a.rollsRepeatingTasks() {
+				if next, rolled := a.rollTaskBody(body, t, vault.RollComplete); rolled {
+					body = next
+					return
+				}
+			}
 			if t.Kind == "file" {
-				body = vault.SetTaskFileStatus(body, v, time.Now())
+				body = vault.SetTaskFileStatus(body, v, a.taskClock())
 			} else {
 				body = vault.SetTaskChecked(body, t.TaskIndex, v)
 			}
@@ -1348,12 +1592,12 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 		}
 		due := func(v string) {
 			if t.Kind == "file" {
-				body = vault.SetTaskFileField(body, "due", v)
+				body = vault.SetTaskNoteDue(body, v)
 			} else {
 				body = vault.SetTaskDue(body, t.TaskIndex, v)
 			}
 		}
-		now := time.Now()
+		now := a.taskClock()
 		switch status {
 		case "done":
 			checked(true)
@@ -1410,8 +1654,8 @@ func (a *App) taskPriorityMenu(t vault.Task) {
 }
 
 func (a *App) taskDuePrompt(t vault.Task) {
-	a.promptFor("Due date", t.Due, "YYYY-MM-DD, today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
-		due, err := parseDueInput(strings.TrimSpace(text), time.Now())
+	a.promptFor("Due date", t.Due, "YYYY-MM-DD[THH:MM[-HH:MM]], today, tomorrow, +3, mon..sun. Leave it empty to clear the date", func(a *App, text string) {
+		due, err := parseDueInput(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.notifyError(err.Error())
 			return
@@ -1452,6 +1696,16 @@ func parseDueInput(text string, now time.Time) (string, error) {
 	if vault.IsValidISODate(text) {
 		return text, nil
 	}
+	if date, clock, end := vault.SplitDateTime(strings.ToUpper(text)); date != "" && clock != "" {
+		value := date + "T" + clock
+		if end != "" {
+			value += "-" + end
+		}
+		// Reject a value when its end time is not valid or not later than the start.
+		if value == strings.ToUpper(text) {
+			return value, nil
+		}
+	}
 	return "", fmt.Errorf("not a date: %s", text)
 }
 
@@ -1480,17 +1734,31 @@ func (a *App) taskFieldPrompt(t vault.Task) {
 }
 
 func (a *App) taskMenu(t vault.Task) {
+	a.taskMenuFor(t, "")
+}
+
+// taskMenuFor opens the menu of a task. When refusal is not empty, the menu
+// was opened from a work session that is done or cancelled, and the keys that
+// complete or cancel the task only give that notice.
+func (a *App) taskMenuFor(t vault.Task, refusal string) {
+	complete := func(a *App) { a.toggleTask(t) }
+	cancel := func(a *App) { a.setTaskCancelled(t, !t.Cancelled) }
+	if refusal != "" {
+		complete = func(a *App) { a.notify(refusal) }
+		cancel = complete
+	}
 	a.showMenu(truncateCells(t.Content, 40), []menuItem{
 		{key: "o", label: "Open note", run: func(a *App) { a.openTaskSource(t) }},
-		{key: "x", label: "Toggle done", run: func(a *App) { a.toggleTask(t) }},
+		{key: "x", label: "Toggle done", run: complete},
 		{key: "/", label: "Toggle in progress", run: func(a *App) { a.setTaskInProgress(t, !t.InProgress) }},
 		{key: "w", label: "Toggle waiting", run: func(a *App) { a.setTaskWaiting(t, !t.Waiting) }},
-		{key: "c", label: "Toggle cancelled", run: func(a *App) { a.setTaskCancelled(t, !t.Cancelled) }},
+		{key: "c", label: "Toggle cancelled", run: cancel},
 		{sep: true},
 		{key: "p", label: "Priority", run: func(a *App) { a.taskPriorityMenu(t) }},
 		{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},
 		{key: "e", label: "Edit text", run: func(a *App) { a.taskTextPrompt(t) }},
 		{key: "s", label: "Set field", run: func(a *App) { a.taskFieldPrompt(t) }},
+		{key: "W", label: "Write a work session", run: func(a *App) { a.scheduleSession(t) }},
 		{key: "f", label: "Forward to today's daily note", run: func(a *App) { a.forwardTask(t) }},
 		{key: "y", label: "Copy line", run: func(a *App) { a.copyText(t.RawText) }},
 	})

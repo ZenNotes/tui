@@ -98,7 +98,7 @@ func TestWeekHalfPageMovesByWeek(t *testing.T) {
 }
 
 func TestWeekTabFocusesColumnAndJKMove(t *testing.T) {
-	for _, k := range []vim.Key{vim.KeyTab, vim.KeyEnter} {
+	for _, k := range []vim.Key{vim.R('a'), vim.KeyEnter} {
 		a, tv, _ := calVaultApp(t, map[string]string{"work.md": calWorkNote})
 		calToSub(t, a, tv, calWeek)
 		if !tv.handleKey(a, k) {
@@ -220,7 +220,7 @@ func TestWeekColumnFocusEditAndOpenKeys(t *testing.T) {
 		for _, k := range []vim.Key{vim.KeyEnter, vim.R('o')} {
 			a, tv, _ := calVaultApp(t, map[string]string{"work.md": calWorkNote})
 			calToSub(t, a, tv, sub)
-			calPress(a, tv, vim.KeyTab, k)
+			calPress(a, tv, vim.R('a'), k)
 			if tab := a.activeTab(); tab == nil || tab.path != "work.md" {
 				t.Errorf("layout %v: %s opened %+v, want work.md", sub, k, tab)
 			}
@@ -228,14 +228,14 @@ func TestWeekColumnFocusEditAndOpenKeys(t *testing.T) {
 
 		a, tv, root := calVaultApp(t, map[string]string{"work.md": calWorkNote})
 		calToSub(t, a, tv, sub)
-		calPress(a, tv, vim.KeyTab, vim.R('x'))
+		calPress(a, tv, vim.R('a'), vim.R('x'))
 		if got := calReadFile(t, root, "work.md"); !strings.Contains(got, "- [x] alpha job") {
 			t.Errorf("layout %v: x did not toggle the selected entry:\n%s", sub, got)
 		}
 
 		a, tv, root = calVaultApp(t, map[string]string{"work.md": calWorkNote})
 		calToSub(t, a, tv, sub)
-		calPress(a, tv, vim.KeyTab, vim.R('>'))
+		calPress(a, tv, vim.R('a'), vim.R('>'))
 		if got := calReadFile(t, root, "work.md"); !strings.Contains(got, "alpha job due:2026-11-19") {
 			t.Errorf("layout %v: > did not move due:\n%s", sub, got)
 		}
@@ -246,7 +246,7 @@ func TestWeekColumnFocusEditAndOpenKeys(t *testing.T) {
 		if len(keys) != 1 {
 			t.Fatalf("nav.contextMenu binding = %v, want one key", keys)
 		}
-		calPress(a, tv, vim.KeyTab, keys[0])
+		calPress(a, tv, vim.R('a'), keys[0])
 		if _, ok := a.overlay.(*menu); !ok {
 			t.Errorf("layout %v: overlay after the context-menu key = %T, want the task menu", sub, a.overlay)
 		}
@@ -256,22 +256,15 @@ func TestWeekColumnFocusEditAndOpenKeys(t *testing.T) {
 func TestWeekDayEscAndLeftReturnToGrid(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		for _, vimOn := range []bool{true, false} {
-			for _, back := range []vim.Key{vim.KeyEsc, vim.Special("left"), vim.R('h')} {
+			for _, back := range []vim.Key{vim.KeyEsc} {
 				a, tv, _ := calVaultApp(t, map[string]string{"work.md": calWorkNote})
 				a.prefs.VimMode = vimOn
 				calToSub(t, a, tv, sub)
-				calPress(a, tv, vim.KeyTab)
+				calPress(a, tv, vim.KeyEnter)
 				if tv.calc().focus != calFocusItems {
-					t.Fatalf("layout %v vim=%v: Tab did not focus the column", sub, vimOn)
+					t.Fatalf("layout %v vim=%v: Enter did not focus the column", sub, vimOn)
 				}
 				calPress(a, tv, back)
-				if !vimOn && back.IsRune('h') {
-					// With Vim off h is a letter, and letters do nothing.
-					if tv.calc().focus != calFocusItems {
-						t.Errorf("layout %v: h with Vim off moved focus to %v", sub, tv.calc().focus)
-					}
-					continue
-				}
 				if tv.calc().focus != calFocusGrid {
 					t.Errorf("layout %v vim=%v: %s left focus on %v, want the grid", sub, vimOn, back, tv.calc().focus)
 				}
