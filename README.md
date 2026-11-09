@@ -276,7 +276,8 @@ the calendar.
 
 #### 1. Tasks, due dates, times and ranges
 
-A task is a checkbox line in a note.
+A task is a checkbox line in a note, or a whole note that is a task (see
+[5. Task notes](#5-task-notes)).
 
 ```markdown
 - [ ] Call the dentist due:2026-11-03T14:00-15:00 !high #health
