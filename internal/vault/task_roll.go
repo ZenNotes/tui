@@ -180,10 +180,11 @@ func rollTaskLines(body string, targetIndex int, dialect TaskDialect, action Rol
 	return rollResult{next: strings.Join(out, "\n"), inserted: inserted, ok: true, rolled: true, days: plan.days}
 }
 
-// isSessionLine reports whether a line holds both a `task:` link and a
-// `when:` value, so it is a work session.
+// isSessionLine reports whether a line is a work session: an event line, by
+// the rules of ParseEvents, with a `task:` link.
 func isSessionLine(line string) bool {
-	return eventTaskRe.MatchString(line) && eventWhenRe.MatchString(line)
+	e, ok := eventFromLine(line)
+	return ok && e.TaskLink != ""
 }
 
 // isOpenState reports whether a checkbox state is open or in progress.

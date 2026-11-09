@@ -424,3 +424,35 @@ func TestEndedSeriesDropsRepeatAndRemind(t *testing.T) {
 		t.Fatalf("untick inserted = %d", inserted)
 	}
 }
+
+func TestRollCopiesChildLinesThatAreNotSessions(t *testing.T) {
+	children := []string{
+		"  - [ ] Ask Bob task:[[Spec]] when:2026-11-03",
+		"  - run `zn add task:[[x]] when:2026-11-03`",
+		"  ask them about task:review when:soon",
+	}
+	in := append([]string{"- [ ] T due:2026-11-02 @repeat:1w"}, children...)
+	got, _ := rollLines(t, in, 0, RollComplete, "2026-11-02")
+	want := []string{
+		"- [ ] T due:2026-11-09 @repeat:1w",
+		"  - [ ] Ask Bob task:[[Spec]] when:2026-11-03",
+		children[1], children[2],
+		"- [x] T due:2026-11-02",
+		"  - [-] Ask Bob task:[[Spec]] when:2026-11-03",
+		children[1], children[2],
+	}
+	equalLines(t, got, want)
+}
+
+func TestRollCopiesCRLFCheckboxChildWithSessionText(t *testing.T) {
+	in := "- [ ] T due:2026-11-02 @repeat:1w\r\n  - [ ] Sub task:[[a]] when:2026-11-03\r\n"
+	next, _, ok := RollTaskInBody(in, 0, DialectCLI, RollComplete, rollNow("2026-11-02"), time.Monday)
+	if !ok {
+		t.Fatal("RollTaskInBody reported no task")
+	}
+	want := "- [ ] T due:2026-11-09 @repeat:1w\r\n  - [ ] Sub task:[[a]] when:2026-11-03\r\n" +
+		"- [x] T due:2026-11-02\r\n  - [-] Sub task:[[a]] when:2026-11-03\r\n"
+	if next != want {
+		t.Fatalf("next = %q\nwant %q", next, want)
+	}
+}
