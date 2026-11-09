@@ -401,7 +401,7 @@ func (v *databaseView) colorsMenu(a *App, f database.Field, value string) {
 		if tok == current {
 			label += "  (current)"
 		}
-		items = append(items, menuItem{key: colorKeys[tok], label: label, run: func(a *App) { v.setOptionColor(a, f.ID, value, token) }})
+		items = append(items, menuItem{key: colorKeys[tok], label: label, styled: true, run: func(a *App) { v.setOptionColor(a, f.ID, value, token) }})
 	}
 	items = append(items, menuItem{sep: true}, menuItem{key: "n", label: "Automatic", run: func(a *App) { v.setOptionColor(a, f.ID, value, "") }})
 	a.showMenu("Color of "+value, items)

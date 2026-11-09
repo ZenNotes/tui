@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
@@ -14,6 +15,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	xansi "github.com/charmbracelet/x/ansi"
+
+	"github.com/ZenNotes/tui/internal/termsafe"
 )
 
 // The reading view can render through Glamour, the renderer behind Glow.
@@ -88,7 +91,13 @@ type mdBlock struct {
 	kind  string // front, fence, math, tex, table, list, quote, heading, hr, para, blank
 	start int    // first source line
 	end   int    // one past the last source line
+	// listChild marks a block indented under a list item that it had to leave,
+	// such as an embed's card, so its indent does not read as code.
+	listChild bool
 }
+
+// itemMarkerPattern is how a rendered list item starts.
+const itemMarkerPattern = `(?:[•◦▪\-*+]|\d+\.|\[[ xX✓✔]\]|☐|☑)`
 
 var (
 	listLineRe    = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+`)
@@ -99,7 +108,7 @@ var (
 	sgrRe         = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 	taskStateRe   = regexp.MustCompile(`(?m)^(\s*)([-*+]|\d+[.)])\s+\[([/>\-])\]\s?(.*)$`)
 	calloutLineRe = regexp.MustCompile(`(?m)^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	itemMarkerRe  = regexp.MustCompile(`^\s*(?:[•◦▪\-*+]|\d+\.|\[[ xX✓✔]\]|☐|☑)\s`)
+	itemMarkerRe  = regexp.MustCompile(`^\s*` + itemMarkerPattern + `\s`)
 	texOpenRe     = regexp.MustCompile(`^ {0,3}\\\[\s*$`)
 	texLineRe     = regexp.MustCompile(`^ {0,3}\\\[.*\\\]\s*$`)
 	texEnvRe      = regexp.MustCompile(`^ {0,3}\\begin\{((?:equation|align|gather|multline|alignat|flalign|eqnarray)\*?|tikzpicture)\}`)
@@ -158,9 +167,10 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			}
 			blocks = append(blocks, mdBlock{kind: "blank", start: i, end: j})
 			i = j
-		case fenceRe.MatchString(line):
+		case isFenceOpen(line):
+			char, n, _ := fenceOpens(line)
 			j := i + 1
-			for j < len(lines) && !fenceRe.MatchString(lines[j]) {
+			for j < len(lines) && !fenceCloses(lines[j], char, n) {
 				j++
 			}
 			if j < len(lines) {
@@ -206,22 +216,14 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			blocks = append(blocks, mdBlock{kind: "quote", start: i, end: j})
 			i = j
 		case listLineRe.MatchString(line):
-			j := i + 1
-			for j < len(lines) {
-				next := lines[j]
-				if listLineRe.MatchString(next) || (strings.HasPrefix(next, "  ") || strings.HasPrefix(next, "\t")) && !blankRe.MatchString(next) {
-					j++
-					continue
-				}
-				break
-			}
+			j := listBlockEnd(lines, i, latex)
 			blocks = append(blocks, mdBlock{kind: "list", start: i, end: j})
 			i = j
 		default:
 			j := i + 1
 			for j < len(lines) {
 				next := lines[j]
-				if blankRe.MatchString(next) || fenceRe.MatchString(next) || headingRe.MatchString(next) || tableRowRe.MatchString(next) || quoteRe.MatchString(next) || listLineRe.MatchString(next) || hrRe.MatchString(next) || mathFenceRe.MatchString(next) || mathInlineOpen.MatchString(next) || latex && texBlockEnd(lines, j) > 0 {
+				if blankRe.MatchString(next) || isFenceOpen(next) || headingRe.MatchString(next) || tableRowRe.MatchString(next) || quoteRe.MatchString(next) || listLineRe.MatchString(next) || hrRe.MatchString(next) || mathFenceRe.MatchString(next) || mathInlineOpen.MatchString(next) || latex && texBlockEnd(lines, j) > 0 {
 					break
 				}
 				j++
@@ -230,22 +232,48 @@ func splitBlocks(lines []string, latex bool) []mdBlock {
 			i = j
 		}
 	}
+	markListChildren(blocks, lines)
 	return blocks
 }
 
+// The note's own token brackets and hard spaces are hidden while a block goes
+// through Glamour, so only zn's tokens are styled or removed.
+const (
+	literalTokenOpen  = "\U0010FFF0"
+	literalTokenClose = "\U0010FFF1"
+	literalHardSpace  = "\U0010FFF2"
+)
+
+var (
+	tokenHider    = strings.NewReplacer("⟦", literalTokenOpen, "⟧", literalTokenClose, "\u00a0", literalHardSpace)
+	tokenFinisher = strings.NewReplacer("⟦", "", "⟧", "", literalTokenOpen, "⟦", literalTokenClose, "⟧", literalHardSpace, "\u00a0")
+	tableRuleRe   = regexp.MustCompile(`[│|┼]`)
+)
+
 // prepareMarkdown rewrites the pieces Glamour does not know: wikilinks and
 // embeds become tokens that are styled after rendering, callout markers
-// become bold labels.
+// become bold labels. Code is guarded first, so it stays as written; the
+// result still carries guards that postStyleRow removes.
 func prepareMarkdown(text string) string {
-	text = embedWikiRe.ReplaceAllString(text, "⟦image: $1⟧")
-	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
+	text = guardCode(text)
+	text = tokenHider.Replace(text)
+	// A placeholder is a styled token that shows its brackets, as in the zen style:
+	// the token's own go, and these are read as the note's own.
+	placeholder := "⟦" + literalTokenOpen + "image: ${1}" + literalTokenClose + "⟧"
+	text = embedWikiRe.ReplaceAllString(text, placeholder)
+	text = embedImgRe.ReplaceAllString(text, placeholder)
 	text = wikilinkAtRe.ReplaceAllStringFunc(text, func(m string) string {
 		inner := strings.TrimSuffix(strings.TrimPrefix(m, "[["), "]]")
-		target, _, alias := splitWiki(inner)
-		if alias != "" {
-			return "⟦" + alias + "⟧"
+		if wikilinkTargetOf(strings.TrimPrefix(inner, "!")).target == "" {
+			return m
 		}
-		return "⟦" + target + "⟧"
+		target, _, alias := splitWiki(inner)
+		if alias == "" {
+			alias = target
+		}
+		// Hard spaces keep the token on one row where it fits; postStyleRow
+		// puts the spaces back.
+		return "⟦" + strings.ReplaceAll(alias, " ", "\u00a0") + "⟧"
 	})
 	// Glamour only knows [ ] and [x]; the app's other states become glyphs.
 	text = taskStateRe.ReplaceAllStringFunc(text, func(m string) string {
@@ -268,7 +296,7 @@ func prepareMarkdown(text string) string {
 		}
 		return "> " + label
 	})
-	return text
+	return unguardBracket.Replace(text)
 }
 
 // activeSGR returns the color and attribute codes in force at the end of
@@ -384,7 +412,83 @@ func (a *App) postStyleRow(row string) string {
 	if strings.Contains(row, "due:") || strings.Contains(row, "!") || strings.Contains(row, "@") || strings.Contains(row, "scheduled:") {
 		row = styleInline(row, regexp.MustCompile(`(?:^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|scheduled:\S+)`), 1, lipgloss.NewStyle().Foreground(th.Purple), true)
 	}
-	return row
+	return strings.ReplaceAll(row, "\u00a0", " ")
+}
+
+// isGlamourTable says a block renders as a table: one with outer pipes, or a
+// paragraph whose second line is a separator row, which is one without them.
+func isGlamourTable(b mdBlock, lines []string) bool {
+	return b.kind == "table" || b.kind == "para" && b.end-b.start >= 2 && strings.Contains(lines[b.start+1], "|") && tableSepRe.MatchString(lines[b.start+1])
+}
+
+// postStyleTableRow is postStyleRow for a table row, where a column rule must
+// not move. Glamour measured each cell with the token's brackets in it, so a
+// cell gets those cells back at its end. A token too long for its cell wraps
+// over rows and its brackets go the same way.
+func (a *App) postStyleTableRow(row string) string {
+	var b strings.Builder
+	pad := func(cell string) {
+		b.WriteString(cell)
+		b.WriteString(strings.Repeat(" ", strings.Count(cell, "⟦")+strings.Count(cell, "⟧")))
+	}
+	tokens := wikiTokenRe.FindAllStringIndex(row, -1)
+	inToken := func(i int) bool {
+		for _, t := range tokens {
+			if t[0] <= i && i < t[1] {
+				return true // an alias may hold a pipe of its own
+			}
+		}
+		return false
+	}
+	last := 0
+	for _, rule := range tableRuleRe.FindAllStringIndex(row, -1) {
+		if inToken(rule[0]) {
+			continue
+		}
+		pad(row[last:rule[0]])
+		b.WriteString(row[rule[0]:rule[1]])
+		last = rule[1]
+	}
+	pad(row[last:])
+	return finishTokens(a.postStyleRow(b.String()))
+}
+
+// finishTokens removes the brackets of a token that wrapped over rows and
+// gives back what the note itself held.
+func finishTokens(row string) string {
+	return tokenFinisher.Replace(row)
+}
+
+// breakLongWords puts a space into every word over 2 KB. Glamour's word wrap is
+// quadratic in a word's length, and a very long word would stall the reading
+// view. No such word fits a pane, so it wraps either way, and lines stay lines.
+func breakLongWords(text string) string {
+	const limit, chunk = 2048, 1024
+	run := 0
+	for i := 0; i < len(text); i++ {
+		if text[i] == ' ' || text[i] == '\n' || text[i] == '\t' {
+			run = 0
+		} else if run++; run > limit {
+			break
+		}
+	}
+	if run <= limit {
+		return text
+	}
+	var b strings.Builder
+	b.Grow(len(text) + len(text)/chunk)
+	run = 0
+	for i, r := range text {
+		if r == ' ' || r == '\n' || r == '\t' {
+			run = 0
+		} else if run >= chunk && len(text)-i > limit-chunk {
+			b.WriteByte(' ')
+			run = 0
+		}
+		b.WriteRune(r)
+		run += utf8.RuneLen(r)
+	}
+	return b.String()
 }
 
 // renderGlamourLines renders a note block by block.
@@ -400,7 +504,7 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 		return nil, err
 	}
 	th := a.theme
-	lines := strings.Split(text, "\n")
+	lines := strings.Split(breakLongWords(termsafe.Visible(text)), "\n")
 	out := []previewLine{}
 	for _, b := range splitBlocks(lines, a.prefs.TerminalMath == "latex") {
 		embedded, ok := a.embedBlockLines(b, lines, width, fromPath)
@@ -417,8 +521,12 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 		case "blank":
 			out = append(out, previewLine{text: "", srcLine: b.start})
 		default:
-			src := strings.Join(lines[b.start:b.end], "\n")
-			rendered, err := r.Render(prepareMarkdown(src))
+			src := prepareMarkdown(blockSource(b, lines))
+			if isGlamourTable(b, lines) {
+				// A narrow column has to wrap a long alias between its words.
+				src = strings.ReplaceAll(src, "\u00a0", " ")
+			}
+			rendered, err := r.Render(src)
 			if err != nil {
 				return nil, err
 			}
@@ -437,16 +545,42 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 
 // mapRows assigns source lines to the rendered rows of a block. Lists get
 // per-item mapping by spotting item markers in the output; everything else
-// maps to the block's first line.
+// maps to the block's first line. Code holds no items or links, and its guards
+// come off only once every step has passed over a row.
 func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 	out := make([]previewLine, 0, len(rows))
+	source := blockSource(b, lines)
+	mask, codeOnly := markdownCode(source)
+	srcLines := strings.Split(source, "\n")
+	offsets := make([]int, len(srcLines))
+	for i, off := 0, 0; i < len(srcLines); i++ {
+		offsets[i] = off
+		off += len(srcLines[i]) + 1
+	}
+	linksOn := func(i int) []linkTarget {
+		off := offsets[i-b.start]
+		return linksOnLineWhere(srcLines[i-b.start], func(s, e int) bool {
+			return mask[off+s] == notCode && mask[off+e-1] == notCode
+		})
+	}
+	finish := func(row string) string {
+		switch {
+		case codeOnly:
+			row = finishTokens(row)
+		case isGlamourTable(b, lines):
+			row = a.postStyleTableRow(row)
+		default:
+			row = finishTokens(a.postStyleRow(row))
+		}
+		return unguardRow.Replace(row)
+	}
 	if b.kind != "list" {
 		links := []linkTarget{}
 		for i := b.start; i < b.end; i++ {
-			links = append(links, linksOnLine(lines[i])...)
+			links = append(links, linksOn(i)...)
 		}
 		for i, row := range rows {
-			pl := previewLine{text: a.postStyleRow(row), srcLine: b.start}
+			pl := previewLine{text: finish(row), srcLine: b.start}
 			if i == 0 {
 				pl.links = links
 			}
@@ -456,26 +590,45 @@ func (a *App) mapRows(b mdBlock, lines []string, rows []string) []previewLine {
 	}
 	items := []int{}
 	for i := b.start; i < b.end; i++ {
-		if listLineRe.MatchString(lines[i]) {
+		line := srcLines[i-b.start]
+		first := offsets[i-b.start] + len(line) - len(strings.TrimLeft(line, " \t"))
+		if listLineRe.MatchString(line) && (first >= len(mask) || mask[first] != blockCode) {
 			items = append(items, i)
 		}
 	}
-	k := -1
-	for _, row := range rows {
-		plain := xansi.Strip(row)
-		if itemMarkerRe.MatchString(plain) && k+1 < len(items) {
-			k++
+	// A row belongs to the last item marker or paragraph line it reached. Its links
+	// run up to the next line that gets a row of its own.
+	paragraphs := []int{}
+	starts := map[int]bool{}
+	for _, i := range items {
+		starts[i] = true
+	}
+	for i := b.start; i < b.end; i++ {
+		if strings.Contains(srcLines[i-b.start], guardLine) {
+			paragraphs = append(paragraphs, i)
+			starts[i] = true
 		}
-		src := b.start
-		if k >= 0 {
+	}
+	k, p, src := -1, 0, b.start
+	for _, row := range rows {
+		if itemMarkerRe.MatchString(xansi.Strip(row)) && k+1 < len(items) {
+			k++
 			src = items[k]
 		}
-		pl := previewLine{text: a.postStyleRow(row), srcLine: src}
-		if k >= 0 && (len(out) == 0 || out[len(out)-1].srcLine != src) {
-			pl.links = linksOnLine(lines[src])
-			pl.task = taskLineRe.MatchString(lines[src])
-		} else if k >= 0 {
-			pl.task = taskLineRe.MatchString(lines[src])
+		for n := strings.Count(row, guardLine); n > 0 && p < len(paragraphs); n-- {
+			src = paragraphs[p]
+			p++
+		}
+		row = strings.ReplaceAll(row, guardLine, "")
+		pl := previewLine{text: finish(row), srcLine: src}
+		if k >= 0 {
+			pl.task = taskLineRe.MatchString(lines[items[k]])
+			pl.taskBack = src - items[k]
+			if len(out) == 0 || out[len(out)-1].srcLine != src {
+				for i := src; i < b.end && (i == src || !starts[i]); i++ {
+					pl.links = append(pl.links, linksOn(i)...)
+				}
+			}
 		}
 		out = append(out, pl)
 	}
@@ -552,6 +705,10 @@ func zennotesStyle(th Theme) ansi.StyleConfig {
 	cfg.ImageText.Color = str(string(th.FgDim))
 	cfg.Code.StylePrimitive.Color = str(string(th.Green))
 	cfg.Code.StylePrimitive.BackgroundColor = nil
+	// The base style pads inline code to fill out its background; with none
+	// the padding is only stray spaces.
+	cfg.Code.StylePrimitive.Prefix = ""
+	cfg.Code.StylePrimitive.Suffix = ""
 	cfg.CodeBlock.Theme = th.ChromaStyle
 	cfg.CodeBlock.Chroma = nil
 	cfg.CodeBlock.Margin = u(2)

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Vault is one vault root on disk. Mutating operations serialize through a
@@ -31,6 +32,11 @@ type Vault struct {
 	// SyncTitleHeading rewrites a note's leading `# Heading` on rename, the
 	// desktop's "Sync title heading on rename" preference. On by default.
 	SyncTitleHeading bool
+
+	// RecordPages treats the pages in a database folder as notes everywhere, as the
+	// desktop's renderer and a server do. `zn mcp` sets it. The CLI's listings and
+	// the TUI draw a database themselves and leave it off.
+	RecordPages bool
 }
 
 // Open binds a Vault to an existing directory.
@@ -158,6 +164,34 @@ func (v *Vault) FolderRoot(folder NoteFolder) string {
 	return filepath.Join(v.root, ResolveFolderPath(folder, paths))
 }
 
+// LinkedSystemFolders lists the system folders with a symbolic link on the way
+// to them, as vault-relative paths. The walks start at a system folder whatever
+// it is, so one that is a link shows another folder's notes under its own name.
+// Anything but a real directory or nothing at all counts, so a stat that fails
+// reports the folder rather than hiding it.
+func (v *Vault) LinkedSystemFolders() []string {
+	var linked []string
+	for _, folder := range AllFolders {
+		rel, err := filepath.Rel(v.root, v.FolderRoot(folder))
+		if err != nil || rel == "." {
+			continue
+		}
+		walk := v.root
+		for _, part := range strings.Split(rel, string(filepath.Separator)) {
+			walk = filepath.Join(walk, part)
+			info, err := os.Lstat(walk)
+			if errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			if err != nil || !info.IsDir() {
+				linked = append(linked, filepath.ToSlash(rel))
+				break
+			}
+		}
+	}
+	return linked
+}
+
 // FolderDirName is a bucket's on-disk directory name; "" for the inbox in
 // root primary mode.
 func (v *Vault) FolderDirName(folder NoteFolder) string {
@@ -277,7 +311,7 @@ func (v *Vault) walkNotes(folders []NoteFolder, includeFormDirs bool, visit func
 					if strings.HasPrefix(name, ".") {
 						continue
 					}
-					if !includeFormDirs && isFormDirName(name) {
+					if !includeFormDirs && !v.RecordPages && isFormDirName(name) {
 						continue
 					}
 					if isPrimaryRoot && dir == top {
@@ -523,20 +557,38 @@ func SanitizeTitle(raw string) string {
 	if len(runes) > 200 {
 		t = string(runes[:200])
 	}
+	// 200 characters of Chinese or emoji is past the 255 bytes most filesystems allow.
+	for len(t) > maxTitleBytes {
+		_, size := utf8.DecodeLastRuneInString(t)
+		t = t[:len(t)-size]
+	}
+	t = strings.TrimSpace(t)
 	if t == "" {
 		return "Untitled"
 	}
 	return t
 }
 
-func uniqueTitle(dir, base string) string {
+// maxTitleBytes leaves room in a file name for a copy number and an extension.
+const maxTitleBytes = 200
+
+// maxUniqueAttempts bounds the search for a free name.
+const maxUniqueAttempts = 10000
+
+// uniqueTitle finds a title no note in dir uses. Any answer but "exists" or "does not
+// exist" (a name too long, a folder it cannot read) stops the search: the next number
+// would get the same answer.
+func uniqueTitle(dir, base string) (string, error) {
 	candidate := base
-	for n := 2; ; n++ {
+	for n := 2; n <= maxUniqueAttempts; n++ {
 		if _, err := os.Lstat(filepath.Join(dir, candidate+".md")); errors.Is(err, os.ErrNotExist) {
-			return candidate
+			return candidate, nil
+		} else if err != nil {
+			return "", err
 		}
 		candidate = fmt.Sprintf("%s %d", base, n)
 	}
+	return "", fmt.Errorf("no free name for %q after %d tries", base, maxUniqueAttempts)
 }
 
 // CreateNote creates a note in a bucket (and subpath), picking a
@@ -561,7 +613,10 @@ func (v *Vault) CreateNote(folder NoteFolder, title, subpath string, body *strin
 	if err := os.MkdirAll(dir, v.dirMode); err != nil {
 		return NoteMeta{}, err
 	}
-	finalTitle := uniqueTitle(dir, base)
+	finalTitle, err := uniqueTitle(dir, base)
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	abs := filepath.Join(dir, finalTitle+".md")
 	content := "# " + finalTitle + "\n\n"
 	if body != nil {
@@ -706,7 +761,10 @@ func (v *Vault) moveBetweenFolders(rel string, target NoteFolder) (NoteMeta, err
 		return NoteMeta{}, err
 	}
 	baseTitle := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
-	finalTitle := uniqueTitle(destDir, baseTitle)
+	finalTitle, err := uniqueTitle(destDir, baseTitle)
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	destAbs := filepath.Join(destDir, finalTitle+".md")
 	if err := v.relocateWithMetadata(abs, destAbs, false); err != nil {
 		return NoteMeta{}, err
@@ -762,7 +820,10 @@ func (v *Vault) MoveNote(rel string, target NoteFolder, targetSubpath string) (N
 	}
 	ext := filepath.Ext(oldAbs)
 	baseTitle := strings.TrimSuffix(filepath.Base(oldAbs), ext)
-	finalTitle := uniqueTitle(destDir, baseTitle)
+	finalTitle, err := uniqueTitle(destDir, baseTitle)
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	destAbs := filepath.Join(destDir, finalTitle+ext)
 	if err := v.relocateWithMetadata(oldAbs, destAbs, false); err != nil {
 		return NoteMeta{}, err
@@ -784,7 +845,10 @@ func (v *Vault) DuplicateNote(rel string) (NoteMeta, error) {
 	dir := filepath.Dir(abs)
 	ext := filepath.Ext(abs)
 	baseTitle := strings.TrimSuffix(filepath.Base(abs), ext)
-	copyTitle := uniqueTitle(dir, baseTitle+" copy")
+	copyTitle, err := uniqueTitle(dir, baseTitle+" copy")
+	if err != nil {
+		return NoteMeta{}, err
+	}
 	destAbs := filepath.Join(dir, copyTitle+ext)
 	body, err := os.ReadFile(abs)
 	if err != nil {
@@ -1066,8 +1130,9 @@ func (v *Vault) ScanTasksForPath(rel string, opts ParseTasksOptions) ([]Task, er
 	return ParseTasks(relPosix, title, folder, string(body), opts), nil
 }
 
-// ToggleTask flips the task named by a stable id, counted in the given
-// grammar. Exclusion-blind on purpose: an explicit id is an explicit ask.
+// ToggleTask flips the task named by an id, counted in the given grammar.
+// Finishing a recurring task writes its next occurrence and returns the finished
+// one, whose id moved down past it. Exclusion-blind on purpose: an explicit id is an explicit ask.
 // Returns (nil, nil) when the id no longer matches a task.
 func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	rel, indexStr, err := SplitTaskID(taskID)
@@ -1105,7 +1170,7 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	next, found := ToggleTaskInBody(string(body), targetIndex, dialect)
+	next, finalIndex, found := ToggleTaskRepeating(string(body), targetIndex, dialect, time.Now())
 	if !found {
 		return nil, nil
 	}
@@ -1113,7 +1178,7 @@ func (v *Vault) ToggleTask(taskID string, dialect TaskDialect) (*Task, error) {
 		return nil, err
 	}
 	for _, t := range ParseTasks(relPosix, title, folder, next, opts) {
-		if t.Kind == "" && t.TaskIndex == targetIndex {
+		if t.Kind == "" && t.TaskIndex == finalIndex {
 			return &t, nil
 		}
 	}

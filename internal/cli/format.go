@@ -9,6 +9,10 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/term"
+
+	"github.com/ZenNotes/tui/internal/termsafe"
 )
 
 // Output is where a command writes. Tests swap it for buffers.
@@ -16,6 +20,26 @@ var (
 	stdout io.Writer = os.Stdout
 	stderr io.Writer = os.Stderr
 )
+
+// useTerminalFilter wraps a stream that is a terminal so control sequences in
+// note text are not sent to it. Pipes and files keep every byte.
+func useTerminalFilter() {
+	if f, ok := stdout.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		stdout = termsafe.Writer{W: f}
+	}
+	if f, ok := stderr.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		stderr = termsafe.Writer{W: f}
+	}
+}
+
+// screenText is note text as a terminal should show it, colours included, since
+// plain output has none of its own. Other output keeps every byte.
+func screenText(s string) string {
+	if _, ok := stdout.(termsafe.Writer); ok {
+		return termsafe.Visible(s)
+	}
+	return s
+}
 
 // The default mode is terse, human-readable text; `--json` swaps in
 // machine-friendly JSON. No colors or box drawing here: the CLI composes in
@@ -47,14 +71,28 @@ func emitJSONLine(value any) {
 }
 
 func emitLine(line string) {
-	fmt.Fprintln(stdout, line)
+	fmt.Fprintln(stdout, screenText(line))
 }
 
+// emitOK prints one status line. A name in it is text on a terminal, on that one
+// row, so it cannot colour the output or pass for another line. Other output keeps
+// every byte.
 func emitOK(message string) {
-	fmt.Fprintln(stdout, message)
+	fmt.Fprintln(stdout, oneRow(stdout, message))
+}
+
+// oneRow is text for one row of a stream, cleaned when that stream is a terminal.
+func oneRow(w io.Writer, s string) string {
+	if _, ok := w.(termsafe.Writer); ok {
+		return termsafe.Line(s)
+	}
+	return s
 }
 
 func emitError(message string) {
+	if _, ok := stderr.(termsafe.Writer); ok {
+		message = termsafe.Visible(message)
+	}
 	fmt.Fprintf(stderr, "zn: %s\n", message)
 }
 

@@ -66,6 +66,9 @@ type NoteMeta struct {
 	Tags      []string   `json:"tags"`
 	Wikilinks []string   `json:"wikilinks"`
 	Excerpt   string     `json:"excerpt"`
+	// Symlink marks a note a server listed from a link rather than a file. A
+	// local listing leaves those out.
+	Symlink bool `json:"symlink,omitempty"`
 }
 
 // NoteContent is a note with its body.
@@ -86,6 +89,11 @@ type AssetMeta struct {
 	Name      string `json:"name"`
 	Size      int64  `json:"size"`
 	UpdatedAt int64  `json:"updatedAt"`
+	// Symlink marks an asset a server listed from a link rather than a file.
+	Symlink bool `json:"symlink,omitempty"`
+	// LinksNotUpdated is set by a rename or move that rewrites links: the notes it
+	// could not change, which may still use the old name.
+	LinksNotUpdated []string `json:"linksNotUpdated,omitempty"`
 }
 
 // TextSearchMatch is one matching line from a full-text search.
@@ -182,6 +190,9 @@ type ParseTasksOptions struct {
 type VaultInfo struct {
 	Root string `json:"root"`
 	Name string `json:"name"`
+	// LinkedSystemFolders are the system folders a server reports as being, or
+	// sitting under, a symbolic link. nil when it does not report them.
+	LinkedSystemFolders []string `json:"linkedSystemFolders,omitempty"`
 }
 
 // CustomTemplateFile is a raw custom template as it lives on disk.

@@ -27,7 +27,13 @@ func newLocal(root string, opts Options) (*Local, error) {
 // Vault exposes the engine for callers that need local-only operations.
 func (l *Local) Vault() *vault.Vault { return l.vault }
 
-func (l *Local) Kind() Kind    { return KindLocal }
+func (l *Local) Kind() Kind { return KindLocal }
+
+// LinkedSystemFolders names the system folders that are symbolic links.
+func (l *Local) LinkedSystemFolders(context.Context) ([]string, error) {
+	return l.vault.LinkedSystemFolders(), nil
+}
+
 func (l *Local) Label() string { return l.vault.Root() }
 func (l *Local) Root() string  { return l.vault.Root() }
 
@@ -39,7 +45,13 @@ func (l *Local) Describe(context.Context) (Description, error) {
 	}, nil
 }
 
-func (l *Local) ListNotes(context.Context) ([]vault.NoteMeta, error)   { return l.vault.ListNotes() }
+func (l *Local) ListNotes(context.Context) ([]vault.NoteMeta, error) { return l.vault.ListNotes() }
+
+// ListDatabaseDirs names the database folders, which a folder listing here leaves out.
+func (l *Local) ListDatabaseDirs(context.Context) ([]vault.FolderEntry, error) {
+	return l.vault.ListDatabaseDirs()
+}
+
 func (l *Local) ListAssets(context.Context) ([]vault.AssetMeta, error) { return l.vault.ListAssets() }
 func (l *Local) ListComments(_ context.Context, rel string) ([]vault.NoteComment, error) {
 	return l.vault.ReadNoteComments(rel)

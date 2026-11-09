@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -552,5 +553,191 @@ func TestWriteNoteRefusesInternalFilesBeforeWriting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(v.root, filepath.FromSlash(forged))); !os.IsNotExist(err) {
 		t.Fatalf("nothing may land in .zennotes: %v", err)
+	}
+}
+
+func TestNoteSectionsKnowTheirExtent(t *testing.T) {
+	body := "---\ntitle: x\n---\n# Top\n\nintro\n\n## A\n\none\n\n### A1\n\ndeep\n\n## A\n\nsame name\n\nSetext\n======\n\nlast\n"
+	sections := NoteSections(body)
+	got := []string{}
+	for _, s := range sections {
+		got = append(got, fmt.Sprintf("%d:%s:%d-%d", s.Level, s.Text, s.Line, s.End))
+	}
+	want := "1:Top:3-19 2:A:7-15 3:A1:11-15 2:A:15-19 1:Setext:19-24"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("got  %s\nwant %s", strings.Join(got, " "), want)
+	}
+	if _, err := FindSection(body, "a", -1); err == nil || !strings.Contains(err.Error(), "on lines 7, 15") {
+		t.Fatalf("an ambiguous heading: %v", err)
+	}
+	second, err := FindSection(body, "## A", 15)
+	if err != nil || SectionBody(body, second) != "same name" {
+		t.Fatalf("pick by line: %+v %v", second, err)
+	}
+	setext, err := FindSection(body, "setext", -1)
+	if err != nil || SectionBody(body, setext) != "last" {
+		t.Fatalf("a setext heading has two lines: %+v %v", setext, err)
+	}
+	if first, _ := FindSection(body, "a", 7); SectionBody(body, first) != "one\n\n### A1\n\ndeep" {
+		t.Fatalf("a section holds its subheadings: %q", SectionBody(body, first))
+	}
+}
+
+func TestEditSectionKeepsEverythingElse(t *testing.T) {
+	body := "# Top\n\n## List\n\n- a\n- b\n\n### Sub\n\ndeep\n\n## Empty\n\n## Prose\ntight\n"
+	cases := []struct {
+		name, heading string
+		mode          SectionEditMode
+		text, want    string
+	}{
+		{"a list grows by an item, above the subheading", "List", SectionAppend, "- c", "# Top\n\n## List\n\n- a\n- b\n- c\n\n### Sub\n\ndeep\n\n## Empty\n\n## Prose\ntight\n"},
+		{"prose gets its own paragraph", "Prose", SectionAppend, "more", "# Top\n\n## List\n\n- a\n- b\n\n### Sub\n\ndeep\n\n## Empty\n\n## Prose\ntight\n\nmore\n"},
+		{"an empty section gets a blank line", "Empty", SectionAppend, "now", "# Top\n\n## List\n\n- a\n- b\n\n### Sub\n\ndeep\n\n## Empty\n\nnow\n\n## Prose\ntight\n"},
+		{"prepend goes first", "List", SectionPrepend, "first", "# Top\n\n## List\n\nfirst\n\n- a\n- b\n\n### Sub\n\ndeep\n\n## Empty\n\n## Prose\ntight\n"},
+		{"replace takes the subheadings too", "List", SectionReplace, "gone\n", "# Top\n\n## List\n\ngone\n\n## Empty\n\n## Prose\ntight\n"},
+		{"replace with nothing clears it", "List", SectionReplace, "", "# Top\n\n## List\n\n## Empty\n\n## Prose\ntight\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := FindSection(body, tc.heading, -1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := EditSectionInBody(body, s, tc.mode, tc.text); got != tc.want {
+				t.Fatalf("got\n%q\nwant\n%q", got, tc.want)
+			}
+		})
+	}
+	// A heading on the last line, with no newline after it.
+	noNewline := "# Only"
+	s, _ := FindSection(noNewline, "only", -1)
+	if got := EditSectionInBody(noNewline, s, SectionAppend, "text"); got != "# Only\n\ntext\n" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestAssetRenameAndMoveRewriteOnlyWhatTheFilterAccepts(t *testing.T) {
+	v := newTestVault(t)
+	write := func(rel, body string) {
+		t.Helper()
+		abs := filepath.Join(v.Root(), filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("assets/pic.png", "png")
+	write("inbox/Shown.md", "![[pic.png]] ![[assets/pic.png|300]] [p](<../assets/pic.png>) `![[pic.png]]`\n")
+	write("inbox/Hidden.md", "![[pic.png]]\n")
+	meta, err := v.RenameAssetRewritingLinksIn("assets/pic.png", "photo.png", func(p string) bool { return p == "inbox/Shown.md" })
+	if err != nil || meta.Path != "assets/photo.png" {
+		t.Fatalf("%+v %v", meta, err)
+	}
+	read := func(rel string) string {
+		data, err := os.ReadFile(filepath.Join(v.Root(), filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	if got := read("inbox/Shown.md"); got != "![[assets/photo.png]] ![[assets/photo.png|300]] [p](<../assets/photo.png>) `![[pic.png]]`\n" {
+		t.Fatalf("%q", got)
+	}
+	if got := read("inbox/Hidden.md"); got != "![[pic.png]]\n" {
+		t.Fatalf("the filter must hold: %q", got)
+	}
+	moved, err := v.MoveAssetRewritingLinksIn("assets/photo.png", "inbox/Files", nil)
+	if err != nil || moved.Path != "inbox/Files/photo.png" {
+		t.Fatalf("%+v %v", moved, err)
+	}
+	if got := read("inbox/Shown.md"); !strings.Contains(got, "[p](<Files/photo.png>)") || !strings.Contains(got, "![[inbox/Files/photo.png|300]]") {
+		t.Fatalf("%q", got)
+	}
+	if _, err := v.MoveAsset("inbox/Files/photo.png", ".zennotes/x"); err == nil {
+		t.Fatal("assets stay out of the internal folder")
+	}
+	dup, err := v.DuplicateAsset("inbox/Files/photo.png")
+	if err != nil || dup.Path != "inbox/Files/photo copy.png" {
+		t.Fatalf("%+v %v", dup, err)
+	}
+	dup2, err := v.DuplicateAsset("inbox/Files/photo.png")
+	if err != nil || dup2.Path != "inbox/Files/photo copy 2.png" || read(dup2.Path) != "png" {
+		t.Fatalf("%+v %v", dup2, err)
+	}
+}
+
+// A Markdown link has to stay a link when its file gains a space or a
+// parenthesis, and the next rename has to find it again.
+func TestAssetRenameKeepsMarkdownLinksWorkingWithSpacedNames(t *testing.T) {
+	assets := []AssetMeta{{Path: "assets/report.pdf"}, {Path: "assets/other.pdf"}}
+	cases := []struct {
+		name, body, next, want string
+	}{
+		{"a plain link gains brackets", "[x](../assets/report.pdf)\n", "assets/new report.pdf", "[x](<../assets/new report.pdf>)\n"},
+		{"a fragment stays inside them", "[x](../assets/report.pdf#page=3)\n", "assets/new report.pdf", "[x](<../assets/new report.pdf#page=3>)\n"},
+		{"a title stays outside them", "[x](../assets/report.pdf \"T\")\n", "assets/new report.pdf", "[x](<../assets/new report.pdf> \"T\")\n"},
+		{"an image too", "![x](../assets/report.pdf)\n", "assets/new report.pdf", "![x](<../assets/new report.pdf>)\n"},
+		{"parentheses need them too", "[x](../assets/report.pdf)\n", "assets/report(1).pdf", "[x](<../assets/report(1).pdf>)\n"},
+		{"a name without either stays plain", "[x](../assets/report.pdf)\n", "assets/renamed.pdf", "[x](../assets/renamed.pdf)\n"},
+		{"brackets already there stay", "[x](<../assets/report.pdf>)\n", "assets/new report.pdf", "[x](<../assets/new report.pdf>)\n"},
+		{"a bracket in a name cannot close them", "[x](<../assets/report.pdf>)\n", "assets/a>b.pdf", "[x](<../assets/a%3Eb.pdf>)\n"},
+		{"a wikilink never takes them", "![[assets/report.pdf]]\n", "assets/new report.pdf", "![[assets/new report.pdf]]\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _ := rewriteAssetReferencesInBody(tc.body, assets, nil, "notes/n.md", "assets/report.pdf", tc.next, false)
+			if got != tc.want {
+				t.Fatalf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+
+	encoded := []AssetMeta{{Path: "assets/my report.pdf"}}
+	if got, _ := rewriteAssetReferencesInBody("[x](../assets/my%20report.pdf)\n", encoded, nil, "notes/n.md", "assets/my report.pdf", "assets/new report.pdf", false); got != "[x](../assets/new%20report.pdf)\n" {
+		t.Fatalf("an encoded link stays encoded: %q", got)
+	}
+
+	first, _ := rewriteAssetReferencesInBody("[x](../assets/report.pdf#page=3)\n", assets, nil, "notes/n.md", "assets/report.pdf", "assets/new report.pdf", false)
+	renamed := []AssetMeta{{Path: "assets/new report.pdf"}}
+	second, count := rewriteAssetReferencesInBody(first, renamed, nil, "notes/n.md", "assets/new report.pdf", "assets/final.pdf", false)
+	if count != 1 || second != "[x](<../assets/final.pdf#page=3>)\n" {
+		t.Fatalf("the next rename lost the link: %q (%d)", second, count)
+	}
+}
+
+// The CLI's listings and the TUI keep drawing a database as one thing.
+func TestRecordPagesStayOutOfListingsUnlessAsked(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inbox/Books.base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, body := range map[string]string{"inbox/note.md": "- [ ] a\n", "inbox/Books.base/Alpha.md": "- [ ] b\n", "inbox/Books.base/data.csv": "title\n"} {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	v, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := func() (notes, tasks int) {
+		ns, err := v.ListNotes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts, err := v.ScanTasks(ParseTasksOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(ns), len(ts)
+	}
+	if n, ts := count(); n != 1 || ts != 1 {
+		t.Errorf("by default: %d notes, %d tasks", n, ts)
+	}
+	v.RecordPages = true
+	if n, ts := count(); n != 2 || ts != 2 {
+		t.Errorf("with record pages: %d notes, %d tasks", n, ts)
 	}
 }

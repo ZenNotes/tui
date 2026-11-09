@@ -12,6 +12,7 @@ import (
 // so the rest of the app keeps driving buffers through the vim API.
 type modalEditor interface {
 	BlockColumns() (left, right int, toEnd bool)
+	ChangedByUndo() bool
 	ClearMessage()
 	Cmdline() (kind rune, text string, cursor int, active bool)
 	Completions() ([]string, int)
@@ -30,6 +31,7 @@ type modalEditor interface {
 	LineCount() int
 	LineRunes(i int) []rune
 	Lines() []string
+	LoadText(text string)
 	MarkSaved()
 	Message() (string, bool)
 	Mode() vim.Mode

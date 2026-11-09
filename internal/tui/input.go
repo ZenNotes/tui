@@ -70,7 +70,8 @@ func (a *App) handleKey(k vim.Key) tea.Cmd {
 	}
 	buf := a.activeBuffer()
 	editing := false
-	if buf != nil && a.focus == focusPane {
+	// A reading view has no text to type into, whatever mode its editor was left in.
+	if t := a.activeTab(); buf != nil && a.focus == focusPane && t.mode != modePreview {
 		m := buf.ed.Mode()
 		editing = m == vim.ModeInsert || m == vim.ModeReplace || m == vim.ModeCmdline || !a.prefs.VimMode
 	}
@@ -267,7 +268,12 @@ func (a *App) refreshIndex() {
 }
 
 func (a *App) quit() {
-	if err := a.saveAllBuffers(); err != nil {
+	if !a.prefs.Autosave {
+		if a.hasUnsaved() {
+			a.notifyError(errUnsavedEdits.Error())
+			return
+		}
+	} else if err := a.saveAllBuffers(); err != nil {
 		a.notifyError("Save failed: " + err.Error())
 		return
 	}
@@ -679,6 +685,11 @@ func (a *App) setPaneMode(mode paneMode) {
 	}
 	t.mode = mode
 	t.frontmatterPending = false
+	// The reading view has no command line to type into or to draw, and one left open
+	// would catch the first Esc.
+	if buf := a.buffers[t.path]; mode == modePreview && buf != nil && buf.ed.Mode() == vim.ModeCmdline {
+		buf.ed.HandleKey(vim.KeyEsc)
+	}
 	if a.prefs.RetainViewMode {
 		a.prefs.DefaultPaneMode = string(mode)
 	}
@@ -774,6 +785,11 @@ func (a *App) closeBufferIfUnusedExcept(path string, keep *pane) {
 		}
 	}
 	if buf, ok := a.buffers[path]; ok {
+		// With autosave off the edits stay in memory: reopening the note finds
+		// them, and quitting still asks.
+		if !a.prefs.Autosave && buf.dirty() {
+			return
+		}
 		_ = a.saveBuffer(buf)
 		delete(a.buffers, path)
 	}

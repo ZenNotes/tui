@@ -27,6 +27,9 @@ type Description struct {
 // Backend is the set of operations every command is written against.
 type Backend interface {
 	Kind() Kind
+	// LinkedSystemFolders names the system folders with a symbolic link on the
+	// way to them, which neither the listings nor a read show.
+	LinkedSystemFolders(ctx context.Context) ([]string, error)
 	// Label names the vault in output and errors.
 	Label() string
 	// Root is the vault directory on disk; empty for a server.

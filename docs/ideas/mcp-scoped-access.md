@@ -280,9 +280,11 @@ and the check runs on that:
    remote alike: exact path first, else the single listed path equal under case and accent
    folding, so the vault's spelling is what the scope checks and what the backend opens. The
    listings walk real directories and regular files only (`walkNotes` and `listNotes` read
-   `Dirent` types; the server's walker does the same), so a path through a symlink, a case
-   variant of a hidden folder, a hidden directory or an unexpanded Windows 8.3 name simply
-   has no match, and G5 to G7 close. A path the client was never shown does not exist for it.
+   `Dirent` types), so a path through a symlink, a case variant of a hidden folder, a hidden
+   directory or an unexpanded Windows 8.3 name simply has no match, and G5 to G7 close. A path
+   the client was never shown does not exist for it. A server's walker skips links to folders
+   but lists links to notes and assets, marking them `symlink`, and the scoped view drops those
+   (section 14).
    (The design first had a per-segment `Lstat` walk for local vaults; one rule for both
    backends is simpler and needs no platform cases. The cost is a listing per call, which
    most tools already pay.)
@@ -431,8 +433,8 @@ folder. Renames outside ZenNotes are caught by the stale-deny rule (4.5).
   `--profile` clients see nothing (4.5).
 - Token handling (#830, Settings → MCP → Server token) is unchanged: the MCP process holds a
   full token, which the client never sees.
-- Later, with the parked remote connector (znserver `/mcp`, OAuth): the server enforces the
-  same profiles natively, and a scoped server token could bind a profile to the token so the
+- Later, with the parked remote connector (OAuth, on the `/mcp` route described in
+  [mcp-http-transport.md](mcp-http-transport.md)): the server enforces the same profiles natively, and a scoped server token could bind a profile to the token so the
   HTTP API itself refuses out-of-scope paths. Not needed for #21.
 
 ## 9. UI and docs
@@ -623,10 +625,44 @@ as the link fix and the contract test in zn 0.13.0:
 Found while building it, and fixed in both engines: a destination segment the listings do
 not know was taken as new. The listings skip symbolic links, so under `--allow-path Projects`,
 `create_note`, `create_folder`, `move_note` and `rename_folder` into `Projects/inner` (a link
-to the hidden `Journal`) wrote into `Journal`. On a vault on this machine, the first segment
-of a destination the listings do not know must now have nothing on disk (anything but "does
-not exist" refuses, with the usual refusal); fixture case `nothing-is-created-through-a-link`.
-A server's vault is left to the server's own walker.
+to the hidden `Journal`) wrote into `Journal`. The first segment of a destination the listings
+do not know must now have nothing there (anything but "does not exist" refuses, with the usual
+refusal); fixture case `nothing-is-created-through-a-link`.
+
+This first shipped for a vault on this machine only, on the assumption that a server's walker
+covered the rest. It did not: the walker skips links, and the server's write path followed the
+ones that stay inside the vault. Run against a real server for the first time, the fixture
+found the same writes. A server is now covered this way:
+
+- zn looks before it writes. The server has no route that says what is at a path, but its read
+  does: 404 for nothing there, 400 for a link to a folder or out of the vault. Only a 404 counts
+  as free.
+- The server refuses too (`SafeDestination` in znserver's `internal/vault`). A place a client
+  names to create or move something may not go through a symbolic link, inside the vault or not,
+  and neither may an upload through a linked assets folder. A new file does not land on a dangling
+  link: that name counts as taken, which a read cannot show zn. This covers the moment between
+  zn's look and its write, and clients that do not look. Routes that take a note's own path (write,
+  rename, duplicate) still follow links; a scoped zn only sends paths it found in the listings.
+- Links to notes and assets. The server lists these, and reads and writes follow them, so
+  `Projects/alias.md -> ../Journal/Diary.md` made a hidden note readable and writable under
+  `--allow-path Projects`. Links to notes are a supported way to file a note in two places, so
+  the server keeps following them and marks them `symlink` in its listings, and the scoped view
+  drops what is marked, as a local listing does. A scope with no paths keeps them, having nothing
+  to hide.
+- A system folder that is a link, such as `quick -> Journal`. On a vault on this machine the
+  walks start at a system folder whatever it is, so `--deny-path Journal` still showed
+  `quick/Diary.md` and let it be read and overwritten, and on both kinds of vault creates,
+  archiving and trashing landed in `Journal`. Neither listing nor read can show this on a server,
+  so `GET /api/vault` names them in `linkedSystemFolders`, behind the token, as capabilities need
+  none. A path scope hides such a folder, whatever its allow entries say, and refuses archiving
+  or trashing into it.
+- An older server does not mark links, so a limit could not hold there. The server reports
+  `supportsSymlinkMarks`, and zn with a path scope shares nothing with a server that does not, or
+  that cannot be asked. An old zn on a new server is still exposed to linked notes, so both need
+  the update.
+
+The fixture now runs against a real server in CI (`docs/shared-contracts.md`), with the two
+calls that differ on purpose named in the test.
 
 Engine differences that remain, left out of the fixture on purpose:
 
@@ -649,3 +685,66 @@ Verified: both engines pass the fixture; the stdio parity probe (`probe_scoped.p
 session notes) gives identical transcripts for every scoped flag set on Go (fbaf94c plus the
 fix, with and without Phase 0 merged in) and on both TS entries, apart from the differences
 above. Not in 1b: profiles and the Settings UI (Phase 2).
+
+## 15. Attachment and work tools (ZenNotes/tui#34)
+
+The Go server gained eleven tools, 45 in all. The desktop's server has not mirrored them
+(see `docs/shared-contracts.md`), so this section describes zn. The rules are the ones above.
+
+| Tool | Needs | Under a scope |
+|------|-------|---------------|
+| `read_asset` | read | A visible listed asset, else `Asset not found: <path as given>`, the same bytes for hidden and missing. Case and accent variants resolve through the listing. A path-restricted client on a server is refused file contents. |
+| `list_assets {deleted: true}` | read | Entries whose original path is visible. |
+| `upload_asset` | write | Writes only to the vault's assets folder, so `assets` must be visible (and on a local vault a real directory). Otherwise it refuses with one message. |
+| `rename_asset` | write | Source and new path visible. Links are rewritten in visible notes only on a local vault. A server rewrites every note, so a path-restricted client is refused there, as with `rename_note` (decision 6). |
+| `move_asset` | write | Source and destination visible, every existing segment of a local destination a real directory, same link rule. The final path must be visible too, numbered name included, since a deny entry can name a file inside a shared folder. A folder that exists must be a name its parent lists. Never into the trash, `.zennotes`, a `.base` folder or a hidden name, scoped or not. |
+| `duplicate_asset`, `delete_asset` | write | Source visible. A delete is soft. `duplicate_asset` makes a readable copy, so a path-restricted client on a server is refused it, as with `read_asset`. |
+| `restore_asset` | write | Only an entry `list_assets {deleted: true}` would show, else `Deleted asset not found: <token>`. |
+| `note_sections`, `daily_note` | read | Go through `ReadNote` and `ListNotes`, so a hidden note answers as missing. `daily_note` changes nothing; creating goes through `create_note` and its destination rules. A path-restricted client gets no template in `createWith`, because a template is not filed under anything a scope can name, and `cannotCreate` in place of `createWith` when the note's folder is hidden from it. |
+| `update_task`, `edit_section` | write | Composed from `ReadNote` and `WriteNote`, so the note must be visible; recorded for agent edit review. |
+
+Every asset tool finds its file in the asset listing even with full access, so nothing but an
+asset can be named (`.zennotes/vault.json` and a note are both "not found"), and none of them
+changes a loose CSV database or its schema file. That check reads the whole listing, because a
+scope can share the CSV and hide its schema file. `list_assets` leaves out a schema file and the
+`.csv.bak` backups, as the app does.
+
+A rename refuses a name holding `# ? | [ ] ^ % : * " < >`, a backtick or a control character, or ending in a dot: each
+is link syntax or does not survive on every system, so every link to the file would stop resolving
+while the rename reported success. An upload's name
+is cleaned instead, as the app's import does. A note a rewrite could not read or write comes back
+in `linksNotUpdated`, on a local vault, since a note that cannot be read may still use the old name. A server rewrites links itself and does not say.
+
+`update_task` and `toggle_task` finish a recurring task the way the app does, through
+`internal/vault/task_recurrence.go`, a port of `task-recurrence.ts` that runs the same case table.
+The TUI's own task toggles and the editor do not use it yet. Task ids count position, so they
+move when the note above them changes; `update_task` takes `expectedText` to catch that.
+
+Purge and empty-deleted are not exposed, under any scope. A soft delete already does the job an
+assistant has; purging cannot be undone and frees only disk space, which is the user's call and
+has its own control in the app's Trash. `empty_trash` and `delete_note` predate this and stay.
+
+An entry may now name an attachment or a folder holding one: `--deny-path assets/secret` used to
+count as stale and share nothing, and `--allow-path assets` was reported under `missingAllow`.
+Assets are listed for this only when an entry is not found among the notes and folders, so a
+scope that names only folders costs no extra request. The three attachment folder names always
+count as known, so `--deny-path assets` holds before the folder exists.
+
+A rename or move that gives a file a space or a parenthesis puts a plain Markdown link in angle
+brackets on a local vault, or it would stop being a link. `asset_link_rename.go` goes beyond
+znserver's and the desktop's copies here until they get the same fix, so on a server these links
+still break.
+
+A rewrite under a path scope writes a link's full path where a bare name would do, since whether a
+bare name is still unique depends on files the client cannot see. A wikilink cannot hold a path
+with `# ? | [ ] ^` in it, so there it keeps the bare name, or stays as it was and the note comes back
+in `linksNotUpdated`.
+
+Tool calls are served concurrently and most writes read a note first, so writes take turns: one
+turn per server, not per note, because a rename rewrites any number of notes and on a server does
+so where no lock in zn can reach. This holds within one `zn mcp` process. Two processes on one
+vault, or the app editing while an assistant does, can still overwrite each other.
+
+Leaks, in the terms of section 6: a write can show that a name is already taken in a folder the
+client can write to, the same one bit as the name collisions above. Keep private files in a folder
+of their own, and hide the folder.

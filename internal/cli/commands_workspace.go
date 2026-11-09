@@ -29,7 +29,7 @@ func stdinIsTTY() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 // readLine prompts on stderr and reads one line from stdin.
 func readLine(prompt, fallback string) (string, error) {
 	if fallback != "" {
-		fmt.Fprintf(stderr, "%s [%s]: ", prompt, fallback)
+		fmt.Fprint(stderr, oneRow(stderr, prompt+" ["+fallback+"]: "))
 	} else {
 		fmt.Fprintf(stderr, "%s: ", prompt)
 	}

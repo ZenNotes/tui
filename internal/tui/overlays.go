@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/search"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -98,13 +99,13 @@ func (t *textInput) handle(k vim.Key) bool {
 // render draws the text padded to width. The cursor is not drawn: the
 // terminal's own cursor is placed at cell instead.
 func (t *textInput) render(width int) string {
-	return padRight(string(t.runes), width)
+	return padRight(termsafe.Line(string(t.runes)), width)
 }
 
 // cell is the column, within a field width cells wide, of the next typed
 // character; a cursor past the field's right edge stays on its last cell.
 func (t *textInput) cell(width int) int {
-	return min(cellWidth(string(t.runes[:t.cursor])), max(width-1, 0))
+	return min(cellWidth(termsafe.Line(string(t.runes[:t.cursor]))), max(width-1, 0))
 }
 
 // cursorField is an overlay with its own text field. fieldCursor is the
@@ -291,11 +292,12 @@ func (p *palette) render(a *App, w, h int) string {
 	if p.cursor >= p.scroll+rows {
 		p.scroll = p.cursor - rows + 1
 	}
-	lines := []string{th.OverlayTitle.Render(p.title)}
+	title := termsafe.Line(p.title)
+	lines := []string{th.OverlayTitle.Render(title)}
 	prompt := "› "
 	fieldW := inner - lipgloss.Width(prompt)
 	lines = append(lines, prompt+p.input.render(fieldW))
-	p.cur = a.fieldAt(lipgloss.Width(prompt)+p.input.cell(fieldW), titleRows(p.title, inner))
+	p.cur = a.fieldAt(lipgloss.Width(prompt)+p.input.cell(fieldW), titleRows(title, inner))
 	if p.input.String() == "" && p.placeholder != "" {
 		lines[len(lines)-1] = prompt + " " + th.Muted.Render(padRight(p.placeholder, inner-3))
 	}
@@ -397,14 +399,15 @@ func (p *prompt) render(a *App, w, h int) string {
 	th := a.theme
 	width := min(w-4, max(40, w/2))
 	inner := width - 2
+	title := termsafe.Line(p.title)
 	field := p.input.render(inner)
-	p.cur = a.fieldAt(p.input.cell(inner), titleRows(p.title, inner))
+	p.cur = a.fieldAt(p.input.cell(inner), titleRows(title, inner))
 	if p.masked {
 		dots := strings.Repeat("•", len(p.input.runes))
 		field = padRight(dots+" ", inner)
-		p.cur = a.fieldAt(min(len(p.input.runes), max(inner-1, 0)), titleRows(p.title, inner))
+		p.cur = a.fieldAt(min(len(p.input.runes), max(inner-1, 0)), titleRows(title, inner))
 	}
-	lines := []string{th.OverlayTitle.Render(p.title), field}
+	lines := []string{th.OverlayTitle.Render(title), field}
 	if p.help != "" {
 		lines = append(lines, th.Muted.Render(truncateCells(p.help, inner)))
 	}
@@ -420,7 +423,7 @@ type confirmDialog struct {
 }
 
 func (a *App) confirm(message string, onYes func()) {
-	a.overlay = &confirmDialog{message: message, onYes: onYes}
+	a.overlay = &confirmDialog{message: termsafe.Visible(message), onYes: onYes}
 }
 
 func (c *confirmDialog) handleKey(a *App, k vim.Key) {
@@ -448,8 +451,10 @@ func (c *confirmDialog) render(a *App, w, h int) string {
 type menuItem struct {
 	key   string
 	label string
-	run   func(a *App)
-	sep   bool
+	// styled says the label carries its own colours and holds no name.
+	styled bool
+	run    func(a *App)
+	sep    bool
 }
 
 type menu struct {
@@ -470,7 +475,12 @@ func (a *App) showMenu(title string, items []menuItem) {
 	if anchor == nil {
 		anchor = a.selectionAnchor()
 	}
-	a.overlay = &menu{title: title, items: items, anchor: anchor}
+	for i, it := range items {
+		if !it.styled {
+			items[i].label = termsafe.Line(it.label)
+		}
+	}
+	a.overlay = &menu{title: termsafe.Line(title), items: items, anchor: anchor}
 }
 
 func (m *menu) handleKey(a *App, k vim.Key) {

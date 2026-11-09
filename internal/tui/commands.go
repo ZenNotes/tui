@@ -99,6 +99,7 @@ func (a *App) commandTable() []command {
 		{names: []string{"qa", "qall", "quitall"}, title: "Quit ZenNotes", hint: ":qa", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
 			if cmd.Bang {
 				a.quitting = true
+				a.discardUnsaved = !a.prefs.Autosave
 				return nil
 			}
 			a.quit()
@@ -112,6 +113,9 @@ func (a *App) commandTable() []command {
 			return nil
 		}},
 		{names: []string{"wqa", "xa", "wqall", "xall"}, title: "Save all and quit", palette: true, run: func(a *App, _ *noteBuffer, _ vim.ExCommand) error {
+			if err := a.saveAllBuffers(); err != nil {
+				return err
+			}
 			a.quit()
 			return nil
 		}},
@@ -916,7 +920,7 @@ func (a *App) saveBufferReport(buf *noteBuffer) error {
 	if buf == nil {
 		return nil
 	}
-	if err := a.saveBuffer(buf); err != nil {
+	if err := a.writeBuffer(buf); err != nil {
 		return err
 	}
 	buf.ed.ClearMessage()
@@ -955,12 +959,16 @@ func (a *App) closeActiveTabCommand(force bool) error {
 		return nil
 	}
 	if buf := a.activeBuffer(); buf != nil && !force {
-		if err := a.saveBuffer(buf); err != nil {
+		if !a.prefs.Autosave {
+			if a.lastViewOfUnsaved(buf) {
+				return errUnsavedEdits
+			}
+		} else if err := a.saveBuffer(buf); err != nil {
 			return err
 		}
 	}
 	lastTab := len(p.tabs) == 1 && len(a.panes.leaves()) == 1
-	a.closeTab(p, p.active)
+	a.closeTabWith(p, p.active, force)
 	if lastTab {
 		a.quit()
 	}

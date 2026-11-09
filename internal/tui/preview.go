@@ -3,20 +3,33 @@ package tui
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vim"
 )
+
+// mdLinkRenderRe is what reading mode draws as a Markdown link. Stricter than
+// the editor's mdLinkAtRe, as the desktop's renderer is stricter than its `gd`:
+// a destination holding spaces needs angle brackets to be a link at all.
+var mdLinkRenderRe = regexp.MustCompile(`!?\[([^\]]*)\]\((<[^>]+>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\)`)
 
 // previewState is the reading-mode state of a tab.
 type previewState struct {
 	scroll     int
 	cursor     int
 	followLine int
-	cache      *previewCache
+	// rows is the pane's height at the last draw.
+	rows int
+	// jumpLine is a source line the next draw brings to the top, for a link
+	// followed to an anchor; jumpPending says one is waiting.
+	jumpLine    int
+	jumpPending bool
+	cache       *previewCache
 }
 
 type previewCache struct {
@@ -33,7 +46,16 @@ type previewLine struct {
 	srcLine int
 	links   []linkTarget
 	task    bool
+	// taskBack is how many source lines above srcLine the row's task sits, for a
+	// paragraph under a task item.
+	taskBack int
 }
+
+// taskLine is the source line of the task a row toggles.
+func (l previewLine) taskLine() int { return l.srcLine - l.taskBack }
+
+// editorLine is the row's source line as GotoLine counts them, from one.
+func (l previewLine) editorLine() int { return l.srcLine + 1 }
 
 type styledRune struct {
 	r     rune
@@ -42,12 +64,15 @@ type styledRune struct {
 }
 
 var (
-	tableRowRe   = regexp.MustCompile(`^\s*\|.*\|\s*$`)
-	tableSepRe   = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
-	calloutRe    = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
-	embedWikiRe  = regexp.MustCompile(`!\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
+	tableRowRe = regexp.MustCompile(`^\s*\|.*\|\s*$`)
+	tableSepRe = regexp.MustCompile(`^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$`)
+	calloutRe  = regexp.MustCompile(`^\s{0,3}>\s*\[!(\w+)\]\s*(.*)$`)
+	// embedWikiRe's target starts with something other than the `\` of a `\|`
+	// separator, so `![[\|d]]`, which names nothing, is not an embed.
+	embedWikiRe  = regexp.MustCompile(`!\[\[((?:[^\]|\\]|\\[^\]|])[^\]|]*?)(?:\\?\|[^\]]*)?\]\]`)
 	embedImgRe   = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
 	highlightRe  = regexp.MustCompile(`==[^=\n]+==`)
+	strongEmphRe = regexp.MustCompile(`\*\*\*[^*\n]+\*\*\*|___[^_\n]+___`)
 	mathInlineRe = regexp.MustCompile(`\$[^$\n]+\$`)
 	orderedRe    = regexp.MustCompile(`^(\s*)(\d+)[.)]\s+(.*)$`)
 	bulletRe     = regexp.MustCompile(`^(\s*)[-*+]\s+(.*)$`)
@@ -56,12 +81,16 @@ var (
 
 // renderPreviewLines converts markdown to reading rows at a width.
 func (a *App) renderPreviewLines(text string, width int) []previewLine {
+	text = termsafe.Visible(text)
 	th := a.theme
 	lines := strings.Split(text, "\n")
 	out := []previewLine{}
-	inFence := false
+	fenceChar, fenceLen := byte(0), 0
 	inFront := len(lines) > 0 && lines[0] == "---"
 	frontDone := false
+	// Indented code cannot interrupt a paragraph, a quote's included, and under a list
+	// item the indent says the line belongs to the item.
+	afterParagraph, inList := false, false
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
@@ -79,28 +108,43 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			i++
 			continue
 		}
-		if fenceRe.MatchString(line) {
-			inFence = !inFence
-			lang := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "`~"))
-			if inFence && lang != "" {
-				out = append(out, previewLine{text: th.Muted.Render("┌ " + lang), srcLine: i})
-			} else {
-				out = append(out, previewLine{text: th.Muted.Render(map[bool]string{true: "┌", false: "└"}[inFence]), srcLine: i})
+		if fenceChar == 0 {
+			if char, n, ok := fenceOpens(line); ok {
+				fenceChar, fenceLen = char, n
+				opening := "┌"
+				if lang := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "`~")); lang != "" {
+					opening += " " + lang
+				}
+				out = append(out, previewLine{text: th.Muted.Render(opening), srcLine: i})
+				i++
+				continue
 			}
+		} else {
+			if fenceCloses(line, fenceChar, fenceLen) {
+				fenceChar = 0
+				out = append(out, previewLine{text: th.Muted.Render("└"), srcLine: i})
+				i++
+				continue
+			}
+			out = append(out, zenCodeRows(th, line, i, width)...)
 			i++
 			continue
 		}
-		if inFence {
-			for _, seg := range wrapLine([]rune(strings.ReplaceAll(line, "\t", "    ")), max(1, width-2)) {
-				out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string([]rune(strings.ReplaceAll(line, "\t", "    "))[seg.start:seg.end])), srcLine: i})
-			}
-			i++
-			continue
-		}
+		wasParagraph := afterParagraph
+		afterParagraph = false
 		if strings.TrimSpace(line) == "" {
 			out = append(out, previewLine{text: "", srcLine: i})
 			i++
 			continue
+		}
+		if code, ok := strings.CutPrefix(strings.Replace(line, "\t", "    ", 1), "    "); ok {
+			if !wasParagraph && !inList {
+				out = append(out, zenCodeRows(th, code, i, width)...)
+				i++
+				continue
+			}
+		} else {
+			inList = listLineRe.MatchString(line)
 		}
 		if hrRe.MatchString(line) {
 			out = append(out, previewLine{text: th.Muted.Render(strings.Repeat("─", width)), srcLine: i})
@@ -126,10 +170,12 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			i++
 			continue
 		}
-		if tableRowRe.MatchString(line) {
+		// A table's separator row says its rows need no outer pipes.
+		hasSep := strings.Contains(line, "|") && i+1 < len(lines) && strings.Contains(lines[i+1], "|") && tableSepRe.MatchString(lines[i+1])
+		if tableRowRe.MatchString(line) || hasSep {
 			j := i
 			block := []string{}
-			for j < len(lines) && tableRowRe.MatchString(lines[j]) {
+			for j < len(lines) && (tableRowRe.MatchString(lines[j]) || hasSep && strings.Contains(lines[j], "|")) {
 				block = append(block, lines[j])
 				j++
 			}
@@ -139,11 +185,19 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 		}
 		if m := calloutRe.FindStringSubmatch(line); m != nil {
 			kind := strings.ToUpper(m[1])
-			title := m[2]
-			if title == "" {
-				title = kind
+			bar := th.Quote.Foreground(th.Blue).Render("▍ ")
+			titleStyle := th.Bold.Foreground(th.Blue)
+			if m[2] == "" {
+				out = append(out, previewLine{text: bar + titleStyle.Render(kind), srcLine: i})
+				afterParagraph = true
+				i++
+				continue
 			}
-			out = append(out, previewLine{text: th.Quote.Foreground(th.Blue).Render("▍ ") + th.Bold.Foreground(th.Blue).Render(kind+" · "+title), srcLine: i})
+			// A title is inline text like any other, so its embeds and code render.
+			label := kind + " · "
+			rows := a.paragraph(m[2], width-2-cellWidth(label), func(class int) lipgloss.Style { return titleStyle }, bar+titleStyle.Render(label), bar+strings.Repeat(" ", cellWidth(label)), i)
+			out = append(out, rows...)
+			afterParagraph = true
 			i++
 			continue
 		}
@@ -151,6 +205,7 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 			content := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), ">"))
 			rows := a.paragraph(content, width-2, func(class int) lipgloss.Style { return th.Quote }, th.Quote.Render("▍ "), th.Quote.Render("▍ "), i)
 			out = append(out, rows...)
+			afterParagraph = true
 			i++
 			continue
 		}
@@ -202,7 +257,18 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 		}
 		rows := a.paragraph(line, width, nil, "", "", i)
 		out = append(out, rows...)
+		afterParagraph = true
 		i++
+	}
+	return out
+}
+
+// zenCodeRows draws one line of a code block in the zen style.
+func zenCodeRows(th Theme, line string, srcLine, width int) []previewLine {
+	runes := []rune(strings.ReplaceAll(line, "\t", "    "))
+	out := []previewLine{}
+	for _, seg := range wrapLine(runes, max(1, width-2)) {
+		out = append(out, previewLine{text: th.Muted.Render("│ ") + th.Code.Render(string(runes[seg.start:seg.end])), srcLine: srcLine})
 	}
 	return out
 }
@@ -217,8 +283,10 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		}
 	}
 	// Embeds become placeholders first.
-	text = embedWikiRe.ReplaceAllString(text, "⟦image: $1⟧")
-	text = embedImgRe.ReplaceAllString(text, "⟦image: $1⟧")
+	text = embedPlaceholders(text, embedWikiRe)
+	text = embedPlaceholders(text, embedImgRe)
+	codes := inlineCodeSpans(text)
+	scan := blankCodeSyntax(text, codes)
 	spans := []inlineSpan{}
 	taken := make([]bool, len(text))
 	add := func(m []int, class int, display string, link int) {
@@ -232,29 +300,71 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		}
 		spans = append(spans, inlineSpan{m[0], m[1], class, display, link})
 	}
-	for _, m := range inlineCodeRe.FindAllStringIndex(text, -1) {
-		add(m, stCode, text[m[0]+1:m[1]-1], -1)
+	// around marks syntax on either side of what is already taken: its markers show
+	// nothing, and the text between takes class. Code or a link inside `**` keeps its
+	// own look rather than leave the stars on screen.
+	around := func(m []int, marker, class int) {
+		from, to := m[0]+marker, m[1]-marker
+		if slices.Contains(taken[m[0]:from], true) || slices.Contains(taken[to:m[1]], true) {
+			return
+		}
+		// A marker with a space on its inner side is a literal character: `a * b * c`.
+		if text[from] == ' ' || text[to-1] == ' ' {
+			return
+		}
+		add([]int{m[0], from}, class, "", -1)
+		add([]int{to, m[1]}, class, "", -1)
+		for i := from; i < to; {
+			if taken[i] {
+				i++
+				continue
+			}
+			j := i
+			for j < to && !taken[j] {
+				j++
+			}
+			add([]int{i, j}, class, text[i:j], -1)
+			i = j
+		}
 	}
-	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(text, -1) {
+	for _, c := range codes {
+		add([]int{c.start, c.end}, c.class, c.text, c.link)
+	}
+	for _, m := range wikilinkAtRe.FindAllSubmatchIndex(scan, -1) {
 		content := text[m[2]:m[3]]
+		link := wikilinkTargetOf(content)
+		if link.target == "" {
+			continue
+		}
 		target, _, alias := splitWiki(content)
 		display := target
 		if alias != "" {
-			display = alias
+			display = strings.ReplaceAll(alias, `\|`, "|")
 		}
-		links = append(links, linkTarget{kind: "wikilink", target: target, alias: alias})
+		links = append(links, link)
 		add(m[0:2], stLink, display, len(links)-1)
 	}
-	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(text, -1) {
+	for _, m := range mdLinkRenderRe.FindAllSubmatchIndex(scan, -1) {
 		label := text[m[2]:m[3]]
-		target := text[m[4]:m[5]]
-		kind := "path"
-		if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
-			kind = "url"
+		link := mdLinkTargetOf(label, text[m[4]:m[5]])
+		links = append(links, link)
+		// A label's code and emphasis are part of the link's text.
+		spans = slices.DeleteFunc(spans, func(sp inlineSpan) bool {
+			inLabel := sp.class == stCode && m[2] <= sp.start && sp.end <= m[3]
+			if inLabel {
+				for i := sp.start; i < sp.end; i++ {
+					taken[i] = false
+				}
+			}
+			return inLabel
+		})
+		inner, _ := a.inlineRunes(label)
+		label = ""
+		for _, r := range inner {
+			label += string(r.r)
 		}
-		links = append(links, linkTarget{kind: kind, target: target, alias: label})
 		if label == "" {
-			label = target
+			label = link.target
 		}
 		add(m[0:2], stLink, label, len(links)-1)
 	}
@@ -262,10 +372,25 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		links = append(links, linkTarget{kind: "url", target: text[m[0]:m[1]]})
 		add(m, stLink, text[m[0]:m[1]], len(links)-1)
 	}
+	for _, m := range strongEmphRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 3, stStrong)
+			continue
+		}
+		add(m, stStrong, text[m[0]+3:m[1]-3], -1)
+	}
 	for _, m := range strongRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 2, stStrong)
+			continue
+		}
 		add(m, stStrong, text[m[0]+2:m[1]-2], -1)
 	}
 	for _, m := range strikeRe.FindAllStringIndex(text, -1) {
+		if slices.Contains(taken[m[0]:m[1]], true) {
+			around(m, 2, stStrike)
+			continue
+		}
 		add(m, stStrike, text[m[0]+2:m[1]-2], -1)
 	}
 	for _, m := range highlightRe.FindAllStringIndex(text, -1) {
@@ -278,6 +403,10 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		start := m[0]
 		if start < len(text) && text[start] != '*' && text[start] != '_' {
 			start++
+		}
+		if slices.Contains(taken[start:m[1]], true) {
+			around([]int{start, m[1]}, 1, stEmph)
+			continue
 		}
 		add([]int{start, m[1]}, stEmph, text[start+1:m[1]-1], -1)
 	}
@@ -306,10 +435,101 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 	return out, links
 }
 
+// inlineCodeSpans finds the code spans of one line by CommonMark's rules. A span
+// runs between two backtick runs of equal length, a run with no partner is plain
+// text, and a backslash escapes a backtick outside a span but not inside one.
+func inlineCodeSpans(text string) []inlineSpan {
+	spans := []inlineSpan{}
+	for i := 0; i < len(text); {
+		switch {
+		case text[i] == '\\':
+			i += 2
+		case text[i] != '`':
+			i++
+		default:
+			n := backtickRun(text[i:])
+			end := closingBacktickRun(text, i+n, n)
+			if end < 0 {
+				i += n
+				continue
+			}
+			spans = append(spans, inlineSpan{i, end + n, stCode, codeSpanText(text[i+n : end]), -1})
+			i = end + n
+		}
+	}
+	return spans
+}
+
+func backtickRun(s string) int {
+	n := 0
+	for n < len(s) && s[n] == '`' {
+		n++
+	}
+	return n
+}
+
+// closingBacktickRun is where the next run of exactly n backticks starts, or -1.
+func closingBacktickRun(text string, from, n int) int {
+	for i := from; i < len(text); {
+		if text[i] != '`' {
+			i++
+			continue
+		}
+		run := backtickRun(text[i:])
+		if run == n {
+			return i
+		}
+		i += run
+	}
+	return -1
+}
+
+// codeSpanText drops the one space on each side that lets a span start or end
+// with a backtick. A span of only spaces keeps them.
+func codeSpanText(s string) string {
+	if len(s) > 1 && s[0] == ' ' && s[len(s)-1] == ' ' && strings.Trim(s, " ") != "" {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// blankCodeSyntax copies text with link and embed syntax blanked inside code
+// spans, so a scan of the copy only finds what renders as a link or an embed.
+// Offsets into the copy are offsets into text.
+func blankCodeSyntax(text string, codes []inlineSpan) []byte {
+	scan := []byte(text)
+	for _, c := range codes {
+		for i := c.start; i < c.end; i++ {
+			switch scan[i] {
+			case '!', '[', ']', '(', ')':
+				scan[i] = ' '
+			}
+		}
+	}
+	return scan
+}
+
+// embedPlaceholders swaps each embed re finds for its placeholder. `![[pic.png]]`
+// stays as written, while an image whose alt text holds code, ![see `x`](b.png),
+// is still an image. re's first group is the placeholder's label.
+func embedPlaceholders(text string, re *regexp.Regexp) string {
+	scan := blankCodeSyntax(text, inlineCodeSpans(text))
+	var out strings.Builder
+	pos := 0
+	for _, m := range re.FindAllSubmatchIndex(scan, -1) {
+		out.WriteString(text[pos:m[0]])
+		out.WriteString("⟦image: " + text[m[2]:m[3]] + "⟧")
+		pos = m[1]
+	}
+	out.WriteString(text[pos:])
+	return out.String()
+}
+
 func splitWiki(content string) (target, heading, alias string) {
 	if i := strings.Index(content, "|"); i >= 0 {
 		alias = strings.TrimSpace(content[i+1:])
-		content = content[:i]
+		// A table escapes the separator as `\|`; the backslash is not the target's.
+		content = strings.TrimSuffix(content[:i], `\`)
 	}
 	if i := strings.Index(content, "#"); i >= 0 {
 		heading = content[i+1:]
@@ -382,9 +602,14 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 			sepIdx = i
 			continue
 		}
-		cells := strings.Split(strings.Trim(strings.TrimSpace(line), "|"), "|")
+		cells := previewTableCells(line)
 		for c := range cells {
-			cells[c] = strings.TrimSpace(cells[c])
+			sr, _ := a.inlineRunes(cells[c])
+			runes := make([]rune, len(sr))
+			for i, s := range sr {
+				runes[i] = s.r
+			}
+			cells[c] = string(runes)
 		}
 		rows = append(rows, cells)
 	}
@@ -395,10 +620,10 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 	widths := make([]int, cols)
 	for _, r := range rows {
 		for c, cell := range r {
-			widths[c] = max(widths[c], cellWidth(stripInline(cell)))
+			widths[c] = max(widths[c], cellWidth(cell))
 		}
 	}
-	total := 0
+	total := 1
 	for _, w := range widths {
 		total += w + 3
 	}
@@ -420,32 +645,39 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 	}
 	out := []previewLine{}
 	for ri, r := range rows {
-		var b strings.Builder
+		style := th.Base
+		if ri == 0 && sepIdx >= 0 {
+			style = th.Bold
+		}
+		// A long cell wraps inside its column, so nothing is cut off.
+		wrapped := make([][]string, cols)
+		height := 1
 		for c := 0; c < cols; c++ {
 			cell := ""
 			if c < len(r) {
 				cell = r[c]
 			}
-			sr, _ := a.inlineRunes(cell)
-			runes := make([]rune, len(sr))
-			for i, s := range sr {
-				runes[i] = s.r
-			}
-			text := truncateCells(string(runes), widths[c])
-			style := th.Base
-			if ri == 0 && sepIdx >= 0 {
-				style = th.Bold
-			}
-			b.WriteString(th.Muted.Render("│ "))
-			b.WriteString(style.Render(padRight(text, widths[c])))
-			b.WriteString(" ")
+			wrapped[c] = flowWrap(cell, widths[c])
+			height = max(height, len(wrapped[c]))
 		}
-		b.WriteString(th.Muted.Render("│"))
 		line := srcLine + ri
 		if sepIdx >= 0 && ri >= sepIdx {
 			line++
 		}
-		out = append(out, previewLine{text: b.String(), srcLine: line})
+		for y := 0; y < height; y++ {
+			var b strings.Builder
+			for c := 0; c < cols; c++ {
+				text := ""
+				if y < len(wrapped[c]) {
+					text = wrapped[c][y]
+				}
+				b.WriteString(th.Muted.Render("│ "))
+				b.WriteString(style.Render(padCells(text, widths[c])))
+				b.WriteString(" ")
+			}
+			b.WriteString(th.Muted.Render("│"))
+			out = append(out, previewLine{text: b.String(), srcLine: line})
+		}
 		if ri == 0 && sepIdx >= 0 {
 			segs := make([]string, cols)
 			for c := 0; c < cols; c++ {
@@ -459,10 +691,38 @@ func (a *App) renderTable(block []string, srcLine, width int) []previewLine {
 	return out
 }
 
-func stripInline(s string) string {
-	s = inlineCodeRe.ReplaceAllStringFunc(s, func(m string) string { return m[1 : len(m)-1] })
-	s = strongRe.ReplaceAllStringFunc(s, func(m string) string { return m[2 : len(m)-2] })
-	return s
+// previewTableCells splits a table row at its pipes, leaving alone the pipe
+// of a wikilink's alias and an escaped pipe, which reads as a plain one.
+func previewTableCells(line string) []string {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "|")
+	if !strings.HasSuffix(line, `\|`) {
+		line = strings.TrimSuffix(line, "|")
+	}
+	links := wikilinkAtRe.FindAllStringIndex(line, -1)
+	inLink := func(i int) bool {
+		for len(links) > 0 && links[0][1] <= i {
+			links = links[1:]
+		}
+		return len(links) > 0 && links[0][0] <= i
+	}
+	cells := []string{}
+	var cell strings.Builder
+	for i := 0; i < len(line); i++ {
+		switch {
+		case inLink(i):
+			cell.WriteByte(line[i])
+		case strings.HasPrefix(line[i:], `\|`):
+			cell.WriteByte('|')
+			i++
+		case line[i] == '|':
+			cells = append(cells, strings.TrimSpace(cell.String()))
+			cell.Reset()
+		default:
+			cell.WriteByte(line[i])
+		}
+	}
+	return append(cells, strings.TrimSpace(cell.String()))
 }
 
 // previewLinesFor returns the cached rows for a buffer at a width.
@@ -494,26 +754,38 @@ func (a *App) previewLinesFor(t *tab, buf *noteBuffer, width int) []previewLine 
 	return pv.cache.lines
 }
 
+// previewRowFor is the last reading row at or before a source line.
+func previewRowFor(lines []previewLine, srcLine int) int {
+	row := 0
+	for i, l := range lines {
+		if l.srcLine <= srcLine {
+			row = i
+		}
+	}
+	return row
+}
+
 // renderPreview draws reading mode.
 func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) string {
 	th := a.theme
 	pad := 1
-	width := max(10, w-2*pad)
+	width := max(1, w-2*pad)
 	lines := a.previewLinesFor(t, buf, width)
 	pv := t.preview
+	pv.rows = h
 	if t.mode == modeSplit {
 		// Follow the editor cursor.
-		target := 0
-		for i, l := range lines {
-			if l.srcLine <= pv.followLine {
-				target = i
-			}
-		}
+		target := previewRowFor(lines, pv.followLine)
 		pv.cursor = target
 		if target < pv.scroll || target >= pv.scroll+h {
 			pv.scroll = max(0, target-h/3)
 		}
 	} else {
+		if pv.jumpPending {
+			pv.jumpPending = false
+			pv.cursor = previewRowFor(lines, pv.jumpLine)
+			pv.scroll = pv.cursor
+		}
 		if pv.cursor >= len(lines) {
 			pv.cursor = max(0, len(lines)-1)
 		}
@@ -524,8 +796,8 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 			pv.scroll = pv.cursor - h + 1
 		}
 	}
-	if pv.scroll > max(0, len(lines)-1) {
-		pv.scroll = max(0, len(lines)-1)
+	if pv.scroll > max(0, len(lines)-h) {
+		pv.scroll = max(0, len(lines)-h)
 	}
 	if pv.scroll < 0 {
 		pv.scroll = 0
@@ -548,12 +820,25 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	return strings.Join(out, "\n")
 }
 
-// previewKey handles reading-mode keys.
+// moveTo takes the row cursor to a row and the view with it, so a key that says
+// it scrolls shows that on its first press. Where the view cannot go further, at
+// either end of the note, the cursor goes on alone, which reaches the rows of the
+// first and last screens. Every row can still take the cursor, for Enter to
+// follow a link there or x to toggle a task.
+func (pv *previewState) moveTo(row, n, rows int) {
+	cur := listCursor{cursor: row}
+	cur.clamp(n)
+	cur.scroll = max(0, min(pv.scroll+cur.cursor-pv.cursor, n-rows))
+	cur.ensureVisible(rows)
+	pv.cursor, pv.scroll = cur.cursor, cur.scroll
+}
+
 // previewHint is the help line for reading mode.
 func (a *App) previewHint() string {
 	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"vim.leaderPrefix", "leader"}})
 }
 
+// previewKey handles reading-mode keys.
 func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	pv := t.preview
 	if pv == nil {
@@ -565,10 +850,22 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 	if lines != nil {
 		n = len(lines.lines)
 	}
-	rows := a.editorRows(buf)
+	rows := pv.rows
+	if rows <= 0 {
+		rows = a.editorRows(buf)
+	}
+	// `gd` starts as `gg` does, so listNav holds its first key and drops it on the second.
+	if a.listKeyAllowed(k) && len(a.navKeys) > 0 {
+		seq := append(append([]vim.Key{}, a.navKeys...), k)
+		if complete, _ := matchSequence(seq, bindingKeys(a.keymap.Binding("vim.goToDefinition"))); complete {
+			a.navKeys = nil
+			a.previewFollow(t, buf)
+			return
+		}
+	}
 	cur := listCursor{cursor: pv.cursor, scroll: pv.scroll}
 	if a.listNav(&cur, k, n, rows) {
-		pv.cursor, pv.scroll = cur.cursor, cur.scroll
+		pv.moveTo(cur.cursor, n, rows)
 		return
 	}
 	if k.Is("enter") {
@@ -609,7 +906,7 @@ func (a *App) previewKey(t *tab, buf *noteBuffer, k vim.Key) {
 		switch {
 		case k.IsRune('i') || k.IsRune('e') || k.IsRune('a') || k.IsRune('q'):
 			if lines != nil && pv.cursor < n {
-				buf.ed.GotoLine(lines.lines[pv.cursor].srcLine)
+				buf.ed.GotoLine(lines.lines[pv.cursor].editorLine())
 			}
 			a.setPaneMode(modeEdit)
 		case k.IsRune('y'):
@@ -656,7 +953,7 @@ func (a *App) previewToggleTask(t *tab, buf *noteBuffer) {
 		return
 	}
 	cur := buf.ed.Cursor()
-	buf.ed.SetCursor(vim.Pos{Line: row.srcLine, Col: 0})
+	buf.ed.SetCursor(vim.Pos{Line: row.taskLine(), Col: 0})
 	buf.ed.ToggleCheckboxAtCursor()
 	buf.ed.SetCursor(cur)
 }

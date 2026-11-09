@@ -73,7 +73,10 @@ type Prefs struct {
 	// Terminal-only preferences, from [terminal] in config.toml. The desktop
 	// app ignores the table.
 	TerminalMouse bool
-	PreviewStyle  string
+	// Autosave writes notes shortly after typing stops and when they close.
+	// Off, a note reaches the disk only when saved by name, such as with :w.
+	Autosave     bool
+	PreviewStyle string
 	// TerminalImages is auto, kitty or off: whether the preview paints
 	// pictures with the Kitty graphics protocol.
 	TerminalImages string
@@ -124,6 +127,7 @@ func DefaultPrefs() Prefs {
 		ThemeTweaks:              map[string]string{},
 		PreviewStyle:             "auto",
 		TerminalMouse:            true,
+		Autosave:                 true,
 		TerminalMath:             "typst",
 		ViewModeRules:            map[string]string{},
 		RenderTimeout:            10,
@@ -244,6 +248,7 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	}
 	terminal := section("terminal")
 	setBool(terminal, "mouse", &p.TerminalMouse)
+	setBool(terminal, "autosave", &p.Autosave)
 	setString(terminal, "preview_style", &p.PreviewStyle)
 	setString(terminal, "images", &p.TerminalImages)
 	setString(terminal, "theme", &p.TerminalTheme)
@@ -390,6 +395,9 @@ preview_style = "auto"
 # graphics protocol (Kitty and Ghostty; inside tmux, set allow-passthrough on).
 images = "auto"
 mouse = true
+# autosave = false: notes are written only when you save them (:w, Ctrl+S), and
+# :q and :qa ask before dropping unsaved edits.
+autosave = true
 # A theme for zn alone: a family, a theme id or a custom theme. Empty follows
 # [appearance], so the terminal matches the desktop app.
 theme = ""

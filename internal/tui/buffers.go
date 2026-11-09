@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -27,9 +28,12 @@ type noteBuffer struct {
 	saveAt      time.Time
 	saving      bool
 	loading     bool
-	afterLoad   []func(*noteBuffer)
-	loadErr     error
-	rows        []rowInfo
+	// seeded marks an editor still holding the empty placeholder of a note no
+	// read has returned yet. The first read replaces it outside the history.
+	seeded    bool
+	afterLoad []func(*noteBuffer)
+	loadErr   error
+	rows      []rowInfo
 	// focusRows is the wrapping of the pane that last drew this buffer with
 	// focus; rows belongs to whichever pane drew it last.
 	focusRows []rowInfo
@@ -77,7 +81,7 @@ func (a *App) openBuffer(path string) (*noteBuffer, error) {
 	}
 	if a.deferReads {
 		meta, _ := a.noteMeta(path)
-		buf := &noteBuffer{path: path, meta: meta, loading: true}
+		buf := &noteBuffer{path: path, meta: meta, loading: true, seeded: true}
 		buf.ed = a.newModalEditor("", a.editorHooks(buf), &a.registers)
 		buf.ed.MarkSaved()
 		a.buffers[path] = buf
@@ -134,6 +138,9 @@ func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
 		},
 		Changed: func() {
 			buf.saveAt = time.Now().Add(autosaveDelay)
+			if a.prefs.Autosave && buf.undoEmptied() {
+				a.notify("Undo emptied this note, so it was not saved. Redo brings the text back; :w saves it empty")
+			}
 			a.armAutosave()
 		},
 	}
@@ -150,11 +157,27 @@ func (a *App) editorLineRows(buf *noteBuffer, line int) int {
 
 // dirty reports unsaved edits.
 func (b *noteBuffer) dirty() bool {
-	return !b.loading && b.ed.Text() != b.savedText
+	return !b.loading && b.ed.Text() != vim.NormalizedText(b.savedText)
 }
 
-// saveBuffer writes a dirty buffer through the backend.
+// undoEmptied reports a buffer that undo or redo left blank while its file has
+// text. Only a save the user names may write that: everything else leaves the
+// file alone, so an undo can never wipe a note on its own.
+func (b *noteBuffer) undoEmptied() bool {
+	return b.ed.ChangedByUndo() && strings.TrimSpace(b.ed.Text()) == "" && strings.TrimSpace(b.savedText) != ""
+}
+
+// saveBuffer saves for the commands that flush first: closing, quitting and
+// whatever acts on the file itself. An undo-emptied buffer is not written.
 func (a *App) saveBuffer(buf *noteBuffer) error {
+	if buf != nil && buf.undoEmptied() {
+		return nil
+	}
+	return a.writeBuffer(buf)
+}
+
+// writeBuffer writes a dirty buffer through the backend.
+func (a *App) writeBuffer(buf *noteBuffer) error {
 	if buf != nil && buf.loading {
 		return fmt.Errorf("note is still loading")
 	}
@@ -191,11 +214,26 @@ func (a *App) saveAllBuffers() error {
 	return first
 }
 
+// hasUnsaved reports a buffer with edits that are not on disk.
+func (a *App) hasUnsaved() bool {
+	for _, buf := range a.buffers {
+		if buf.dirty() {
+			return true
+		}
+	}
+	return false
+}
+
+// autosavePending reports a buffer autosave should write when its timer ends.
+func (a *App) autosavePending(buf *noteBuffer) bool {
+	return a.prefs.Autosave && !buf.saving && !buf.diskChanged && buf.dirty() && !buf.undoEmptied() && !buf.saveAt.IsZero()
+}
+
 // autosaveDue lists buffers whose autosave timer expired.
 func (a *App) autosaveDue(now time.Time) []*noteBuffer {
 	out := []*noteBuffer{}
 	for _, buf := range a.buffers {
-		if !buf.saving && !buf.diskChanged && buf.dirty() && !buf.saveAt.IsZero() && now.After(buf.saveAt) {
+		if a.autosavePending(buf) && now.After(buf.saveAt) {
 			out = append(out, buf)
 		}
 	}
@@ -219,9 +257,12 @@ func (a *App) closeBufferIfUnused(path string) {
 		}
 	}
 	if buf, ok := a.buffers[path]; ok {
-		if err := a.saveBuffer(buf); err != nil {
-			a.notifyError(err.Error())
-			return
+		// With autosave off, closeTab already asked before dropping edits.
+		if a.prefs.Autosave {
+			if err := a.saveBuffer(buf); err != nil {
+				a.notifyError(err.Error())
+				return
+			}
 		}
 		delete(a.buffers, path)
 	}
@@ -231,14 +272,36 @@ func (a *App) closeBufferIfUnused(path string) {
 
 var (
 	wikilinkAtRe = regexp.MustCompile(`!?\[\[([^\]\n]+)\]\]`)
-	mdLinkAtRe   = regexp.MustCompile(`!?\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
-	urlAtRe      = regexp.MustCompile(`(?:https?://|mailto:)[^\s<>()\[\]]+`)
+	// mdLinkAtRe is the editor's reading of a Markdown link, as loose as the
+	// desktop's LINK_SHAPES: the destination may hold spaces with or without
+	// angle brackets, and angle brackets may hold a `)`.
+	mdLinkAtRe = regexp.MustCompile(`!?\[([^\]]*)\]\((<[^>]+>|[^)]+)\)`)
+	urlAtRe    = regexp.MustCompile(`(?:https?://|mailto:)[^\s<>()\[\]]+`)
 )
 
 type linkTarget struct {
-	kind   string // "wikilink" | "url" | "path"
-	target string
+	kind   string // "wikilink" | "url" | "path" | "file"
+	target string // a wikilink's or path's keeps its #heading or ^block anchor
 	alias  string
+}
+
+// wikilinkTargetOf builds the link for what sits inside `[[...]]`.
+func wikilinkTargetOf(content string) linkTarget {
+	target, anchor, alias := vault.SplitWikilinkContent(content)
+	alias = strings.ReplaceAll(strings.TrimPrefix(strings.TrimPrefix(alias, `\`), "|"), `\|`, "|")
+	return linkTarget{kind: "wikilink", target: strings.TrimSpace(target + anchor), alias: alias}
+}
+
+// mdLinkTargetOf builds the link for a Markdown link's raw destination.
+func mdLinkTargetOf(label, dest string) linkTarget {
+	target := vault.UnwrapMarkdownDest(dest)
+	if url, ok := vault.ExternalLinkURL(target); ok {
+		return linkTarget{kind: "url", target: url, alias: label}
+	}
+	if strings.Contains(target, "://") {
+		return linkTarget{kind: "url", target: target, alias: label}
+	}
+	return linkTarget{kind: "path", target: target, alias: label}
 }
 
 // linkAt finds the link covering a rune column on a line.
@@ -248,19 +311,14 @@ func linkAt(line string, col int) (linkTarget, bool) {
 	byteCol := byteAt(col)
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
 		if m[0] <= byteCol && byteCol < m[1] {
-			content := line[m[2]:m[3]]
-			target, _, alias := vault.SplitWikilinkContent(content)
-			return linkTarget{kind: "wikilink", target: strings.TrimSpace(target), alias: strings.TrimPrefix(alias, "|")}, true
+			if link := wikilinkTargetOf(line[m[2]:m[3]]); link.target != "" {
+				return link, true
+			}
 		}
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
 		if m[0] <= byteCol && byteCol < m[1] {
-			target := line[m[4]:m[5]]
-			kind := "path"
-			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
-				kind = "url"
-			}
-			return linkTarget{kind: kind, target: strings.Trim(target, "<>"), alias: line[m[2]:m[3]]}, true
+			return mdLinkTargetOf(line[m[2]:m[3]], line[m[4]:m[5]]), true
 		}
 	}
 	for _, m := range urlAtRe.FindAllStringIndex(line, -1) {
@@ -273,22 +331,32 @@ func linkAt(line string, col int) (linkTarget, bool) {
 
 // linksOnLine lists every link on a line, in order.
 func linksOnLine(line string) []linkTarget {
+	return linksOnLineWhere(line, func(int, int) bool { return true })
+}
+
+// linksOnLineWhere lists the links on a line whose byte span keep accepts.
+func linksOnLineWhere(line string, keep func(start, end int) bool) []linkTarget {
 	out := []linkTarget{}
 	seen := map[int]bool{}
 	for _, m := range wikilinkAtRe.FindAllStringSubmatchIndex(line, -1) {
-		target, _, alias := vault.SplitWikilinkContent(line[m[2]:m[3]])
-		out = append(out, linkTarget{kind: "wikilink", target: strings.TrimSpace(target), alias: strings.TrimPrefix(alias, "|")})
+		if !keep(m[0], m[1]) {
+			continue
+		}
+		if link := wikilinkTargetOf(line[m[2]:m[3]]); link.target != "" {
+			out = append(out, link)
+		}
 		seen[m[0]] = true
 	}
 	for _, m := range mdLinkAtRe.FindAllStringSubmatchIndex(line, -1) {
-		target := line[m[4]:m[5]]
-		kind := "path"
-		if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
-			kind = "url"
+		if !keep(m[0], m[1]) {
+			continue
 		}
-		out = append(out, linkTarget{kind: kind, target: strings.Trim(target, "<>"), alias: line[m[2]:m[3]]})
+		out = append(out, mdLinkTargetOf(line[m[2]:m[3]], line[m[4]:m[5]]))
 	}
 	for _, m := range urlAtRe.FindAllStringIndex(line, -1) {
+		if !keep(m[0], m[1]) {
+			continue
+		}
 		inside := false
 		for _, l := range mdLinkAtRe.FindAllStringIndex(line, -1) {
 			if l[0] <= m[0] && m[1] <= l[1] {
@@ -332,46 +400,129 @@ func (a *App) followLink(link linkTarget) {
 			}
 		}
 		a.copyText(link.target)
-	case "wikilink":
+	case "wikilink", "path":
 		if a.idx == nil {
 			return
 		}
-		if meta, ok := vault.ResolveWikilink(a.idx.notes, link.target); ok {
-			a.openNote(meta.Path, true)
-			return
-		}
-		target := link.target
-		a.confirm("Create note \""+target+"\"?", func() {
-			folder, sub := a.currentFolderContext()
-			a.createNote(folder, target, sub, nil, true)
-		})
-	case "path":
-		target := strings.TrimPrefix(link.target, "./")
-		if i := strings.IndexAny(target, "#?"); i >= 0 {
-			target = target[:i]
-		}
-		if !strings.HasSuffix(strings.ToLower(target), ".md") {
-			a.notify("Not a note: " + target)
-			return
-		}
-		if _, ok := a.noteMeta(target); ok {
-			a.openNote(target, true)
-			return
-		}
-		// Relative to the current note's folder.
+		from := ""
 		if active := a.activeBuffer(); active != nil {
-			dir := ""
-			if i := strings.LastIndex(active.path, "/"); i >= 0 {
-				dir = active.path[:i+1]
-			}
-			candidate := vault.NormalizeRelPath(dir + target)
-			if _, ok := a.noteMeta(candidate); ok {
-				a.openNote(candidate, true)
-				return
-			}
+			from = active.path
 		}
-		a.notify("Note not found: " + target)
+		if notePath, anchor, ok := resolveNoteLink(a.idx.notes, from, link); ok {
+			a.openNoteAtAnchor(notePath, anchor)
+			return
+		}
+		a.offerNoteFromLink(from, link)
 	}
+}
+
+// resolveNoteLink finds the note a link opens and the anchor to land on, in the
+// desktop's order: a same-note anchor, then a wikilink by name and a Markdown
+// link relative to this note, each falling back on the other's reading.
+func resolveNoteLink(notes []vault.NoteMeta, from string, link linkTarget) (notePath, anchor string, ok bool) {
+	if from != "" && vault.IsSameNoteAnchor(link.target) {
+		return from, link.target, true
+	}
+	byHref := func() (string, string, bool) {
+		meta, ok := vault.ResolveNoteHref(notes, from, link.target)
+		return meta.Path, "#" + vault.HrefFragment(link.target), ok
+	}
+	byName := func() (string, string, bool) {
+		meta, ok := vault.ResolveWikilink(notes, link.target)
+		return meta.Path, link.target, ok
+	}
+	first, second := byHref, byName
+	if link.kind == "wikilink" {
+		first, second = byName, byHref
+	}
+	if notePath, anchor, ok = first(); ok {
+		return notePath, anchor, true
+	}
+	return second()
+}
+
+// openNoteAtAnchor opens a note and puts the anchor at the top of the view. An
+// anchor the note no longer carries opens it where it was, as on the desktop.
+func (a *App) openNoteAtAnchor(notePath, anchor string) {
+	a.openNote(notePath, true)
+	t := a.activeTab()
+	a.withLoadedBuffer(notePath, func(buf *noteBuffer) {
+		line, ok := vault.AnchorLine(buf.ed.Text(), anchor)
+		if !ok {
+			return
+		}
+		buf.ed.GotoLine(line)
+		buf.ed.SetScrollTop(line - 1)
+		buf.ed.EnsureCursorVisible()
+		if t != nil && t.path == notePath && t.mode == modePreview {
+			if t.preview == nil {
+				t.preview = &previewState{}
+			}
+			t.preview.jumpLine, t.preview.jumpPending = line-1, true
+		}
+	})
+}
+
+// offerNoteFromLink asks before creating the note a dead link names, so a link
+// to a note not written yet is never a dead end.
+func (a *App) offerNoteFromLink(from string, link linkTarget) {
+	if link.kind == "path" {
+		folder, sub, title, ok := a.hrefNoteLocation(from, link.target)
+		if !ok {
+			shown, _, _ := strings.Cut(strings.TrimPrefix(link.target, "./"), "#")
+			a.notify("Not a note: " + shown)
+			return
+		}
+		shown := title
+		if sub != "" {
+			shown = sub + "/" + title
+		}
+		a.confirm("Create note \""+shown+"\"?", func() {
+			a.createNote(folder, title, sub, nil, true)
+		})
+		return
+	}
+	name, _, _ := vault.SplitWikilinkContent(link.target)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		a.notify("This link names no note")
+		return
+	}
+	a.confirm("Create note \""+name+"\"?", func() {
+		folder, sub := a.currentFolderContext()
+		a.createNote(folder, name, sub, nil, true)
+	})
+}
+
+// hrefNoteLocation is where the note a dead href names goes: the path the href
+// points at, so the link resolves once the note exists. A path from the vault
+// root starts at the Inbox, as the desktop reads it, and false means the href
+// cannot name a note at all.
+func (a *App) hrefNoteLocation(from, href string) (folder vault.NoteFolder, sub, title string, ok bool) {
+	if vault.HrefNamesFile(href) {
+		return "", "", "", false
+	}
+	rel, ok := vault.NoteHrefPath(from, href)
+	if !ok || strings.ContainsAny(rel, `\:*?"<>|#^[]`) {
+		return "", "", "", false
+	}
+	if strings.HasSuffix(strings.ToLower(rel), ".md") {
+		rel = rel[:len(rel)-len(".md")]
+	}
+	folder, known := vault.FolderForRelativePath(rel, a.folderPaths())
+	if !known {
+		return "", "", "", false
+	}
+	dir, title := path.Split(rel)
+	dir = strings.TrimSuffix(dir, "/")
+	if folder == vault.FolderTrash {
+		return vault.FolderInbox, "", title, true
+	}
+	sub = vault.FolderSubpathOf(rel, folder, a.primaryAtRoot(), a.folderPaths())
+	if sub == "" && folder == vault.FolderInbox && dir != "" && !strings.EqualFold(dir, vault.ResolveFolderPath(folder, a.folderPaths())) {
+		sub = dir
+	}
+	return folder, sub, title, true
 }
 
 func (a *App) copyLinkAtCursor(buf *noteBuffer) {

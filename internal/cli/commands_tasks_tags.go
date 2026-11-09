@@ -103,7 +103,8 @@ func cmdTaskToggle(ctx context.Context, b backend.Backend, args Args) error {
 	case next.Waiting:
 		state = "waiting"
 	}
-	emitOK(fmt.Sprintf("Toggled %s → %s", id, state))
+	// Finishing a recurring task moves it below its next occurrence.
+	emitOK(fmt.Sprintf("Toggled %s → %s", next.ID, state))
 	return nil
 }
 

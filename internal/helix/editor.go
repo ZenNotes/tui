@@ -230,6 +230,8 @@ type Editor struct {
 	active     *snapshot
 	version    int
 	savedAtVer int
+	// undone says the latest change was an undo or redo, not an edit.
+	undone bool
 
 	pending []Key
 
@@ -426,6 +428,7 @@ func (e *Editor) SetCursor(p Pos) {
 func (e *Editor) SetText(text string) {
 	e.buf.SetText(text)
 	e.undoStack, e.redoStack, e.active = nil, nil, nil
+	e.undone = false
 	e.version, e.savedAtVer = 0, 0
 	e.cursor = e.buf.clampNormal(Pos{})
 	e.scrollTop = 0
@@ -446,6 +449,26 @@ func (e *Editor) ReplaceText(text string) {
 	}
 	e.commitChange()
 }
+
+// LoadText swaps in the text of a note whose read just finished. It is not a
+// change: the placeholder it replaces leaves the history, so undo stops at the
+// loaded text. The cursor stays where it was where possible.
+func (e *Editor) LoadText(text string) {
+	e.buf.SetText(text)
+	e.undoStack, e.redoStack, e.active = nil, nil, nil
+	e.undone = false
+	e.version++
+	e.repairFolds()
+	if e.mode == ModeInsert {
+		e.cursor = e.buf.clampInsert(e.cursor)
+		e.beginChange()
+	} else {
+		e.cursor = e.buf.clampNormal(e.cursor)
+	}
+}
+
+// ChangedByUndo reports whether the latest change was an undo or redo.
+func (e *Editor) ChangedByUndo() bool { return e.undone }
 
 // Marks copies the mark table.
 func (e *Editor) Marks() map[rune]Pos {
@@ -491,6 +514,7 @@ func (e *Editor) commitChange() {
 		e.undoStack = e.undoStack[len(e.undoStack)-1000:]
 	}
 	e.redoStack = nil
+	e.undone = false
 	e.version++
 	e.marks['.'] = e.cursor
 	e.repairFolds()
@@ -528,6 +552,7 @@ func (e *Editor) Undo() {
 	e.redoStack = append(e.redoStack, entry)
 	e.buf.Restore(entry.before.lines)
 	e.cursor = e.buf.clampNormal(entry.before.cursor)
+	e.undone = true
 	e.version++
 	e.repairFolds()
 	if e.hooks.Changed != nil {
@@ -547,6 +572,7 @@ func (e *Editor) Redo() {
 	e.undoStack = append(e.undoStack, entry)
 	e.buf.Restore(entry.after.lines)
 	e.cursor = e.buf.clampNormal(entry.after.cursor)
+	e.undone = true
 	e.version++
 	e.repairFolds()
 	if e.hooks.Changed != nil {

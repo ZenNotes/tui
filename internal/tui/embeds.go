@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yashikota/mermaigo/pkg/mermaid"
 
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -79,7 +79,7 @@ type embedTarget struct {
 // names look through the attachment folders, paths resolve relative to the
 // note and to the vault root.
 func (a *App) resolveEmbed(raw, fromPath string) embedTarget {
-	raw = strings.TrimSpace(raw)
+	raw = strings.Replace(strings.TrimSpace(raw), `\|`, "|", 1)
 	if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") {
 		return embedTarget{kind: "url", raw: raw, url: raw}
 	}
@@ -142,6 +142,16 @@ func (a *App) resolveAssetPath(target, fromPath string) string {
 	return clean
 }
 
+// linkNamesAsset reports whether a link's target is a file in the vault's assets.
+func (a *App) linkNamesAsset(target, fromPath string) bool {
+	t := a.resolveEmbed(target, fromPath)
+	if t.kind == "note" || t.kind == "url" {
+		return false
+	}
+	_, ok := a.assetIndex()[strings.ToLower(t.rel)]
+	return ok
+}
+
 // assetIndex maps lower-cased vault-relative asset paths to file names.
 func (a *App) assetIndex() map[string]string {
 	if a.assetPaths != nil {
@@ -160,14 +170,20 @@ func (a *App) assetIndex() map[string]string {
 // false for ordinary Markdown, which Glamour then renders below any rows
 // returned anyway (a ```tikz fence's TeX error).
 func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath string) ([]previewLine, bool) {
+	// An indented block is code, whatever it looks like, unless it sits under a
+	// list item.
+	if b.kind != "fence" && !b.listChild && isCodeOnly(strings.Join(lines[b.start:b.end], "\n")) {
+		return nil, false
+	}
 	switch b.kind {
 	case "fence":
 		lang := fenceLang(lines[b.start])
-		if lang == "mermaid" && b.end-b.start > 2 {
-			return a.mermaidLines(strings.Join(lines[b.start+1:b.end-1], "\n"), b.start, width), true
+		body := fenceBody(b, lines)
+		if lang == "mermaid" && strings.TrimSpace(body) != "" {
+			return a.mermaidLines(body, b.start, width), true
 		}
-		if lang == "tikz" && a.prefs.TerminalMath == "latex" && b.end-b.start > 2 {
-			return a.tikzLines(strings.Join(lines[b.start+1:b.end-1], "\n"), b.start, width)
+		if lang == "tikz" && a.prefs.TerminalMath == "latex" && strings.TrimSpace(body) != "" {
+			return a.tikzLines(body, b.start, width)
 		}
 		return nil, false
 	case "math", "tex":
@@ -178,7 +194,7 @@ func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath str
 			return nil, false
 		}
 		line := lines[b.start]
-		if m := embedLineRe.FindStringSubmatch(line); m != nil {
+		if m := embedLineRe.FindStringSubmatch(line); m != nil && wikilinkTargetOf(m[1]).target != "" {
 			return a.embedTargetLines(a.resolveEmbed(m[1], fromPath), b.start, width, fromPath), true
 		}
 		if m := embedMDLineRe.FindStringSubmatch(line); m != nil {
@@ -195,6 +211,16 @@ func (a *App) embedBlockLines(b mdBlock, lines []string, width int, fromPath str
 		}
 	}
 	return nil, false
+}
+
+// fenceBody is what a fence holds. A note may end before the fence closes, and
+// then its last line is part of the body.
+func fenceBody(b mdBlock, lines []string) string {
+	end := b.end
+	if end-b.start > 1 && fenceRe.MatchString(lines[end-1]) {
+		end--
+	}
+	return strings.Join(lines[b.start+1:end], "\n")
 }
 
 func fenceLang(open string) string {
@@ -357,7 +383,7 @@ func (a *App) transclusionLines(t embedTarget, srcLine, width int, fromPath stri
 
 type diagramCache struct {
 	mu    sync.Mutex
-	text  map[string][]string
+	text  map[string]*mermaidText
 	png   map[string]*termImage
 	inFly map[string]bool
 	// pool caps the external render processes running at once; mermaid,
@@ -374,7 +400,7 @@ func (a *App) diagrams() *diagramCache {
 	diagramsMu.Lock()
 	defer diagramsMu.Unlock()
 	if a.diagramCache == nil {
-		a.diagramCache = &diagramCache{text: map[string][]string{}, png: map[string]*termImage{}, inFly: map[string]bool{}, pool: make(chan struct{}, max(1, a.prefs.RenderConcurrency))}
+		a.diagramCache = &diagramCache{text: map[string]*mermaidText{}, png: map[string]*termImage{}, inFly: map[string]bool{}, pool: make(chan struct{}, max(1, a.prefs.RenderConcurrency))}
 	}
 	return a.diagramCache
 }
@@ -388,7 +414,7 @@ func contentKey(prefix, text string) string {
 // terminal shows pictures, renders it as an image in the background; the
 // pure-Go text rendering is shown meanwhile and everywhere else.
 func (a *App) mermaidLines(src string, srcLine, width int) []previewLine {
-	th := a.theme
+	src = strings.ReplaceAll(src, "\r", "") // an embedded note keeps its line endings
 	key := contentKey("mermaid", src)
 	if a.imageMode() == imagesKitty {
 		if img := a.externalImage(key, width-2, "mermaid", src); img != nil && img.err == nil {
@@ -397,27 +423,15 @@ func (a *App) mermaidLines(src string, srcLine, width int) []previewLine {
 	}
 	d := a.diagrams()
 	d.mu.Lock()
-	rows, ok := d.text[key]
+	text, ok := d.text[key]
 	d.mu.Unlock()
 	if !ok {
-		rendered, err := mermaid.RenderText(src, &mermaid.TextRenderOptions{})
-		if err != nil {
-			rows = []string{th.StatusError.Render("mermaid: " + firstLine(err.Error()))}
-			for _, l := range strings.Split(src, "\n") {
-				rows = append(rows, th.Code.Render(l))
-			}
-		} else {
-			rows = strings.Split(strings.TrimRight(rendered, "\n"), "\n")
-		}
+		text = parseMermaidText(src)
 		d.mu.Lock()
-		d.text[key] = rows
+		d.text[key] = text
 		d.mu.Unlock()
 	}
-	out := make([]previewLine, 0, len(rows)+1)
-	for _, row := range rows {
-		out = append(out, previewLine{text: " " + th.Base.Render(truncateCells(row, width-1)), srcLine: srcLine})
-	}
-	return out
+	return a.mermaidTextLines(text, src, srcLine, width)
 }
 
 func firstLine(s string) string {
@@ -461,8 +475,8 @@ func (a *App) mathLines(body string, srcLine, width int) []previewLine {
 			return a.pictureLines(a.fitted(key, img, width-2), srcLine, width, "math")
 		}
 	}
-	for _, l := range strings.Split(inner, "\n") {
-		out = append(out, previewLine{text: " " + th.BorderFocus.Render("▎") + " " + th.Code.Render(truncateCells(l, width-4)), srcLine: srcLine})
+	for _, row := range wrapCommentText(inner, width-4) {
+		out = append(out, previewLine{text: " " + th.BorderFocus.Render("▎") + " " + th.Code.Render(row), srcLine: srcLine})
 	}
 	return out
 }
@@ -505,7 +519,7 @@ func (a *App) latexErrorRows(img *termImage, srcLine, width int) []previewLine {
 		return a.latexToolsNotice(srcLine, width)
 	}
 	out := []previewLine{}
-	for _, row := range wrapCommentText(firstLine(img.err.Error()), width-2) {
+	for _, row := range wrapCommentText(firstLine(termsafe.Visible(img.err.Error())), width-2) {
 		out = append(out, previewLine{text: " " + a.theme.StatusError.Render(row), srcLine: srcLine})
 	}
 	return out

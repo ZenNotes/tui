@@ -19,6 +19,7 @@ import (
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/fswatch"
 	"github.com/ZenNotes/tui/internal/keymaps"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/themes"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
@@ -135,8 +136,10 @@ type App struct {
 	sessionDirty bool
 	sessionSaved time.Time
 	quitting     bool
-	program      *tea.Program
-	leaderSeq    int
+	// discardUnsaved is :qa! with autosave off: leave without saving anything.
+	discardUnsaved bool
+	program        *tea.Program
+	leaderSeq      int
 
 	pendingCmds         []tea.Cmd
 	leaderHintScheduled int
@@ -315,7 +318,14 @@ func (a *App) shutdown() error {
 	for _, p := range a.tempFiles {
 		_ = os.Remove(p)
 	}
-	err := a.saveAllBuffers()
+	var err error
+	if a.prefs.Autosave {
+		err = a.saveAllBuffers()
+	} else if !a.discardUnsaved && a.hasUnsaved() {
+		// Exiting without :q or :qa, such as the terminal closing. The edits
+		// were never saved, so they go to a recovery copy, not the vault.
+		err = errors.New("autosave is off and notes had unsaved edits")
+	}
 	if err != nil {
 		err = a.writeRecovery(err)
 	}
@@ -560,7 +570,7 @@ func (a *App) armAutosave() {
 	}
 	var earliest time.Time
 	for _, buf := range a.buffers {
-		if !buf.saving && !buf.diskChanged && buf.dirty() && !buf.saveAt.IsZero() && (earliest.IsZero() || buf.saveAt.Before(earliest)) {
+		if a.autosavePending(buf) && (earliest.IsZero() || buf.saveAt.Before(earliest)) {
 			earliest = buf.saveAt
 		}
 	}
@@ -611,11 +621,13 @@ func (a *App) ignoreChange(path string) {
 // --- messages and toasts ---
 
 func (a *App) notify(text string) {
+	text = termsafe.Visible(text) // it often names a note
 	a.message, a.messageErr = text, false
 	a.addToast(text, false)
 }
 
 func (a *App) notifyError(text string) {
+	text = termsafe.Visible(text)
 	a.message, a.messageErr = text, true
 	a.addToast(text, true)
 }
@@ -754,7 +766,7 @@ func (a *App) View() string {
 	if a.cursorOut != nil {
 		a.cursorOut.Set(a.cursor)
 	}
-	return a.theme.paint(screen)
+	return termsafe.Clean(a.theme.paint(screen))
 }
 
 func (a *App) renderVerticalBorder(h int, focused bool) string {
@@ -870,7 +882,7 @@ func (a *App) renderEmptyPane(w, h int) string {
 func (a *App) renderNoteTab(p *pane, t *tab, w, h int, focused bool) string {
 	buf, ok := a.buffers[t.path]
 	if !ok {
-		return a.theme.StatusError.Render("Note is not loaded: " + t.path)
+		return a.theme.StatusError.Render(termsafe.Line("Note is not loaded: " + t.path))
 	}
 	switch t.mode {
 	case modePreview:
@@ -982,7 +994,7 @@ func (a *App) renderStatusBar() string {
 			if sub != "" {
 				where += "/" + sub
 			}
-			segments = append(segments, t.Status.Render("  "+t.Bold.Render(name)+t.Dim.Render("  "+where+info)))
+			segments = append(segments, t.Status.Render("  "+t.Bold.Render(name)+t.Dim.Render("  "+termsafe.Line(where+info))))
 		} else {
 			segments = append(segments, t.Status.Render("  "+t.Bold.Render(name)))
 		}
@@ -1070,9 +1082,9 @@ func (a *App) renderCommandLine() string {
 		}
 		if msg, isErr := buf.ed.Message(); msg != "" {
 			if isErr {
-				return padRight(t.StatusError.Render(msg), a.width)
+				return padRight(t.StatusError.Render(termsafe.Line(msg)), a.width)
 			}
-			return padRight(msg, a.width)
+			return padRight(termsafe.Line(msg), a.width)
 		}
 	}
 	if a.message != "" {

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/periodic"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -545,7 +546,7 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 		meta = append(meta, th.Dim.Render("@waiting"))
 	}
 	metaText := strings.Join(meta, " ")
-	note := th.Muted.Render("· " + t.NoteTitle)
+	note := th.Muted.Render("· " + termsafe.Line(t.NoteTitle))
 	content := t.Content
 	if t.Kind == "file" {
 		content = t.NoteTitle

@@ -41,13 +41,15 @@ func IsSelectType(t string) bool { return t == "select" || t == "multiSelect" }
 // IsNoteType is true for the two wikilink-backed types.
 func IsNoteType(t string) bool { return t == "note" || t == "noteMulti" }
 
-var noteLinkRe = regexp.MustCompile(`\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
+// noteLinkRe reads a link's target up to its separator, which a cell pasted from
+// a Markdown table writes as `\|`.
+var noteLinkRe = regexp.MustCompile(`\[\[([^\]|]+?)(?:\\?\|[^\]]*)?\]\]`)
 
 // SplitNoteLinks extracts the wikilink targets of a note cell, in order.
 func SplitNoteLinks(cell string) []string {
 	out := []string{}
 	for _, m := range noteLinkRe.FindAllStringSubmatch(cell, -1) {
-		if t := strings.TrimSpace(m[1]); t != "" {
+		if t := strings.TrimSpace(m[1]); t != "" && t != `\` {
 			out = append(out, t)
 		}
 	}

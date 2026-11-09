@@ -56,6 +56,13 @@ func (b *Buffer) SetText(text string) {
 	}
 }
 
+// NormalizedText is what a buffer holds after SetText(text): CRLF is LF, and an
+// invalid byte is U+FFFD. Comparing with it says a buffer has really changed, so
+// a file with either stays as it is on disk until then.
+func NormalizedText(text string) string {
+	return strings.ToValidUTF8(strings.ReplaceAll(text, "\r\n", "\n"), "\uFFFD")
+}
+
 // Text joins the lines with LF.
 func (b *Buffer) Text() string {
 	parts := make([]string, len(b.lines))

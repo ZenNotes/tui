@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ZenNotes/tui/internal/database"
@@ -25,8 +26,35 @@ func newRemote(target Target) *Remote {
 	return &Remote{client: remote.NewClient(target.BaseURL, target.AuthToken), target: target}
 }
 
+// NewRemoteWithClient is a backend on an existing client, for a server that
+// reaches its own API without the network (mcpserver).
+func NewRemoteWithClient(client *remote.Client, target Target) *Remote {
+	return &Remote{client: client, target: target}
+}
+
 // Client exposes the HTTP client for callers that need server-only routes.
 func (r *Remote) Client() *remote.Client { return r.client }
+
+// Capabilities is what the server says it supports.
+func (r *Remote) Capabilities(ctx context.Context) (map[string]any, error) {
+	return r.client.Capabilities(ctx)
+}
+
+// ErrLinkedFoldersUnknown says a server does not report which system folders are
+// links. A current one always sends the list, empty when there are none.
+var ErrLinkedFoldersUnknown = errors.New("the server does not report linked system folders")
+
+// LinkedSystemFolders names the system folders the server reports as links.
+func (r *Remote) LinkedSystemFolders(ctx context.Context) ([]string, error) {
+	info, err := r.client.GetCurrentVault(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil || info.LinkedSystemFolders == nil {
+		return nil, ErrLinkedFoldersUnknown
+	}
+	return info.LinkedSystemFolders, nil
+}
 
 func (r *Remote) Kind() Kind { return KindRemote }
 func (r *Remote) Label() string {
@@ -207,7 +235,14 @@ func (r *Remote) DeleteFolder(ctx context.Context, folder vault.NoteFolder, subp
 // is applied here. It runs the server's own engine, so ordering can differ
 // from a local vault.
 func (r *Remote) SearchText(ctx context.Context, query string, limit int) ([]vault.TextSearchMatch, error) {
-	matches, err := r.client.SearchText(ctx, query)
+	// A server stops at its default limit, so a caller that wants more must say so. A
+	// scope filters afterwards, and asks for as many as this allows.
+	const defaultServerLimit, largestAsk = 200, 50000
+	ask := 0
+	if limit > defaultServerLimit {
+		ask = min(limit, largestAsk)
+	}
+	matches, err := r.client.SearchTextUpTo(ctx, query, ask)
 	if err != nil {
 		return nil, err
 	}
@@ -248,6 +283,7 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 	}
 	var next string
 	found := false
+	finalID := taskID
 	if indexStr == "task" {
 		current, err := r.client.ScanTasksForPath(ctx, rel, true)
 		if err != nil {
@@ -265,7 +301,9 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 		if err != nil {
 			return nil, err
 		}
-		next, found = vault.ToggleTaskInBody(note.Body, index, dialect)
+		var finalIndex int
+		next, finalIndex, found = vault.ToggleTaskRepeating(note.Body, index, dialect, time.Now())
+		finalID = rel + "#" + strconv.Itoa(finalIndex)
 	}
 	if !found {
 		return nil, nil
@@ -278,7 +316,7 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 		return nil, err
 	}
 	for _, t := range after {
-		if t.ID == taskID {
+		if t.ID == finalID {
 			return &t, nil
 		}
 	}

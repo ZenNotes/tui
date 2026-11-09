@@ -486,24 +486,26 @@ func taskLineNumbersIn(lines []string, dialect TaskDialect) []int {
 // forwarded and cancelled record markers are left alone. ok is false when the
 // body holds no task at that index.
 func ToggleTaskInBody(body string, targetIndex int, dialect TaskDialect) (next string, ok bool) {
-	normalized := strings.ReplaceAll(body, "\r\n", "\n")
-	lines := strings.Split(normalized, "\n")
-	numbers := taskLineNumbersIn(lines, dialect)
+	// Split on the bare newline, so every line keeps its own ending.
+	lines := strings.Split(body, "\n")
+	bare := repeatBareLines(lines)
+	numbers := taskLineNumbersIn(bare, dialect)
 	if targetIndex < 0 || targetIndex >= len(numbers) {
 		return body, false
 	}
 	lineNumber := numbers[targetIndex]
-	m := dialect.lineRe().FindStringSubmatch(lines[lineNumber])
+	m := dialect.lineRe().FindStringSubmatch(bare[lineNumber])
 	if m == nil {
 		return body, false
 	}
+	ending := lines[lineNumber][len(bare[lineNumber]):]
 	switch m[2] {
 	case ">", "-":
-		return normalized, true
+		return body, true
 	case "x", "X":
-		lines[lineNumber] = m[1] + " " + m[3]
+		lines[lineNumber] = m[1] + " " + m[3] + ending
 	default:
-		lines[lineNumber] = m[1] + "x" + m[3]
+		lines[lineNumber] = m[1] + "x" + m[3] + ending
 	}
 	return strings.Join(lines, "\n"), true
 }
@@ -976,6 +978,29 @@ func SetTaskFileField(body, key, value string) string {
 		v = StrPtr(value)
 	}
 	return UpdateFrontmatterFields(body, []FrontmatterUpdate{{Key: key, Value: v}})
+}
+
+// SetTaskFileStatusValue writes any status, a Kanban column included, and keeps
+// `completedDate` true to it: a done status dates the task unless it was done
+// already, and anything else clears the date. An empty status removes the key.
+func SetTaskFileStatusValue(body, status string, wasDone bool, now time.Time) string {
+	value := StrPtr(status)
+	if status == "" {
+		value = nil
+	}
+	if doneStatuses[strings.ToLower(status)] {
+		if wasDone {
+			return UpdateFrontmatterFields(body, []FrontmatterUpdate{{Key: "status", Value: value}})
+		}
+		return UpdateFrontmatterFields(body, []FrontmatterUpdate{
+			{Key: "status", Value: value},
+			{Key: "completedDate", Value: StrPtr(TodayISO(now))},
+		})
+	}
+	return UpdateFrontmatterFields(body, []FrontmatterUpdate{
+		{Key: "status", Value: value},
+		{Key: "completedDate", Value: nil},
+	})
 }
 
 // TaskFilePriorityValue maps a ZenNotes priority onto TaskNotes' vocabulary.

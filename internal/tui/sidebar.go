@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -82,14 +83,14 @@ func (s *sidebarState) buildRows(a *App) []sidebarRow {
 						}
 					}
 					key := "fav:" + f
-					rows = append(rows, sidebarRow{kind: "favorite-folder", key: key, label: label, depth: 1, folder: folder, subpath: sub, expandable: true, expanded: s.favOpen[key]})
+					rows = append(rows, sidebarRow{kind: "favorite-folder", key: key, label: termsafe.Line(label), depth: 1, folder: folder, subpath: sub, expandable: true, expanded: s.favOpen[key]})
 					if s.favOpen[key] {
 						rows = append(rows, s.subtreeRows(a, folder, sub, 2, a.notesIn(folder), "fav:")...)
 					}
 					continue
 				}
 				if meta, ok := a.noteMeta(f); ok {
-					rows = append(rows, sidebarRow{kind: "note", key: "fav:" + f, label: meta.Title, depth: 1, path: f, folder: meta.Folder})
+					rows = append(rows, sidebarRow{kind: "note", key: "fav:" + f, label: termsafe.Line(meta.Title), depth: 1, path: f, folder: meta.Folder})
 				}
 			}
 		}
@@ -178,7 +179,7 @@ func (s *sidebarState) subtreeRows(a *App, folder vault.NoteFolder, parent strin
 		if i := strings.LastIndex(sub, "/"); i >= 0 {
 			label = sub[i+1:]
 		}
-		rows = append(rows, sidebarRow{kind: "folder", key: key, label: label, depth: depth, folder: folder, subpath: sub, expandable: true, expanded: s.expanded(key)})
+		rows = append(rows, sidebarRow{kind: "folder", key: key, label: termsafe.Line(label), depth: depth, folder: folder, subpath: sub, expandable: true, expanded: s.expanded(key)})
 		if s.expanded(key) {
 			rows = append(rows, s.subtreeRows(a, folder, sub, depth+1, notes, prefix)...)
 		}
@@ -192,7 +193,7 @@ func (s *sidebarState) subtreeRows(a *App, folder vault.NoteFolder, parent strin
 	}
 	sortNotes(direct, a.prefs.NoteSortOrder)
 	for _, n := range direct {
-		rows = append(rows, sidebarRow{kind: "note", key: prefix + "note:" + n.Path, label: n.Title, depth: depth, path: n.Path, folder: folder})
+		rows = append(rows, sidebarRow{kind: "note", key: prefix + "note:" + n.Path, label: termsafe.Line(n.Title), depth: depth, path: n.Path, folder: folder})
 	}
 	return rows
 }

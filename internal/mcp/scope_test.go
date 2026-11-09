@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -78,6 +79,12 @@ func testScope(t *testing.T, access string, allow, deny []string) *Scope {
 // runScoped serves a vault under a scope over an in-memory transport.
 func runScoped(t *testing.T, root string, scope *Scope) *sdk.ClientSession {
 	t.Helper()
+	return serveScoped(t, backend.Target{Kind: backend.KindLocal, Root: root}, scope)
+}
+
+// serveScoped serves a target under a scope over an in-memory transport.
+func serveScoped(t *testing.T, target backend.Target, scope *Scope) *sdk.ClientSession {
+	t.Helper()
 	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
 	serverT, clientT := sdk.NewInMemoryTransports()
@@ -85,7 +92,7 @@ func runScoped(t *testing.T, root string, scope *Scope) *sdk.ClientSession {
 	go func() {
 		defer close(done)
 		_ = Run(ctx, Options{
-			ResolveTarget: func() (backend.Target, error) { return backend.Target{Kind: backend.KindLocal, Root: root}, nil },
+			ResolveTarget: func() (backend.Target, error) { return target, nil },
 			OpenBackend:   func(t backend.Target) (Backend, error) { return backend.New(t, backend.Options{}) },
 			Transport:     serverT,
 			Scope:         scope,
@@ -378,7 +385,7 @@ func TestScopeListsOnlyTheToolsItOffers(t *testing.T) {
 			t.Errorf("read access lists %s", name)
 		}
 	}
-	if _, ok := listed["vault_info"]; !ok || len(listed) != 12 {
+	if _, ok := listed["vault_info"]; !ok || len(listed) != 15 {
 		t.Fatalf("read access lists %d tools", len(listed))
 	}
 	if _, err := read.CallTool(context.Background(), &sdk.CallToolParams{Name: "write_note", Arguments: map[string]any{"path": "Projects/Plan.md", "body": "gone"}}); err == nil {
@@ -526,4 +533,128 @@ func TestScopeFollowsRemappedSystemFolders(t *testing.T) {
 	narrow := runScoped(t, root, testScope(t, "write", []string{"01 Inbox/Projects"}, nil))
 	mustCall(t, narrow, "archive_note", map[string]any{"path": "01 Inbox/Projects/C.md"})
 	mustFail(t, narrow, "read_note", map[string]any{"path": "99 Archive/Projects/C.md"})
+}
+
+// A note keeps its folders when archived or trashed, so what a deny entry hides stays
+// hidden there. The entry's own wording still decides: one on trash/Journal says
+// nothing about the live folder.
+func TestDenyFollowsANoteIntoSystemFolders(t *testing.T) {
+	root := t.TempDir()
+	for rel, body := range map[string]string{
+		"Journal/Day.md":         "live",
+		"archive/Journal/Old.md": "archived",
+		"trash/Journal/Gone.md":  "trashed",
+		"archive/Other.md":       "other",
+		"Keep/Note.md":           "keep",
+		"trash/Keep/Bin.md":      "binned",
+	} {
+		abs := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vaultJSON := filepath.Join(root, ".zennotes", "vault.json")
+	if err := os.MkdirAll(filepath.Dir(vaultJSON), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vaultJSON, []byte(`{"primaryNotesLocation":"root"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := serveScoped(t, backend.Target{Kind: backend.KindLocal, Root: root}, &Scope{Access: AccessRead, Deny: []string{"Journal", "trash/Keep"}})
+	for _, rel := range []string{"Journal/Day.md", "archive/Journal/Old.md", "trash/Journal/Gone.md", "trash/Keep/Bin.md"} {
+		mustFail(t, cs, "read_note", map[string]any{"path": rel})
+	}
+	for _, rel := range []string{"archive/Other.md", "Keep/Note.md"} {
+		mustCall(t, cs, "read_note", map[string]any{"path": rel})
+	}
+}
+
+// `cafe` finds `Café`, as the shared contract says. `Café` does not find `Cafe`:
+// someone who wrote the accent meant that folder.
+func TestAllowEntryWithAccentsDoesNotWiden(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "Cafe"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "Cafe", "Menu.md"), []byte("plain"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, ".zennotes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".zennotes", "vault.json"), []byte(`{"primaryNotesLocation":"root"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := serveScoped(t, backend.Target{Kind: backend.KindLocal, Root: root}, &Scope{Access: AccessRead, Allow: []string{"Café"}})
+	mustFail(t, cs, "read_note", map[string]any{"path": "Cafe/Menu.md"})
+	if text := mustCall(t, cs, "vault_info", map[string]any{}); !strings.Contains(text, `"Café"`) {
+		t.Errorf("vault_info should report the entry as missing: %s", text)
+	}
+	cs = serveScoped(t, backend.Target{Kind: backend.KindLocal, Root: root}, &Scope{Access: AccessRead, Allow: []string{"cafe"}})
+	mustCall(t, cs, "read_note", map[string]any{"path": "Cafe/Menu.md"})
+}
+
+// A limit comes from a client as any number. A negative one is no limit, and one too
+// large for an int must not turn into one.
+func TestListTasksTakesALimit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Plan.md"), []byte("- [ ] one\n- [ ] two\n- [ ] three\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := serveScoped(t, backend.Target{Kind: backend.KindLocal, Root: root}, nil)
+	count := func(args map[string]any) int {
+		t.Helper()
+		var tasks []any
+		if err := json.Unmarshal([]byte(mustCall(t, cs, "list_tasks", args)), &tasks); err != nil {
+			t.Fatal(err)
+		}
+		return len(tasks)
+	}
+	if got := count(map[string]any{}); got != 3 {
+		t.Errorf("no limit: %d", got)
+	}
+	if got := count(map[string]any{"limit": 2}); got != 2 {
+		t.Errorf("limit 2: %d", got)
+	}
+	if got := count(map[string]any{"limit": -1}); got != 3 {
+		t.Errorf("limit -1: %d", got)
+	}
+}
+
+func TestClampedLimit(t *testing.T) {
+	for limit, want := range map[float64]int{-1: 0, -1e300: 0, 0: 0, 5: 5, 1e300: math.MaxInt32, 1e19: math.MaxInt32} {
+		if got := clampedLimit(limit); got != want {
+			t.Errorf("clampedLimit(%v) = %d, want %d", limit, got, want)
+		}
+	}
+}
+
+func TestAnyLimitIsSafe(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Plan.md"), []byte("# Plan\n\n#tag\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cs := serveScoped(t, backend.Target{Kind: backend.KindLocal, Root: root}, nil)
+	for _, limit := range []float64{-1, -1e300, 1e300, 1e19} {
+		for _, call := range []struct {
+			tool string
+			args map[string]any
+		}{
+			{"search_by_title", map[string]any{"query": "Plan"}},
+			{"search_by_tag", map[string]any{"tag": "tag"}},
+			{"list_notes", map[string]any{}},
+		} {
+			call.args["limit"] = limit
+			if text := mustCall(t, cs, call.tool, call.args); !strings.Contains(text, "Plan.md") {
+				t.Errorf("%s with limit %v: %s", call.tool, limit, text)
+			}
+		}
+		mustCall(t, cs, "search_text", map[string]any{"query": "Plan", "limit": limit})
+	}
+	if text := mustCall(t, cs, "search_by_title", map[string]any{"query": "Plan", "limit": 0}); strings.Contains(text, "Plan.md") {
+		t.Errorf("limit 0: %s", text)
+	}
 }

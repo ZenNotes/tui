@@ -68,6 +68,7 @@ func (a *App) applyPreferences(p config.Prefs) {
 		a.refreshViews()
 	}
 	a.layout()
+	a.armAutosave() // autosave may have just been turned back on
 }
 func (a *App) reloadPreferences() error {
 	p, _, err := config.LoadPrefs()

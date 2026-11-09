@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/termsafe"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -32,14 +32,18 @@ var recordedTools = map[string]func(a args) string{
 	"prepend_to_note": pathArg,
 	"insert_at_line":  pathArg,
 	"replace_in_note": pathArg,
-	"toggle_task": func(a args) string {
-		id, _ := a["id"].(string)
-		hash := strings.LastIndex(id, "#")
-		if hash <= 0 {
-			return ""
-		}
-		return id[:hash]
-	},
+	"edit_section":    pathArg,
+	"toggle_task":     taskNoteArg,
+	"update_task":     taskNoteArg,
+}
+
+func taskNoteArg(a args) string {
+	id, _ := a["id"].(string)
+	hash := strings.LastIndex(id, "#")
+	if hash <= 0 {
+		return ""
+	}
+	return id[:hash]
 }
 
 func pathArg(a args) string {
@@ -92,17 +96,6 @@ func reviewAgentEditsEnabled() bool {
 	return *doc.MCP.ReviewAgentEdits
 }
 
-// Tool calls are served concurrently, and two edits to one note racing on its
-// record would lose one of them, so edits to the same note take turns.
-var noteLocks sync.Map
-
-func lockNote(key string) func() {
-	value, _ := noteLocks.LoadOrStore(key, &sync.Mutex{})
-	mu := value.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
-}
-
 func noteText(ctx context.Context, b Backend, rel string) (string, bool) {
 	content, err := b.ReadNote(ctx, rel)
 	if err != nil {
@@ -112,7 +105,7 @@ func noteText(ctx context.Context, b Backend, rel string) (string, bool) {
 }
 
 // runRecording runs a tool, recording its edit when it rewrites a note of a
-// local vault. Recording never stands in the way of the edit the user asked
+// local vault. Run gives each write its turn, so the record cannot race. Recording never stands in the way of the edit the user asked
 // for: if the record cannot be written, the tool still runs and the change is
 // simply not offered for review.
 func runRecording(ctx context.Context, tool string, a args, b Backend, agent string, run func() (any, error)) (any, error) {
@@ -126,9 +119,6 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 	if rel == "" {
 		return run()
 	}
-	unlock := lockNote(b.Root() + "\x00" + rel)
-	defer unlock()
-
 	if !reviewAgentEditsEnabled() {
 		return run()
 	}
@@ -141,7 +131,7 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 	existing := vault.ReadAgentEdit(b.Root(), rel)
 	started := vault.BeginAgentEdit(existing, before)
 	if err := vault.WriteAgentEdit(b.Root(), rel, started); err != nil {
-		fmt.Fprintf(os.Stderr, "zn mcp: could not record the edit to %s: %v\n", rel, err)
+		fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not record the edit to %s: %v", rel, err)))
 		return run()
 	}
 
@@ -158,7 +148,7 @@ func runRecording(ctx context.Context, tool string, a args, b Backend, agent str
 		finish = vault.WriteAgentEdit(b.Root(), rel, vault.FinishAgentEdit(started, after, entry))
 	}
 	if finish != nil {
-		fmt.Fprintf(os.Stderr, "zn mcp: could not finish the record for %s: %v\n", rel, finish)
+		fmt.Fprintln(os.Stderr, "zn mcp: "+termsafe.Line(fmt.Sprintf("could not finish the record for %s: %v", rel, finish)))
 	}
 	return result, runErr
 }

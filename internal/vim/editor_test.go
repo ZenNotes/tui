@@ -529,3 +529,59 @@ func TestReplacePending(t *testing.T) {
 		})
 	}
 }
+
+// A note read after its editor opened: undo stops at the text it loaded.
+func TestLoadTextIsTheFloorOfTheHistory(t *testing.T) {
+	e := New("", DefaultOptions(), Hooks{})
+	e.LoadText("loaded\ntext")
+	before := e.Version()
+	e.Feed("u")
+	if got := e.Text(); got != "loaded\ntext" {
+		t.Fatalf("undo reached the placeholder: %q", got)
+	}
+	if e.Version() != before {
+		t.Error("undo at the floor counted as a change")
+	}
+	e.Feed("xu")
+	if got := e.Text(); got != "loaded\ntext" {
+		t.Fatalf("x then u: %q", got)
+	}
+	if !e.ChangedByUndo() {
+		t.Error("undo not reported")
+	}
+	e.Feed("x")
+	if e.ChangedByUndo() {
+		t.Error("an edit after undo still reported as undo")
+	}
+}
+
+func TestLoadTextMovesTheVersionForCachesKeyedOnIt(t *testing.T) {
+	e := New("", DefaultOptions(), Hooks{})
+	before := e.Version()
+	e.LoadText("loaded")
+	if e.Version() == before {
+		t.Fatal("LoadText kept the version, so caches would show the placeholder")
+	}
+}
+
+// Keys typed in insert mode after the load are one change on top of it.
+func TestLoadTextDuringInsertKeepsTheChangeOpen(t *testing.T) {
+	changed := 0
+	e := New("", DefaultOptions(), Hooks{Changed: func() { changed++ }})
+	e.Feed("i")
+	e.LoadText("loaded")
+	if changed != 0 {
+		t.Fatalf("the load fired Changed %d times", changed)
+	}
+	e.Feed("new <Esc>")
+	if got := e.Text(); got != "new loaded" {
+		t.Fatalf("typed into %q", got)
+	}
+	if changed == 0 {
+		t.Fatal("typing after the load did not report a change, so it would never autosave")
+	}
+	e.Feed("u")
+	if got := e.Text(); got != "loaded" {
+		t.Fatalf("undo gave %q", got)
+	}
+}
