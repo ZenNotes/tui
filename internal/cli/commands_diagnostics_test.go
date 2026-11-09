@@ -201,7 +201,7 @@ func TestDoctorCountsOneBadTokenInSingular(t *testing.T) {
 	root := t.TempDir()
 	writeVaultFile(t, root, "a.md", "- [ ] odd @repeat:fortnightly\n")
 	out, _ := doctorText(t, root)
-	if !strings.Contains(out, "1 task or event value is not valid and zn ignores it") {
+	if !strings.Contains(out, "1 task or event value is not correct. zn does not use it") {
 		t.Fatalf("warning not in the singular:\n%s", out)
 	}
 }

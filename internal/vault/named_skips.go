@@ -75,16 +75,16 @@ func (s *skipNameIndex) problem(name, ownerPath string) string {
 	found := s.byTitle[normaliseSkipName(name)]
 	switch {
 	case len(found) == 0:
-		return "no event note has this name, so it skips nothing"
+		return "no event note has this name, so the name skips no day"
 	case len(found) > 1:
 		paths := make([]string, 0, len(found))
 		for _, e := range found {
 			paths = append(paths, e.Path)
 		}
 		sort.Strings(paths)
-		return fmt.Sprintf("more than one event note has this name (%s), so it skips nothing", strings.Join(paths, ", "))
+		return fmt.Sprintf("more than one event note has this name (%s), so the name skips no day", strings.Join(paths, ", "))
 	case ownerPath != "" && s.reaches(found[0], ownerPath, map[string]bool{}):
-		return "the name leads back to this note, so it skips nothing"
+		return "the name leads back to this note, so the name skips no day"
 	}
 	return ""
 }

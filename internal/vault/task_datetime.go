@@ -113,7 +113,7 @@ func parseSameDayWhen(s string) (startDate, startTime, endDate, endTime, problem
 		// The end is a valid time that is not after the start. Suggest the
 		// range that goes on into the next day.
 		if next := shiftISODate(date, 1); next != "" {
-			return date, start, "", "", "the end is not after the start; to end on the next day write " +
+			return date, start, "", "", "the end is not after the start. To end on the next day, write " +
 				date + "T" + start + "/" + next + "T" + s[17:]
 		}
 	}
@@ -124,9 +124,9 @@ func parseSameDayWhen(s string) (startDate, startTime, endDate, endTime, problem
 	}
 	if strings.HasPrefix(rest, "..") {
 		// A range across days is written with a slash, not with dots.
-		return date, start, "", "", "a range across days is written start/end with a slash, so only the start is used"
+		return date, start, "", "", "write a range across days as start/end with a slash, so zn uses only the start"
 	}
-	return date, start, "", "", "the time or the end of the value is not valid"
+	return date, start, "", "", "the time or the end of the value is not correct"
 }
 
 // FormatWhenValue renders a parsed `when:` value for display with 24-hour

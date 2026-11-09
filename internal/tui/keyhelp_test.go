@@ -21,7 +21,7 @@ func TestKeyHelpDescribesWeekAndDayKeys(t *testing.T) {
 		"C-P",
 		"S-Tab",
 		"all-day",
-		"three steps",
+		"half-hourly",
 		"quarter-hourly",
 		"opens at the current time",
 		"Calendar: W N",

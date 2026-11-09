@@ -12,7 +12,7 @@ import (
 
 const (
 	calEditPlans = "# Plans\n\n- Gym when:2026-11-04T07:00\n- Dentist when:2026-11-05T14:00-15:30\n- Walk when:2026-11-09\n"
-	calEditRefus = "Repeating event: edit it in its note (Enter)"
+	calEditRefus = "Edit a repeating event in its note. Press Enter"
 )
 
 // calEditApp opens the calendar over the note files with today fixed to
@@ -144,7 +144,7 @@ func TestEventDeleteAsksFirst(t *testing.T) {
 	if !ok {
 		t.Fatalf("overlay = %T, want a confirmation", a.overlay)
 	}
-	if !strings.Contains(c.message, `Delete event "Dentist"`) {
+	if !strings.Contains(c.message, `Delete the event "Dentist"`) {
 		t.Errorf("message = %q", c.message)
 	}
 	if got := calEditNote(t, root, "Plans.md"); got != calEditPlans {
@@ -245,6 +245,9 @@ func TestSessionKeysSplitBetweenTaskAndSession(t *testing.T) {
 	a, tv, root = calEditApp(t, files, calDay)
 	calSelectEntry(t, a, tv, calDate(2026, time.November, 3), "Write report")
 	calPress(a, tv, vim.R('D'))
+	if c, ok := a.overlay.(*confirmDialog); !ok || !strings.Contains(c.message, `Delete the work session "Write report"`) {
+		t.Errorf("D on a session asks %#v, want the work session question", a.overlay)
+	}
 	calConfirm(t, a, 'y')
 	if got := calEditNote(t, root, "Plans.md"); got != "" {
 		t.Errorf("D left the session line:\n%s", got)
@@ -273,7 +276,7 @@ func TestEventRefusesTaskKeys(t *testing.T) {
 		a, tv, root := calEditApp(t, map[string]string{"Plans.md": calEditPlans}, calMonth)
 		calSelectEntry(t, a, tv, calDate(2026, time.November, 5), "Dentist")
 		calPress(a, tv, vim.R(key))
-		if a.message != "Events have no completion, priority or status" {
+		if a.message != "An event has no state, no priority and no status" {
 			t.Errorf("%c: message = %q", key, a.message)
 		}
 		if a.overlay != nil {

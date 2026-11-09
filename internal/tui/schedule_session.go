@@ -37,7 +37,7 @@ func (a *App) scheduleSessionAt(t vault.Task, initial string) {
 		a.notify(localVaultRefusal)
 		return
 	}
-	a.promptFor("Schedule a work session", initial, whenHelp, func(a *App, text string) {
+	a.promptFor("Time of the work session", initial, whenHelp, func(a *App, text string) {
 		when, err := parseSessionWhen(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.scheduleSessionAt(t, text)
@@ -69,7 +69,7 @@ func parseSessionWhen(text string, now time.Time) (string, error) {
 	if strings.Contains(text, "/") {
 		value := strings.ToUpper(text)
 		if _, _, _, _, problem := vault.ParseWhenValue(value); problem != "" {
-			return "", fmt.Errorf("not a time range: %s", problem)
+			return "", fmt.Errorf("The time range is not correct: %s", problem)
 		}
 		return value, nil
 	}
@@ -78,10 +78,10 @@ func parseSessionWhen(text string, now time.Time) (string, error) {
 		return "", err
 	}
 	if value == "" {
-		return "", fmt.Errorf("enter a date")
+		return "", fmt.Errorf("Enter a date")
 	}
 	if _, _, _, _, problem := vault.ParseWhenValue(value); problem != "" {
-		return "", fmt.Errorf("not a time: %s", problem)
+		return "", fmt.Errorf("The time is not correct: %s", problem)
 	}
 	return value, nil
 }
@@ -119,7 +119,7 @@ type categoryWrite struct {
 
 // sessionWrite is the write of the session line of t.
 func (a *App) sessionWrite(v *vault.Vault, t vault.Task, when string) categoryWrite {
-	return categoryWrite{done: "Scheduled in ", line: func() (string, error) {
+	return categoryWrite{done: "Work session written in ", line: func() (string, error) {
 		link, err := a.sessionLink(v, t)
 		if err != nil {
 			return "", err
@@ -130,7 +130,7 @@ func (a *App) sessionWrite(v *vault.Vault, t vault.Task, when string) categoryWr
 
 // eventWrite is the write of the line of an event that has no task.
 func eventWrite(text, when string) categoryWrite {
-	return categoryWrite{done: "Added event to ", line: func() (string, error) {
+	return categoryWrite{done: "Event written in ", line: func() (string, error) {
 		return "- " + strings.TrimSpace(text) + " when:" + when, nil
 	}}
 }
@@ -184,7 +184,7 @@ func (a *App) newCategoryNote(w categoryWrite) {
 		for _, n := range a.idx.notes {
 			if n.Folder == folder && strings.EqualFold(n.Title, title) &&
 				vault.FolderSubpathOf(n.Path, n.Folder, a.primaryAtRoot(), a.folderPaths()) == sub {
-				fail("A note named " + title + " exists")
+				fail("A note with the name " + title + " exists")
 				return
 			}
 		}
@@ -228,7 +228,7 @@ func (a *App) sessionLink(v *vault.Vault, t vault.Task) (string, error) {
 		return "", err
 	}
 	if id == "" {
-		return "", fmt.Errorf("the task is no longer in %s", t.SourcePath)
+		return "", fmt.Errorf("The task is no longer in %s", t.SourcePath)
 	}
 	return "[[" + t.NoteTitle + "#^" + id + "]]", nil
 }

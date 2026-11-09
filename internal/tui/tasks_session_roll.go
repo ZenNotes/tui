@@ -95,14 +95,14 @@ func (a *App) endRoll(err error) {
 		})
 		if err != nil {
 			failed = true
-			messages = append(messages, fmt.Sprintf("Could not copy a work session into %s: %v", path, err))
+			messages = append(messages, fmt.Sprintf("A work session was not copied into %s: %v", path, err))
 		}
 	}
 	switch {
 	case effects.ownNote == 1:
-		messages = append(messages, "1 work session in its own note was not copied")
+		messages = append(messages, "1 work session in an event note was not copied")
 	case effects.ownNote > 1:
-		messages = append(messages, fmt.Sprintf("%d work sessions in their own notes were not copied", effects.ownNote))
+		messages = append(messages, fmt.Sprintf("%d work sessions in event notes were not copied", effects.ownNote))
 	}
 	switch {
 	case len(messages) == 0:

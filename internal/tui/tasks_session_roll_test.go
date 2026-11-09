@@ -229,7 +229,7 @@ func TestRollReportsSessionsNotCopied(t *testing.T) {
 	if got, want := readRollNote(t, root, "inbox/Meeting.md"), notes["inbox/Meeting.md"]; got != want {
 		t.Errorf("event note changed:\n%s", got)
 	}
-	if a.message != "1 work session in its own note was not copied" {
+	if a.message != "1 work session in an event note was not copied" {
 		t.Errorf("status line = %q", a.message)
 	}
 }

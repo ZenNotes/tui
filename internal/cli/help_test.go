@@ -131,7 +131,7 @@ func TestHelpDocumentsFieldsEventsAndSessions(t *testing.T) {
 		"block id",
 		"where: session:today",
 		"path#^blockid",
-		"Finishing a task with @repeat: writes its next occurrence above it",
+		"When you finish a task with @repeat:, zn writes its next copy above it",
 		"warns about task and event values",
 	} {
 		if !strings.Contains(flat, want) {

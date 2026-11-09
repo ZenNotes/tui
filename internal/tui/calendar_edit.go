@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	repeatingEventRefusal = "Repeating event: edit it in its note (Enter)"
-	eventTaskKeyRefusal   = "Events have no completion, priority or status"
-	doneSessionRefusal    = "This occurrence is done"
+	repeatingEventRefusal = "Edit a repeating event in its note. Press Enter"
+	eventTaskKeyRefusal   = "An event has no state, no priority and no status"
+	doneSessionRefusal    = "The task of this work session is done"
 
-	cancelledSessionRefusal = "This occurrence is cancelled"
+	cancelledSessionRefusal = "The task of this work session is cancelled"
 )
 
 // selectedEvent gives the event or session that the cursor selects in the
@@ -154,7 +154,7 @@ func (a *App) moveEventTo(e calEntry, day string) {
 	from, errFrom := time.Parse(calISODay, e.occ.StartDate)
 	to, errTo := time.Parse(calISODay, day)
 	if errFrom != nil || errTo != nil {
-		a.notifyError("The event has no valid date")
+		a.notifyError("The date of the event is not correct")
 		return
 	}
 	days := int(to.Sub(from).Hours() / 24)
@@ -164,7 +164,7 @@ func (a *App) moveEventTo(e calEntry, day string) {
 	}
 	when := vault.ShiftWhenValue(e.when, days)
 	if when == e.when {
-		a.notifyError("The time of the event is not valid: " + e.when)
+		a.notifyError("The time of the event is not correct: " + e.when)
 		return
 	}
 	a.writeEventWhen(e, when)
@@ -209,7 +209,7 @@ func (a *App) writeEventWhen(e calEntry, when string) {
 	case !found:
 		a.notifyError("The event is no longer in " + e.path)
 	default:
-		a.notify("Event now at " + when)
+		a.notify("The event is now at " + when)
 		a.afterTaskChange()
 	}
 }
@@ -221,7 +221,11 @@ func (a *App) deleteEvent(e calEntry) {
 	if title == "" {
 		title = e.note
 	}
-	a.confirm("Delete event \""+title+"\"?", func() {
+	noun := "event"
+	if e.kind == calSession {
+		noun = "work session"
+	}
+	a.confirm("Delete the "+noun+" \""+title+"\"?", func() {
 		if !e.inline {
 			a.moveNoteToTrash(e.path, e.note)
 			return
@@ -238,7 +242,7 @@ func (a *App) deleteEvent(e calEntry) {
 		case !found:
 			a.notifyError("The event is no longer in " + e.path)
 		default:
-			a.notify("Deleted event " + title)
+			a.notify("The event is deleted: " + title)
 			a.afterTaskChange()
 		}
 	})

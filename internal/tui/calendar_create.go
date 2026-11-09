@@ -46,7 +46,7 @@ func (v *tasksView) scheduleKey(a *App) {
 	}
 	c := v.calc()
 	if _, ok := c.selectedEvent(v.day); ok {
-		a.notify("An event has no task to schedule")
+		a.notify("An event has no task for a work session")
 		return
 	}
 	if c.focus != calFocusGrid {
@@ -74,10 +74,10 @@ func (a *App) pickTaskToSchedule(initial string) {
 		items = append(items, paletteItem{label: t.Content, detail: detail, id: t.ID, data: t})
 	}
 	if len(items) == 0 {
-		a.notify("No open tasks to schedule")
+		a.notify("There is no open task for a work session")
 		return
 	}
-	a.overlay = &palette{title: "Schedule which task?", placeholder: "Task", items: items, filtered: items,
+	a.overlay = &palette{title: "Select a task", placeholder: "Task", items: items, filtered: items,
 		onSelect: func(a *App, it paletteItem) {
 			a.scheduleSessionAt(it.data.(vault.Task), initial)
 		}}
@@ -103,7 +103,7 @@ func (a *App) eventTextPrompt(v *vault.Vault, when, initial string) {
 		case text == "":
 			problem = "Enter the text of the event"
 		case strings.Contains(strings.ToLower(text), "when:"):
-			problem = "Write the time in the next question, not in the text"
+			problem = "Write the time in the next prompt. Do not write it in the text"
 		}
 		if problem != "" {
 			a.eventTextPrompt(v, when, text)
@@ -117,7 +117,7 @@ func (a *App) eventTextPrompt(v *vault.Vault, when, initial string) {
 // eventWhenAsk asks for the time of a new event. A wrong answer keeps the
 // prompt open with the text and the error.
 func (a *App) eventWhenAsk(v *vault.Vault, text, initial string) {
-	a.promptFor("When is "+truncateCells(text, 30)+"?", initial, whenHelp, func(a *App, answer string) {
+	a.promptFor("Time of "+truncateCells(text, 30), initial, whenHelp, func(a *App, answer string) {
 		when, err := parseSessionWhen(strings.TrimSpace(answer), a.taskClock())
 		if err != nil {
 			a.eventWhenAsk(v, text, answer)

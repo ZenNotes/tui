@@ -284,8 +284,8 @@ func TestCompleteAndCancelDoNothingOnCancelledSession(t *testing.T) {
 		if got := calEditNote(t, root, "inbox/Work.md"); got != before {
 			t.Errorf("%c changed the note:\n%s", key, got)
 		}
-		if a.message != "This occurrence is cancelled" {
-			t.Errorf("%c: message = %q, want %q", key, a.message, "This occurrence is cancelled")
+		if a.message != "The task of this work session is cancelled" {
+			t.Errorf("%c: message = %q, want %q", key, a.message, "The task of this work session is cancelled")
 		}
 	}
 
@@ -306,7 +306,7 @@ func TestCompleteAndCancelDoNothingOnCancelledSession(t *testing.T) {
 	if got := calEditNote(t, root, "inbox/Work.md"); got != before {
 		t.Errorf("the menu changed the note:\n%s", got)
 	}
-	if a.message != "This occurrence is cancelled" {
+	if a.message != "The task of this work session is cancelled" {
 		t.Errorf("menu message = %q", a.message)
 	}
 }

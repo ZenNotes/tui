@@ -1179,7 +1179,7 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 		a.setTaskStatusColumn(t, col.id)
 		if col.id == "undated" || col.id == "upcoming" {
 			if t.SessionDate != "" && t.SessionDate <= vault.TodayISO(a.taskClock()) && !t.Checked && !t.Waiting && !t.InProgress {
-				a.notify(fmt.Sprintf("%s stays in Today: work planned %s", t.Content, withTaskClock(t.SessionDate, t.SessionTime, "", a.prefs.TimeFormat)))
+				a.notify(fmt.Sprintf("%s remains in Today. Its work session is on %s", t.Content, withTaskClock(t.SessionDate, t.SessionTime, "", a.prefs.TimeFormat)))
 				return
 			}
 		}
@@ -1654,7 +1654,7 @@ func (a *App) taskPriorityMenu(t vault.Task) {
 }
 
 func (a *App) taskDuePrompt(t vault.Task) {
-	a.promptFor("Due date", t.Due, "YYYY-MM-DD[THH:MM[-HH:MM]], today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
+	a.promptFor("Due date", t.Due, "YYYY-MM-DD[THH:MM[-HH:MM]], today, tomorrow, +3, mon..sun. Leave it empty to clear the date", func(a *App, text string) {
 		due, err := parseDueInput(strings.TrimSpace(text), a.taskClock())
 		if err != nil {
 			a.notifyError(err.Error())
@@ -1758,7 +1758,7 @@ func (a *App) taskMenuFor(t vault.Task, refusal string) {
 		{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},
 		{key: "e", label: "Edit text", run: func(a *App) { a.taskTextPrompt(t) }},
 		{key: "s", label: "Set field", run: func(a *App) { a.taskFieldPrompt(t) }},
-		{key: "W", label: "Schedule a work session", run: func(a *App) { a.scheduleSession(t) }},
+		{key: "W", label: "Write a work session", run: func(a *App) { a.scheduleSession(t) }},
 		{key: "f", label: "Forward to today's daily note", run: func(a *App) { a.forwardTask(t) }},
 		{key: "y", label: "Copy line", run: func(a *App) { a.copyText(t.RawText) }},
 	})

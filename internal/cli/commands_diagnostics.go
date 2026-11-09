@@ -195,9 +195,9 @@ func taskTokenCheck(root string) (diagnosticCheck, bool) {
 	if err != nil || len(problems) == 0 {
 		return diagnosticCheck{}, false
 	}
-	message := fmt.Sprintf("%d task or event values are not valid and zn ignores them", len(problems))
+	message := fmt.Sprintf("%d task or event values are not correct. zn does not use them", len(problems))
 	if len(problems) == 1 {
-		message = "1 task or event value is not valid and zn ignores it"
+		message = "1 task or event value is not correct. zn does not use it"
 	}
 	check := diagnosticCheck{
 		Name:    "task tokens",

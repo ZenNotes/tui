@@ -79,13 +79,13 @@ func tokenReason(token string) string {
 	case "due":
 		return dueReason(token)
 	case "repeat", "@repeat":
-		return "the rule is not valid"
+		return "the rule is not correct, so zn does not use it"
 	case "skip", "@skip":
-		return "the item is not a real day, a forward range or a name"
+		return "the item is not a day (YYYY-MM-DD), a range (start/end) or a name, so zn does not use it"
 	case "until", "@until":
-		return "the value is not a real date without a time"
+		return "the value is not a date in the form YYYY-MM-DD, so zn does not use it"
 	}
-	return "the value is not valid"
+	return "the value is not correct, so zn does not use it"
 }
 
 // dueReason says why a `due:` token is set aside. The token has the form
@@ -95,14 +95,14 @@ func dueReason(token string) string {
 	date, start, _ := SplitDateTime(value)
 	switch {
 	case strings.HasPrefix(value[len(date):], "/"), strings.HasPrefix(value[len(date):], ".."):
-		return "a due value holds one day, so only its start date is used"
+		return "a due value has one day, so zn uses only the start date"
 	case start == "" && strings.HasPrefix(value[len(date):], "-"),
 		start == "" && strings.HasPrefix(value[len(date):], "T-"):
-		return "an end time needs a start time, so the time is ignored"
+		return "an end time needs a start time, so zn does not use the time"
 	case start != "" && strings.Contains(value[len(date):], "-"):
-		return "the end time is not a valid HH:MM later than the start time, so it is ignored"
+		return "the end time is not HH:MM or is not later than the start time, so zn does not use it"
 	}
-	return "the time is not a valid HH:MM"
+	return "the time is not HH:MM, so zn does not use it"
 }
 
 // badDateTime reports whether value has a real date followed by something
@@ -134,7 +134,7 @@ func badSkipItems(value string) []string {
 }
 
 // skipDotsReason is the reason for a `@skip:` value that dots follow.
-const skipDotsReason = "a range is written start/end with a slash, so only the first day is used"
+const skipDotsReason = "write a range as start/end with a slash, so zn uses only the first day"
 
 // nameProblem says why a skip name gives no period, or "" when it does or when
 // names is nil. path is the note that holds the name.
@@ -173,9 +173,9 @@ func lintInlineSkip(line int, tail string, names *skipNameIndex, addWhy func(lin
 
 // Reasons for an `until` value that is a real date but still ends no rule.
 const (
-	untilNeedsRule   = "an until date needs a valid repeat rule, so it is ignored"
+	untilNeedsRule   = "an until date needs a correct repeat rule, so zn does not use it"
 	untilBeforeStart = "the until date is before the first date, so the rule has no next date"
-	untilSecond      = "only the first until value is used, so this one is ignored"
+	untilSecond      = "zn uses only the first until value, so it does not use this value"
 )
 
 // untilProblem says why an `until` value does not end a rule, or "" when it
@@ -259,11 +259,11 @@ func lintInlineUntil(line int, tail, start string, addWhy func(line int, token, 
 
 // Reasons for the event kinds of problem.
 const (
-	checkboxWhenReason = "a task line does not read when:, so the token is plain text; write an event as a list item without a checkbox"
-	manyWhenReason     = "an event line needs exactly one when: token, so this line is not an event"
-	afterReason        = "an event does not use after-, so the rule is ignored"
-	noWhenReason       = "the value does not start with a real date in the form YYYY-MM-DD, so there is no event"
-	noteNoWhenReason   = "an event note needs a when value that starts with a real date in the form YYYY-MM-DD, so there is no event"
+	checkboxWhenReason = "a task line has no when: value, so the token is plain text. Write an event as a list item without a checkbox"
+	manyWhenReason     = "an event line needs one when: token, not two or more, so this line is not an event"
+	afterReason        = "an event does not use after-, so zn drops it and uses the rest of the rule"
+	noWhenReason       = "the value does not start with a date in the form YYYY-MM-DD, so there is no event"
+	noteNoWhenReason   = "an event note needs a when value that starts with a date in the form YYYY-MM-DD, so there is no event"
 )
 
 // looksDated reports whether a `when:` value starts like a date, so that a
@@ -306,7 +306,7 @@ func lintRepeatFields(line int, tail string, re *regexp.Regexp, event bool, add 
 		case strings.ContainsAny(rest, "0123456789") || strings.IndexFunc(rest, unicode.IsLetter) >= 0:
 			cut, _ := utf8.DecodeRuneInString(rest)
 			addWhy(line, "@repeat:"+value+rest, fmt.Sprintf(
-				"the rule ends at %q, so only the part before it is read; join the days with a slash, for example mon/thu", string(cut)))
+				"the rule ends at %q, so zn reads only the part before it. Join the days with a slash, for example mon/thu", string(cut)))
 		case badRepeat(value):
 			add(line, "@repeat:"+value)
 		case event && strings.HasPrefix(strings.ToLower(value), "after-"):
@@ -448,7 +448,7 @@ func lintFrontmatter(path string, lines []string, event bool, names *skipNameInd
 
 // Reasons for a link or a block id that the whole vault decides.
 const (
-	danglingLinkReason = "no single task answers this link, so the session has no task"
+	danglingLinkReason = "no task, or more than one task, matches this link, so the work session has no task"
 	duplicateIDReason  = "more than one line ends with this block id, so a link to it can name the wrong line"
 )
 

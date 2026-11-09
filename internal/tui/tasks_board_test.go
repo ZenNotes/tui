@@ -155,7 +155,7 @@ func readBoardNote(t *testing.T, path string) string {
 func TestBoardMoveKeepsTodayCardAndSaysWhy(t *testing.T) {
 	day := time.Date(2026, 11, 4, 12, 0, 0, 0, time.Local)
 	plans := "- T task:[[Work#^ab12cd]] when:2026-11-03T09:00\n"
-	message := "T stays in Today: work planned 2026-11-03 09:00"
+	message := "T remains in Today. Its work session is on 2026-11-03 09:00"
 
 	a, work, plansPath := boardMoveApp(t, "- [ ] T due:2026-11-06 ^ab12cd\n", plans, day)
 	a.prefs.TimeFormat = "24h"
@@ -194,7 +194,7 @@ func TestBoardMoveKeepsTodayCardAndSaysWhy(t *testing.T) {
 	if got := readBoardNote(t, work); got != "- [ ] T ^ab12cd\n" {
 		t.Errorf("Work.md with a future session = %q", got)
 	}
-	if strings.Contains(a.message, "stays in Today") {
+	if strings.Contains(a.message, "remains in Today") {
 		t.Errorf("message = %q", a.message)
 	}
 }

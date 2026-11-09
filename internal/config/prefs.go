@@ -411,8 +411,8 @@ theme = ""
 # (TeX Live, MacTeX or MiKTeX) and pdftocairo (poppler) yourself; zn doctor
 # prints the commands. Its packages come from preamble.tex next to this file.
 math = "typst"
-# task_note_marker = tag | page-type: how a task note made in zn says it is a
-# task. tag writes tags: [task], as before; page-type writes page-type: task.
+# task_note_marker = tag | page-type: the mark that zn writes in a new task note.
+# tag writes tags: [task]. page-type writes page-type: task.
 task_note_marker = "tag"
 # Seconds one diagram or math render may take, and how many run at once.
 render_timeout = 10

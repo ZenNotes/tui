@@ -1373,14 +1373,14 @@ func (v *Vault) writeSessionCopies(copies []SessionCopy, canWrite func(string) b
 		}
 		done()
 		if err != nil {
-			v.warnTask(fmt.Sprintf("Could not copy a work session into %s: %v", path, err))
+			v.warnTask(fmt.Sprintf("A work session was not copied into %s: %v", path, err))
 		}
 	}
 	switch {
 	case refused == 1:
-		v.warnTask("1 work session in a note that you cannot change was not copied.")
+		v.warnTask("1 work session was not copied. You cannot write to its note.")
 	case refused > 1:
-		v.warnTask(fmt.Sprintf("%d work sessions in notes that you cannot change were not copied.", refused))
+		v.warnTask(fmt.Sprintf("%d work sessions were not copied. You cannot write to their notes.", refused))
 	}
 }
 
