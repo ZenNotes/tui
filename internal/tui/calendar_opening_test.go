@@ -94,6 +94,9 @@ func TestDayOpensAtEightWithoutTimedEntries(t *testing.T) {
 func TestNowLabelStyle(t *testing.T) {
 	a, tv := calOpeningApp(t, nil, calAt(2, 14, 20), calAt(2, 0, 0))
 	calSwitchTo(t, a, tv, calWeek)
+	// The cursor starts on the row of the current time, where its own style
+	// wins, so it moves away first.
+	calPress(a, tv, vim.R('j'))
 	plain := calScreen(a, tv, 120, 70)
 	raw := calRawScreen(t, a, tv, 120, 70)
 	mark := strings.SplitN(a.theme.Base.Foreground(a.theme.Accent).Bold(true).Render("x"), "x", 2)[0]

@@ -649,7 +649,7 @@ keeps them open until you choose an action, press Space again, or cancel.
 | `Ctrl+B` | Toggle the sidebar |
 | `Ctrl+W` then `v` `s` `h` `j` `k` `l` `q` `o` `=` | Split, move between and close panes |
 | `Ctrl+O` `Ctrl+I` | Jump back and forward across notes |
-| `gt` `gT` `]b` `[b` | Next and previous tab, from any view or panel (the calendars keep `[` `]` for the month, the Kanban board keeps `g` for its grouping) |
+| `gt` `gT` `]b` `[b` | Next and previous tab, from any view or panel (the month view keeps `[` `]` for the month, the Kanban board keeps `g` for its grouping) |
 | `:` | Ex commands; `Space ;` or `Ctrl+G` opens the command palette |
 | `?` | The keys of the current view; `:help` is the full manual |
 | `F2` | Context actions, including when Vim mode is off |
@@ -745,7 +745,9 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   start in `calendar` mode always opens the month grid. On a narrow
   terminal the month shows a compact grid with a count per day and the
   selected day's tasks under it. `h`/`j`/`k`/`l`
-  move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
+  move the day, `H`/`L` the month in every view, `[`/`]` the month in the
+  month view only (in week and day view they do nothing, so `]b` and `[b`
+  switch tabs), `t` goes to today, `<C-D>`/`<C-U>` page
   by half a view, and `o` opens the day's daily note. The calendar shows the
   events and work sessions of a local vault with the due dates of tasks.
   Week and day view show an hour list with a cursor on one slot. `h`/`l` move
@@ -757,7 +759,11 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   without a time is listed in an all-day band above the rows, which `a`
   focuses. `Tab` and `Shift+Tab` (also `Ctrl+N` and `Ctrl+P`) select the next
   or previous timed entry, across days, and `Enter` opens the entry on the
-  slot, or a picker when several share it. A footer under the grid describes
+  slot, or a picker when several share it. In Vim mode, `}` and `{` go to the
+  last or first slot of the selected entry, and from an empty slot or at that
+  edge to the next or previous entry of the day. `gg` moves the focus to the
+  all-day entries and `G` back to the grid; in the all-day entries `h` and `l`
+  move the day. A footer under the grid describes
   the entries on the slot: their dates, their repeat rule with `until` and
   their note. `W` writes a work session for the selected task, or for a
   task that you pick when the slot is empty, and `N` writes an event. Both ask
@@ -765,7 +771,8 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   category note that receives the line; a new category note is one choice.
   On a selected event or session, `T` moves it to today, `@` opens a menu of
   days, `d` edits its time and `D` deletes it. A repeating event is edited in
-  its note. The mouse selects a slot or an entry, a double-click opens it and a
+  its note. A done or cancelled session does not complete or cancel its task
+  again. The mouse selects a slot or an entry, a double-click opens it and a
   right-click opens its menu. `Enter` and `Tab` move focus
   between the day grid, the selected day's items and the No-date strip. On
   a focused item or strip task, `T` moves it to today and `@` opens a

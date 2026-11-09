@@ -263,8 +263,8 @@ func TestAllDayFocusKeys(t *testing.T) {
 		calPress(a, tv, vim.KeyEsc)
 		requireFocus(t, tv, calFocusGrid, "Esc")
 		requireDay(t, tv, "2026-11-03", "Esc")
-		calPress(a, tv, vim.R('a'), vim.R('h'))
-		requireFocus(t, tv, calFocusGrid, "h")
+		calPress(a, tv, vim.R('a'), vim.KeyEsc)
+		requireFocus(t, tv, calFocusGrid, "Esc")
 
 		calPress(a, tv, vim.R('a'), vim.KeyTab)
 		requireFocus(t, tv, calFocusStrip, "Tab from the pane")

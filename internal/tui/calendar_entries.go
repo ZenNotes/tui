@@ -64,11 +64,19 @@ func (e calEntry) hasTask() bool {
 	return e.kind == calDue || (e.kind == calSession && e.task.SourcePath != "")
 }
 
-// doneSession reports whether the entry is a work session that is shown as
-// done. Its occurrence is finished, so a key must not complete or cancel the
-// task again through it.
-func (e calEntry) doneSession() bool {
-	return e.kind == calSession && e.done
+// finishedRefusal is the notice for a work session whose occurrence is done or
+// cancelled, or "" for any other entry. Such an occurrence is finished, so a
+// key must not complete or cancel the task again through it.
+func (e calEntry) finishedRefusal() string {
+	switch {
+	case e.kind != calSession:
+		return ""
+	case e.done:
+		return doneSessionRefusal
+	case e.mark == "☒":
+		return cancelledSessionRefusal
+	}
+	return ""
 }
 
 // clock is the entry's time of day as `HH:MM`, or "" when it is untimed. A due

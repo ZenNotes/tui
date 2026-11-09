@@ -295,3 +295,104 @@ func (a *App) calendarStepChord(k vim.Key) bool {
 	v, ok := t.view.(*tasksView)
 	return ok && v.mode == "calendar" && v.calc().sub != calMonth && v.calc().focus == calFocusGrid
 }
+
+// jumpEdge moves the cursor to an edge of an entry of the day. Forward (dir 1)
+// it goes to the last slot of the selected entry, and back (dir -1) to its
+// first slot. On an empty slot, or at that edge, it goes to the start of the
+// next entry, or to the end of the previous entry, and selects that entry.
+// When there is no such entry, nothing changes.
+func (c *taskCalendar) jumpEdge(day time.Time, dir int) {
+	col := c.columnTable(day)
+	blocks := col.tt.blocks
+	if len(blocks) == 0 || len(col.idx) < len(blocks) {
+		return
+	}
+	row := c.curRow()
+	if sel, ok := col.entryAt(row, c.pin); ok {
+		for i, b := range blocks {
+			if col.idx[i] != sel {
+				continue
+			}
+			switch {
+			case dir > 0 && row < b.last:
+				c.landOn(b, b.last)
+				return
+			case dir < 0 && row > b.first:
+				c.landOn(b, b.first)
+				return
+			}
+			break
+		}
+	}
+	pick := -1
+	for i, b := range blocks {
+		switch {
+		case dir > 0 && b.first > row && (pick < 0 || b.first < blocks[pick].first):
+			pick = i
+		case dir < 0 && b.last < row && (pick < 0 || b.last > blocks[pick].last):
+			pick = i
+		}
+	}
+	if pick < 0 {
+		return
+	}
+	if dir > 0 {
+		c.landOn(blocks[pick], blocks[pick].first)
+	} else {
+		c.landOn(blocks[pick], blocks[pick].last)
+	}
+}
+
+// landOn puts the cursor on a slot of a block and selects its entry.
+func (c *taskCalendar) landOn(b calBlock, row int) {
+	c.setCursorRow(row)
+	c.pin = entryKey(b.entry)
+}
+
+// enterPane moves the focus to the all-day entries of the day. The first entry
+// is selected. When the day has no all-day entry, nothing is selected.
+func (c *taskCalendar) enterPane(day time.Time) {
+	c.focus = calFocusItems
+	c.cursor = 0
+	if c.untimedCount(day) == 0 {
+		c.cursor = len(c.dayEntries(day))
+	}
+}
+
+// paneBlank reports whether the all-day entries have the focus in a week or
+// day view and select nothing.
+func (c *taskCalendar) paneBlank(day time.Time) bool {
+	return c.focus == calFocusItems && c.sub != calMonth && c.cursor >= len(c.dayEntries(day))
+}
+
+// paneStepDay moves the selected day by dir days and keeps the focus on the
+// all-day entries.
+func (v *tasksView) paneStepDay(a *App, dir int) {
+	v.selectDay(a, v.day.AddDate(0, 0, dir))
+	v.calc().enterPane(v.day)
+}
+
+// calendarJumpKey runs `gg`, which moves the focus to the all-day entries, and
+// `G`, which gives it back to the hour grid on the slot of the cursor. Both
+// need Vim mode and a week or day view. It reports whether the key did.
+func (v *tasksView) calendarJumpKey(a *App, k vim.Key) bool {
+	c := v.calc()
+	pending := c.pendingG
+	c.pendingG = false
+	if !a.prefs.VimMode || c.sub == calMonth {
+		return false
+	}
+	switch {
+	case k.IsRune('g'):
+		if pending {
+			c.enterPane(v.day)
+		} else {
+			c.pendingG = true
+		}
+	case k.IsRune('G'):
+		c.focus = calFocusGrid
+	default:
+		return false
+	}
+	return true
+}

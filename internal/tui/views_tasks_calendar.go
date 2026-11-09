@@ -109,6 +109,8 @@ type taskCalendar struct {
 	pin string
 	// follow says that the next layout scrolls the hour list to the cursor.
 	follow bool
+	// pendingG says that the last key was the first `g` of `gg`.
+	pendingG bool
 
 	byDay   map[string][]calEntry
 	undated []vault.Task
@@ -123,10 +125,15 @@ func newTaskCalendar() *taskCalendar { return &taskCalendar{} }
 func (c *taskCalendar) rebuild(tasks []vault.Task, day time.Time) {
 	c.byDay, c.undated = bucketCalendarEntries(tasks)
 	entries := c.dayEntries(day)
-	if c.cursor >= len(entries) {
+	switch {
+	case c.cursor < len(entries):
+	case c.focus == calFocusItems && c.sub != calMonth && c.untimedCount(day) == 0:
+		// An all-day pane with no entry keeps its focus and selects nothing.
+		c.cursor = len(entries)
+	default:
 		c.cursor = max(0, len(entries)-1)
 	}
-	if c.focus == calFocusItems && len(entries) == 0 {
+	if c.focus == calFocusItems && len(entries) == 0 && c.sub == calMonth {
 		c.focus = calFocusGrid
 	}
 	if c.strip >= len(c.undated) {
@@ -658,9 +665,15 @@ func (c *taskCalendar) renderColumns(a *App, day time.Time, lay calLayout, w, h 
 			}
 			rows = append(rows, padRight(sb.String(), w))
 		}
+		cursor := -1
+		for j, b := range lay.boxes {
+			if sameDay(b.day, day) {
+				cursor = cols[j].cursor
+			}
+		}
 		for i := 0; i < lay.boxes[0].hours.h; i++ {
 			var sb strings.Builder
-			sb.WriteString(c.hourLabelCell(a, lay, i))
+			sb.WriteString(c.hourLabelCell(a, lay, i, cursor))
 			for j, b := range lay.boxes {
 				sb.WriteString(c.hourCell(a, cols[j], lay.hourStart+i, b.hours.w))
 			}

@@ -13,6 +13,8 @@ const (
 	repeatingEventRefusal = "Repeating event: edit it in its note (Enter)"
 	eventTaskKeyRefusal   = "Events have no completion, priority or status"
 	doneSessionRefusal    = "This occurrence is done"
+
+	cancelledSessionRefusal = "This occurrence is cancelled"
 )
 
 // selectedEvent gives the event or session that the cursor selects in the
@@ -49,8 +51,8 @@ func (v *tasksView) eventKey(a *App, k vim.Key) bool {
 		v.eventAct(a, e, k.Rune)
 	case e.kind == calEvent && eventTaskKey(a, k):
 		a.notify(eventTaskKeyRefusal)
-	case e.doneSession() && (a.bound(k, "nav.toggleTask") || k.IsRune('c')):
-		a.notify(doneSessionRefusal)
+	case e.finishedRefusal() != "" && (a.bound(k, "nav.toggleTask") || k.IsRune('c')):
+		a.notify(e.finishedRefusal())
 	default:
 		return false
 	}
@@ -97,7 +99,7 @@ func (v *tasksView) eventMenu(a *App, e calEntry) {
 		{key: "D", label: "Delete", run: act('D')},
 	}
 	if e.kind == calSession {
-		items = append(items, menuItem{sep: true}, menuItem{key: "t", label: "Task actions", run: func(a *App) { a.taskMenuFor(e.task, e.doneSession()) }})
+		items = append(items, menuItem{sep: true}, menuItem{key: "t", label: "Task actions", run: func(a *App) { a.taskMenuFor(e.task, e.finishedRefusal()) }})
 	}
 	a.showMenu(truncateCells(title, 40), items)
 }

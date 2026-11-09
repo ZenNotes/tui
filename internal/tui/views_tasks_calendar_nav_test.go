@@ -256,7 +256,7 @@ func TestWeekColumnFocusEditAndOpenKeys(t *testing.T) {
 func TestWeekDayEscAndLeftReturnToGrid(t *testing.T) {
 	for _, sub := range []calSub{calWeek, calDay} {
 		for _, vimOn := range []bool{true, false} {
-			for _, back := range []vim.Key{vim.KeyEsc, vim.Special("left"), vim.R('h')} {
+			for _, back := range []vim.Key{vim.KeyEsc} {
 				a, tv, _ := calVaultApp(t, map[string]string{"work.md": calWorkNote})
 				a.prefs.VimMode = vimOn
 				calToSub(t, a, tv, sub)
@@ -265,13 +265,6 @@ func TestWeekDayEscAndLeftReturnToGrid(t *testing.T) {
 					t.Fatalf("layout %v vim=%v: Enter did not focus the column", sub, vimOn)
 				}
 				calPress(a, tv, back)
-				if !vimOn && back.IsRune('h') {
-					// With Vim off h is a letter, and letters do nothing.
-					if tv.calc().focus != calFocusItems {
-						t.Errorf("layout %v: h with Vim off moved focus to %v", sub, tv.calc().focus)
-					}
-					continue
-				}
 				if tv.calc().focus != calFocusGrid {
 					t.Errorf("layout %v vim=%v: %s left focus on %v, want the grid", sub, vimOn, back, tv.calc().focus)
 				}

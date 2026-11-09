@@ -91,11 +91,16 @@ func (tt calTimetable) slotOwners(slot, w int) []int {
 func calOverLabel(n int) string { return fmt.Sprintf("+%d", n) }
 
 // hourLabelCell is the label of hour row i of the view and the rule after it.
-func (c *taskCalendar) hourLabelCell(a *App, lay calLayout, i int) string {
+// The row of the cursor is in the cursor style, which wins over the style of
+// the current time.
+func (c *taskCalendar) hourLabelCell(a *App, lay calLayout, i, cursor int) string {
 	th := a.theme
 	label := padRight(hourLabel(a, (lay.hourStart+i)*c.hourStep()), lay.gutter-2)
 	style := th.Muted
-	if c.holdsNow(lay, lay.hourStart+i) {
+	switch {
+	case lay.hourStart+i == cursor:
+		style = th.SelectedFocus
+	case c.holdsNow(lay, lay.hourStart+i):
 		style = th.Base.Foreground(th.Accent).Bold(true)
 	}
 	return style.Render(label) + th.Dim.Render(" │")
@@ -177,7 +182,7 @@ func (c *taskCalendar) dayRows(a *App, day time.Time, lay calLayout, col calColu
 	for i := 0; i < lay.pane.h; i++ {
 		var sb strings.Builder
 		if i < b.hours.h {
-			sb.WriteString(c.hourLabelCell(a, lay, i))
+			sb.WriteString(c.hourLabelCell(a, lay, i, col.cursor))
 			sb.WriteString(c.hourCell(a, col, lay.hourStart+i, b.hours.w))
 		} else {
 			sb.WriteString(strings.Repeat(" ", lay.pane.x))

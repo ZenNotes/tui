@@ -871,7 +871,8 @@ func (v *tasksView) ownsKey(a *App, k vim.Key) bool {
 	case "kanban":
 		return k.IsRune('g')
 	case "calendar":
-		return v.calc().focus == calFocusGrid && (k.IsRune('[') || k.IsRune(']'))
+		c := v.calc()
+		return c.focus == calFocusGrid && c.sub == calMonth && (k.IsRune('[') || k.IsRune(']'))
 	}
 	return false
 }
@@ -1202,6 +1203,9 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		v.calc().cycleZoom()
 		return true
 	}
+	if v.calendarJumpKey(a, k) {
+		return true
+	}
 	if v.calc().focus != calFocusGrid {
 		// With Vim off a focused task, like the list, takes no letters.
 		if !a.listKeyAllowed(k) {
@@ -1213,7 +1217,13 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		switch {
 		case k.IsRune(':'):
 			a.openLocalEx()
-		case k.Is("esc") || k.IsRune('h') || k.Is("left"):
+		case k.Is("esc"):
+			v.calc().leaveItems(v.day)
+		case v.calc().focus == calFocusItems && v.calc().sub != calMonth && (k.IsRune('h') || k.Is("left")):
+			v.paneStepDay(a, -1)
+		case v.calc().focus == calFocusItems && v.calc().sub != calMonth && (k.IsRune('l') || k.Is("right")):
+			v.paneStepDay(a, 1)
+		case k.IsRune('h') || k.Is("left"):
 			v.calc().leaveItems(v.day)
 		case k.Is("tab"):
 			v.calc().cycleFocus(v.day)
@@ -1222,7 +1232,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				if c.strip < len(c.undated)-1 {
 					c.strip++
 				}
-			} else if c.cursor < c.lastItem(v.day) {
+			} else if !c.paneBlank(v.day) && c.cursor < c.lastItem(v.day) {
 				c.cursor++
 			}
 		case k.IsRune('k') || k.Is("up"):
@@ -1230,7 +1240,7 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 				if c.strip > 0 {
 					c.strip--
 				}
-			} else if c.cursor > 0 {
+			} else if !c.paneBlank(v.day) && c.cursor > 0 {
 				c.cursor--
 			}
 		case k.Is("enter") || k.IsRune('o'):
@@ -1277,12 +1287,16 @@ func (v *tasksView) calendarKey(a *App, k vim.Key) bool {
 		v.pageDay(a, -1)
 	case a.bound(k, "nav.halfPageDown"):
 		v.pageDay(a, 1)
-	case k.IsRune('[') || k.IsRune('H'):
+	case k.IsRune('H') || (!hourList && k.IsRune('[')):
 		v.month = v.month.AddDate(0, -1, 0)
 		v.selectDay(a, v.day.AddDate(0, -1, 0))
-	case k.IsRune(']') || k.IsRune('L'):
+	case k.IsRune('L') || (!hourList && k.IsRune(']')):
 		v.month = v.month.AddDate(0, 1, 0)
 		v.selectDay(a, v.day.AddDate(0, 1, 0))
+	case hourList && k.IsRune('}'):
+		v.calc().jumpEdge(v.day, 1)
+	case hourList && k.IsRune('{'):
+		v.calc().jumpEdge(v.day, -1)
 	case hourList && k.IsRune('T') && t != nil:
 		v.taskActionKey(a, k, t)
 	case hourList && (k.IsRune('t') || k.Is("home")):
@@ -1720,17 +1734,17 @@ func (a *App) taskFieldPrompt(t vault.Task) {
 }
 
 func (a *App) taskMenu(t vault.Task) {
-	a.taskMenuFor(t, false)
+	a.taskMenuFor(t, "")
 }
 
-// taskMenuFor opens the menu of a task. When done is true, the menu was opened
-// from a work session that is shown as done, and the keys that complete or
-// cancel the task only give a notice.
-func (a *App) taskMenuFor(t vault.Task, done bool) {
+// taskMenuFor opens the menu of a task. When refusal is not empty, the menu
+// was opened from a work session that is done or cancelled, and the keys that
+// complete or cancel the task only give that notice.
+func (a *App) taskMenuFor(t vault.Task, refusal string) {
 	complete := func(a *App) { a.toggleTask(t) }
 	cancel := func(a *App) { a.setTaskCancelled(t, !t.Cancelled) }
-	if done {
-		complete = func(a *App) { a.notify(doneSessionRefusal) }
+	if refusal != "" {
+		complete = func(a *App) { a.notify(refusal) }
 		cancel = complete
 	}
 	a.showMenu(truncateCells(t.Content, 40), []menuItem{
