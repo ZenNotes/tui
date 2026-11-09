@@ -198,7 +198,7 @@ func helpLines(a *App, filter string) []string {
 		"n f F A\tNew task in the daily note, filter, clear the filter, include archived",
 		"m\tTask menu (includes forward to today's daily note)",
 		"Board: h l j k\tMove between columns and cards; H L move the card; g cycles the grouping",
-		"Calendar: h j k l H L [ ] t\th j k l move the selected day. H and L move one month in all views. [ and ] move one month in the month view only. In the week and day views, ]b and [b change the tab. t selects today. Esc selects the next of the month, week and day views. Enter and Tab move the focus to the tasks of the day and to the No-date strip. o opens the daily note",
+		"Month view: h j k l H L [ ] t\tIn the month view, h j k l move the selected day. H and L move one month in all views. [ and ] move one month in the month view only. In the week and day views, ]b and [b change the tab. t selects today. Esc selects the next of the month, week and day views. Enter and Tab move the focus to the tasks of the day and to the No-date strip. o opens the daily note",
 		"Calendar task: T @\tMove the focused task to today; pick its due date from a menu",
 		"Week and day: j k\tMove the cursor by one slot. The list scrolls with the cursor. The view opens at the current time. If today is not in view, it opens at the first timed entry, or at 08:00 when there is none. t or Home go back to the current time",
 		"Week and day: Tab S-Tab C-N C-P\tSelect the next or previous timed entry, also on other days. Enter opens the entry, or a picker when more than one entry is on the slot. a moves the focus to the all-day entries",
