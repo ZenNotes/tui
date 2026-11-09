@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ZenNotes/tui/internal/termsafe"
+	"github.com/ZenNotes/tui/internal/vault"
 	"github.com/ZenNotes/tui/internal/vim"
 )
 
@@ -119,7 +120,7 @@ var (
 	strikeRe     = regexp.MustCompile(`~~[^~\n]+~~`)
 	linkRe       = regexp.MustCompile(`!?\[\[[^\]\n]+\]\]|!?\[[^\]\n]*\]\([^)\n]*\)|<?(?:https?://|mailto:)[^\s<>()]+>?`)
 	tagRe        = regexp.MustCompile(`(^|\s)#[\p{L}\p{N}_][\p{L}\p{N}_/-]*`)
-	taskMetaRe   = regexp.MustCompile(`(^|\s)((?i:due:\S+|scheduled:\S+|repeat:\S+|skip:\S+)|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|✅\s?\d{4}-\d{2}-\d{2})`)
+	taskMetaRe   = regexp.MustCompile(`(^|\s)(due:\S+|!(?:high|med|low)\b|@[\w-]+(?::\S+)?|✅\s?\d{4}-\d{2}-\d{2}|scheduled:\S+|when:\S+|(?i:task:)\[\[[^\]\n]*\]\])`)
 )
 
 // lineClasses computes a style class for every rune of a line.
@@ -210,12 +211,28 @@ func lineClasses(line string, inFence, inFront bool) []int {
 		mark(start, m[1], stTag)
 	}
 	for _, m := range taskMetaRe.FindAllStringSubmatchIndex(line, -1) {
-		if classes[byteToRune[m[4]]] == stCode {
+		if classes[byteToRune[m[4]]] == stCode || !metaTokenAccepted(line[m[4]:m[5]]) {
 			continue
 		}
 		mark(m[4], m[5], stMeta)
 	}
 	return classes
+}
+
+// metaTokenAccepted tells whether a token that taskMetaRe found is task
+// metadata. A `when:` token is metadata only when its value starts with a real
+// date that the end of the value, a `T`, a `-`, a `/` or `..` follows. Prose
+// such as `when: tomorrow` or `when:soon` is plain text.
+func metaTokenAccepted(token string) bool {
+	value, ok := strings.CutPrefix(token, "when:")
+	if !ok {
+		return true
+	}
+	if len(value) < 10 || !vault.IsValidISODate(value[:10]) {
+		return false
+	}
+	rest := value[10:]
+	return rest == "" || rest[0] == 'T' || rest[0] == '-' || rest[0] == '/' || strings.HasPrefix(rest, "..")
 }
 
 // byteRuneMap maps every byte offset (inclusive of len) to a rune index.

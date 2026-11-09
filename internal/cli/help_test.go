@@ -92,17 +92,15 @@ func TestHelpDocumentsTaskScheduling(t *testing.T) {
 	out := RenderHelp(nil)
 	for _, want := range []string{
 		"TASK SYNTAX",
-		"due:YYYY-MM-DD[THH:MM]",
-		"scheduled:YYYY-MM-DD[THH:MM]",
-		"repeat:<rule>",
-		"skip:<items>",
+		"due:YYYY-MM-DD[THH:MM[-HH:MM]]",
+		"@repeat:<rule>",
 		"weekdays",
-		"2w:mon,thu",
-		"1m:last-fri",
-		"1y:03-14",
-		"/done",
-		"2027-03-13..2027-03-21",
-		"scheduled:today",
+		"mon/thu",
+		"after-3d",
+		"2w-mon/thu",
+		"monthly-last-fri",
+		"yearly-03-14",
+		"extension as an ordinary task",
 		"page-type: task",
 		"task_note_marker",
 	} {
@@ -111,4 +109,53 @@ func TestHelpDocumentsTaskScheduling(t *testing.T) {
 		}
 	}
 	checkHelpRows(t, strings.Split(out, "\n"), taskSyntaxRows)
+}
+
+func TestHelpDocumentsFieldsEventsAndSessions(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	// The help wraps its text, so a phrase is searched in the flat text.
+	flat := strings.Join(strings.Fields(RenderHelp(nil)), " ")
+	for _, want := range []string{
+		"@until:YYYY-MM-DD",
+		"@skip:<item>",
+		"@skip:2027-03-13/2027-03-21",
+		"@skip:Spring-Break",
+		"title of an event note",
+		"until, skip",
+		"when:YYYY-MM-DD[THH:MM[-HH:MM]]",
+		"when:2027-03-13/2027-03-21",
+		"page-type: event",
+		"page-type: event-list",
+		"task:[[Note#^id]]",
+		"block id",
+		"where: session:today",
+		"path#^blockid",
+		"Finishing a task with @repeat: writes its next occurrence above it",
+		"warns about task and event values",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("help does not mention %q", want)
+		}
+	}
+}
+
+func TestHelpNeverMentionsScheduledOrBareTokens(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	t.Setenv("FORCE_COLOR", "")
+	flat := strings.Join(strings.Fields(RenderHelp(nil)), " ")
+	if strings.Contains(strings.ToLower(flat), "scheduled") {
+		t.Error("help mentions scheduled")
+	}
+	for _, token := range []string{"repeat:", "skip:", "until:"} {
+		for i := 0; i+len(token) <= len(flat); i++ {
+			if flat[i:i+len(token)] != token {
+				continue
+			}
+			if i > 0 && (flat[i-1] == '@' || flat[i-1] >= 'a' && flat[i-1] <= 'z') {
+				continue
+			}
+			t.Errorf("help has a bare %q at %q", token, flat[max(0, i-20):min(len(flat), i+30)])
+		}
+	}
 }

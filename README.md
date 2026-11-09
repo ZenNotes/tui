@@ -249,7 +249,8 @@ their tasks. In the terminal app, Search notes finds them once the query
 starts with the folder's path (`Templates/`).
 
 Use the ID returned by `task list` with `task toggle <id>`. An ID counts the
-task's position in its note, so list again after that note changes. Finishing a
+task's position in its note, so list again after that note changes. A task
+line that ends with a block id can also be named `path#^blockid`. Finishing a
 task with `@repeat:` writes its next occurrence above it, as the app does, and
 the finished line drops the rule. Comment
 replies and resolve/reopen operations take a thread ID. `base add` and
@@ -264,85 +265,133 @@ CSV can be linked right away. A page file already in the database folder
 under a record's name is linked instead of copied, and `--dry-run` lists
 what it would do.
 
-### Task times, repeating tasks, and task notes
+### Task times, repeating tasks, events, and task notes
 
-A checkbox task can carry a time, a scheduled day, a repeat rule and days to
-skip. All of them are plain text on the task line, and `zn task list --json`
-reports them as `dueTime`, `scheduled`, `scheduledTime`, `repeat` and `skip`
+A checkbox task can carry a time, a repeat rule, an end date and days to skip.
+All of them are plain text on the task line, and `zn task list --json`
+reports them as `dueTime`, `dueEnd`, `repeat`, `until`, `skip` and `blockId`
 next to `due`, which stays a plain date.
 
 ```markdown
-- [ ] Call the dentist due:2026-11-03T14:00
-- [ ] Water the plants scheduled:2026-11-02 repeat:mon,thu
-- [ ] Pay rent due:2026-12-01 repeat:1m:start skip:2026-12-24..2026-12-26
+- [ ] Call the dentist due:2026-11-03T14:00-15:00
+- [ ] Water the plants @repeat:mon/thu @until:2027-06-30
+- [ ] Pay rent due:2026-12-01 @repeat:monthly-start @skip:2026-12-24/2026-12-26
 ```
 
-- **Times.** `due:` and `scheduled:` take `YYYY-MM-DD` or
-  `YYYY-MM-DDTHH:MM` on a 24-hour clock. A time that is not `HH:MM` (for
-  example `T25:00`) is ignored and the date stays. A time orders the tasks of
-  one day, timed tasks first, and never moves a task between groups. The
-  calendar places a task on its due and scheduled dates, shows the time
-  before its text, and in week and day view puts it in the row holding
-  that time.
-- **`scheduled:`** is the day to work on a task, and zn keeps it out of the
-  task's text. An open task scheduled for today or earlier is listed under
-  Today; only its due date makes it overdue. In the Tasks view, the filter
-  `scheduled:` takes `today`, `overdue`, `none`, `any` or a date prefix such
-  as `scheduled:2026-11`, like `due:`.
-- **`repeat:`** takes `1d`, `2w`, `3m`, `1q` and `1y` (the number runs from 1
-  to 999), `weekdays` for Monday to Friday, a list of days such as `mon,thu`,
-  and these anchored forms:
+- **Times.** `due:` takes `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM` or
+  `YYYY-MM-DDTHH:MM-HH:MM` on a 24-hour clock. A time that is not `HH:MM`
+  (for example `T25:00`) is ignored and the date stays. A time orders the
+  tasks of one day, timed tasks first, and never moves a task between groups.
+  The calendar shows the time before the task's text, and in week and day view
+  puts the task in the rows that hold the time.
+- **`@repeat:`** takes the values of the app:
 
-  | Rule | Lands on |
+  | Value | Repeats |
   |---|---|
-  | `2w:mon,thu` | those days, in every second week |
-  | `1m:15` | the 15th of each month (a shorter month uses its last day) |
-  | `1m:start`, `1m:end` | the first or last day of the month |
-  | `1m:2-tue`, `1m:last-fri` | the 1st to 4th, or the last, such weekday of the month |
-  | `1q:start`, `1q:end` | the first or last day of the calendar quarter |
-  | `1y:03-14` | that day of each year (`02-29` uses 28 February in other years) |
+  | `daily`, `weekly`, `monthly`, `yearly` | every day, week, month or year |
+  | `3d`, `2w`, `6m`, `1y` | every N days, weeks, months or years (N runs from 1 to 999) |
+  | `weekdays` | Monday to Friday |
+  | `mon/thu` | those days of each week |
+  | `after-3d`, `after-weekly` | N units after the day you finish the task |
 
-  Weeks start on `calendar_week_start`. A rule ending in `/done`, for
-  example `repeat:1w/done`, counts from the day you finish the task instead
-  of its own date. Rules are lower-cased before they are read. A rule
-  outside this list is ignored, and the task behaves as if it had none.
-- **`skip:`** lists days (`2027-03-13`) and inclusive ranges
-  (`2027-03-13..2027-03-21`) separated by commas. A repeating task passes
-  over them when it picks its next date. An item that is not a real day, or a
-  range that ends before it starts, is ignored on its own, and `@name` items
-  are reserved and ignored for now.
+  zn adds extensions to the values of the app. Another app treats a task with
+  an extension as an ordinary task, and zn ignores a value that is in neither
+  list.
 
-Completing or cancelling an open, in-progress or waiting task that repeats
-inserts an open copy of the line (and its indented subtasks) directly above
-it, and ticks or cancels the original. The copy's date is the first date of
-the rule after the task's `scheduled:` date, else its `due:` date, else
-today, that is also after today and outside every `skip:` period. The other
-date and the subtasks' dates move by the same number of days and keep their
-times; a task with neither date gets `scheduled:`. This happens in
-`zn task toggle`, in the MCP `toggle_task` tool, in the Tasks view (list and
-board, including a card moved to Done, and cancelling), and with the editor's
-`Ctrl+L` checkbox command, which one undo reverts whole. Typing an `x` inside
-the brackets, unticking, reopening and forwarding never insert a line, and
-neither does a vault on a server, because the server parses the note itself.
+  | Extension | Repeats |
+  |---|---|
+  | `3q`, `quarterly` | every N calendar quarters |
+  | `2w-mon/thu` | those days, in every second week |
+  | `monthly-15` | the 15th of each month (a shorter month uses its last day) |
+  | `monthly-start`, `monthly-end` | the first or last day of the month |
+  | `monthly-2-tue`, `monthly-last-fri` | the 1st to 4th, or the last, such weekday of the month |
+  | `quarterly-start`, `quarterly-end` | the first or last day of the calendar quarter |
+  | `yearly-03-14` | that day of each year (`02-29` uses 28 February in other years) |
+
+  Weeks start on `calendar_week_start`. Values are read in any case.
+- **`@until:YYYY-MM-DD`** is the last date a repeating task may land on, and
+  the date itself is allowed. Without `@repeat:` it does nothing. A task with
+  no date left to land on is finished and loses its rule.
+- **`@skip:`** takes one day (`@skip:2027-03-13`), one inclusive range
+  (`@skip:2027-03-13/2027-03-21`) or one name. Repeat the field for more
+  items. A name is the title of an event note, with hyphens for spaces
+  (`@skip:Spring-Break`), and it skips the days of that event. A repeating task
+  passes over these days when it picks its next date. An item that is not a
+  real day, a range that ends before it starts and a name that no single event
+  note answers are ignored on their own.
+
+Completing an open, in-progress or waiting task that repeats inserts an open
+copy of the line (and its indented subtasks) directly above it, and ticks the
+original. The record keeps `@until:` and `@skip:` but drops `@repeat:`, so
+unticking it never starts the series again, and it cancels the subtasks that
+were still open. The copy drops `@waiting` and `@status:`. The next date is the
+first date of the rule after the start of the task's earliest work session,
+else after its `due:` date, else after the `due` of its note, else after
+today. In a daily note, with daily notes on in the vault settings, the date of
+the note replaces today. The date is also after today and outside every
+`@skip:` period, and not after `@until:`. A task with no `due:` and no session gets one on
+the copy. The `due:` dates and the sessions of the task move by the same number
+of days and keep their times. This happens in `zn task toggle`, in the MCP
+`toggle_task` tool, in the Tasks view (list and board, including a card moved
+to Done), and with the editor's `Ctrl+L` checkbox command, which one undo
+reverts whole. Cancelling a repeating task rolls it too, with a cancelled
+record, in the Tasks view, in the editor and with the MCP `update_task` tool.
+Typing an `x` inside the brackets, unticking, reopening and forwarding never
+insert a line, and neither does a vault on a server: it keeps the roll of its
+server.
 
 Because a roll adds a line, the ids from `task list` of the toggled task and
 of the later tasks in that note change. `task toggle --json` returns the task
 you ticked, not the new copy. List again before the next toggle in a note
-with repeating tasks.
+with repeating tasks. A task line that ends with a block id (` ^ab12cd`) also
+has the id `path#^ab12cd`. `task toggle` and `toggle_task` take it, and it
+does not change when the note changes.
 
 A whole note can be a task too. It is a task note when its frontmatter has
 `tags: [task]` or `page-type: task` (the key and the value in lower case).
-It reads `status`, `due`, `scheduled`, `repeat` and `skip` from its
-frontmatter, where `skip` is a value or a list. A task note whose `repeat`
-rule is valid does not stay done: completing it moves `scheduled` and `due`
-to the next date, sets `status: open` and records `lastCompleted`.
-The `task_note_marker` setting under `[terminal]` (`tag`, the default, or
-`page-type`) chooses which marker the terminal app writes into a new task
-note.
+It reads `status`, `due`, `repeat`, `until` and `skip` from its frontmatter,
+where `skip` is a value or a list. A task note whose `repeat` rule is valid does
+not stay done: completing it moves `due` to the next date, sets `status: open`
+and records `lastCompleted`. The `task_note_marker` setting under `[terminal]`
+(`tag`, the default, or `page-type`) chooses which marker the terminal app
+writes into a new task note.
 
-`zn doctor` warns, without failing, about times, repeat rules and skip items
-that zn ignores: one `path:line  token` line each for the first 10, then
-`+N more`.
+#### Events and work sessions
+
+The calendar of the terminal app also shows events. An event is one of these:
+
+- a list item, other than a checkbox, with one `when:` token whose value starts
+  with a real date: `- Lecture when:2026-11-03T14:00-15:30 @repeat:weekly`;
+- a note with `page-type: event` whose frontmatter has `when`, and optionally
+  `title`, `repeat`, `until` and `skip`.
+
+A `when:` value is `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM` or
+`YYYY-MM-DDTHH:MM-HH:MM`. A range over days uses a slash:
+`when:2027-03-13/2027-03-21` or `when:2026-11-03T22:00/2026-11-04T02:00`.
+Prose such as `when: soon`, a `when:` in code, in frontmatter or on a checkbox
+line, and a line with two `when:` tokens are not events. An event takes
+`@repeat:` with the values above, except `after-`, and `@until:` and `@skip:`.
+The frontmatter key `events: false` stops the inline events of one note.
+
+A category note has `page-type: event-list`. It is the note that holds small
+events, one line each, and the terminal app writes new events and work sessions
+into one. A remote vault shows no events and writes none.
+
+A work session is an event with a link to a task, such as
+`- Write the essay when:2026-11-03T09:00-11:00 task:[[Essay#^ab12cd]]`. The
+link names the note and the block id that ends the task line. A link to a task
+note has the form `task:[[Title]]`. A task with a session shows its
+session in the Tasks list and on the board cards, and Home shows the start time
+of a session planned for today.
+`where: session:today` (also `overdue`, `none`, `any` or a date prefix such as
+`session:2026-11`) filters the Tasks view by the date of the first session that
+has not ended. When a task rolls, its sessions are copied to the new
+occurrence, moved by the same number of days.
+
+`zn doctor` warns, without failing, about values that zn ignores: times,
+repeat rules, `@skip:`, `@until:`, `when:` and `task:` values, a link to a task
+that does not exist and a block id that ends more than one line. It prints one
+`path:line  token  reason` line each for the first 10, then `+N more`.
 
 ### Watching task status
 
@@ -685,27 +734,42 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   manage shared named queries. Prefix terminal operators with `where:`,
   for example `where: is:open due:today -meeting`. The `d` prompt takes
   `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM`; a new date alone keeps the task's time.
-  Rows and cards show a task's due time and its scheduled day, and times
-  follow `time_format` (`14:00` or `2:00 PM`). `scheduled:today`, `overdue`,
-  `none`, `any` or a date prefix filter by scheduled day. Completing a
-  repeating task here inserts its next occurrence; see [Task times, repeating
-  tasks, and task notes](#task-times-repeating-tasks-and-task-notes).
+  Rows and cards show a task's due time and its session, and times follow
+  `time_format` (`14:00` or `2:00 PM`). `where: session:` takes `today`,
+  `overdue`, `none`, `any` or a date prefix, and filters by the date of the
+  first work session that has not ended. `W` writes a work session for the
+  task. Completing a repeating task here inserts its next occurrence; see
+  [Task times, repeating tasks, events, and task
+  notes](#task-times-repeating-tasks-events-and-task-notes).
   The calendar has month, week and day views; `Esc` cycles them, and a
   start in `calendar` mode always opens the month grid. On a narrow
   terminal the month shows a compact grid with a count per day and the
   selected day's tasks under it. `h`/`j`/`k`/`l`
   move the day, `[`/`]` the month, `t` goes to today, `<C-D>`/`<C-U>` page
-  by half a view, and `o` opens the day's daily note. Week and day view
-  show an hour list: hourly by default, half-hourly after `z` (Vim mode),
-  scrolling with `j`/`k` when it does not fit. A task with a time sits in
-  the row holding that time, and a task without one is listed in an
-  all-day band above the rows, which `j`/`k` scroll first when it is
-  full. `Enter` and `Tab` move focus
+  by half a view, and `o` opens the day's daily note. The calendar shows the
+  events and work sessions of a local vault with the due dates of tasks.
+  Week and day view show an hour list with a cursor on one slot. `h`/`l` move
+  the day and `j`/`k` move the cursor by slot, and the list scrolls with it. The
+  view opens at the current time when today is in view, else at the first timed
+  entry, else at 08:00, and `t` or `Home` go back to now. `z` (Vim mode)
+  zooms in three steps: hourly, half-hourly and quarter-hourly rows. A task or
+  an event with a time sits in the rows that hold its time, and an entry
+  without a time is listed in an all-day band above the rows, which `a`
+  focuses. `Tab` and `Shift+Tab` (also `Ctrl+N` and `Ctrl+P`) select the next
+  or previous timed entry, across days, and `Enter` opens the entry on the
+  slot, or a picker when several share it. A footer under the grid describes
+  the entries on the slot: their dates, their repeat rule with `until` and
+  their note. `W` writes a work session for the selected task, or for a
+  task that you pick when the slot is empty, and `N` writes an event. Both ask
+  for the time, which starts with the slot of the cursor, and then for the
+  category note that receives the line; a new category note is one choice.
+  On a selected event or session, `T` moves it to today, `@` opens a menu of
+  days, `d` edits its time and `D` deletes it. A repeating event is edited in
+  its note. The mouse selects a slot or an entry, a double-click opens it and a
+  right-click opens its menu. `Enter` and `Tab` move focus
   between the day grid, the selected day's items and the No-date strip. On
   a focused item or strip task, `T` moves it to today and `@` opens a
-  due-date menu, as in the desktop calendar. Unlike the
-  desktop calendar, the terminal calendar also places a task on its
-  scheduled date (marked) as well as its due date.
+  due-date menu, as in the desktop calendar.
 - **Tags**: `Tab` multi-selects, `a` toggles any/all, `r`/`x` rename or
   remove a tag everywhere.
 - **Databases**: every `.base` folder and every loose `.csv` file, with
@@ -1152,7 +1216,7 @@ which it does not have yet:
 | `rename_asset`, `move_asset` | Rename or move an attachment and update the notes that link to it. `linksNotUpdated` lists any note it could not change. A new name cannot hold `# ? \| [ ] ^ % : * " < >`, a backtick or control characters, or end with a dot, which would stop links reaching the file. |
 | `duplicate_asset` | Copies an attachment next to itself. |
 | `delete_asset`, `restore_asset` | Soft delete to the app's Trash, and undo by token. `list_assets` with `deleted: true` shows what can come back. Permanent deletion stays in the app. |
-| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. Finishing a task with `@repeat:` writes its next occurrence, as `toggle_task` does. Pass `expectedText` to be refused when the note changed and the id now names another task. |
+| `update_task` | Changes a task's due date, priority, `@waiting`, state, status or text by its id. Finishing a task with `@repeat:` writes its next occurrence, as `toggle_task` does, and so does `state: cancelled`, with a cancelled record. Pass `expectedText` to be refused when the note changed and the id now names another task. |
 | `daily_note` | Finds the daily, weekly or monthly note for a date under the vault's own settings, and says how to start it if it does not exist. |
 | `note_sections` | Lists a note's headings, or reads the part under one. |
 | `edit_section` | Appends to, prepends to or replaces the part of a note under one heading. |

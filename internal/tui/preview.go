@@ -418,6 +418,9 @@ func (a *App) inlineRunes(text string) ([]styledRune, []linkTarget) {
 		add([]int{start, m[1]}, stTag, text[start:m[1]], -1)
 	}
 	for _, m := range taskMetaRe.FindAllStringSubmatchIndex(text, -1) {
+		if !metaTokenAccepted(text[m[4]:m[5]]) {
+			continue
+		}
 		add([]int{m[4], m[5]}, stMeta, text[m[4]:m[5]], -1)
 	}
 	sortSpans(spans)

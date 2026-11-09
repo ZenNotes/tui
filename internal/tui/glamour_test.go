@@ -199,26 +199,85 @@ func TestGlamourImagePlaceholderKeepsItsBrackets(t *testing.T) {
 	})
 }
 
-// A task row's repeat:, skip: and timed due: tokens carry the task-metadata
-// colour as whole tokens, and the keys match in any case.
-func TestPreviewStylesRepeatSkipAndTimedDue(t *testing.T) {
+// A task row's timed due: token and its @-fields carry the task-metadata
+// colour as whole tokens. A bare repeat:, skip: or until: is plain text.
+func TestPreviewStylesFieldsAndTimedDue(t *testing.T) {
+	a := previewMetaApp()
+	row := previewMetaRow(t, a, "- [ ] Call due:2026-11-03T14:00 @repeat:2w-mon/thu @skip:2027-03-13/2027-03-21 @until:2027-12-01 end\n")
+	for _, token := range []string{"due:2026-11-03T14:00", "@repeat:2w-mon/thu", "@skip:2027-03-13/2027-03-21", "@until:2027-12-01"} {
+		if !strings.Contains(row, previewMetaStyle(a, token)) {
+			t.Errorf("%q is not styled as one task-metadata token in %q", token, row)
+		}
+	}
+	row = previewMetaRow(t, a, "- [ ] Call repeat:weekly skip:2027-03-13 until:2027-12-01 end\n")
+	for _, token := range []string{"repeat:weekly", "skip:2027-03-13", "until:2027-12-01"} {
+		if strings.Contains(row, previewMetaStyle(a, token)) {
+			t.Errorf("%q is styled in %q", token, row)
+		}
+	}
+}
+
+func previewMetaApp() *App {
+	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
+	a.prefs.PreviewStyle = "dark"
+	return a
+}
+
+func previewMetaStyle(a *App, token string) string {
+	return lipgloss.NewStyle().Foreground(a.theme.Purple).Render(token)
+}
+
+// previewMetaRow renders markdown with a true-colour profile and gives the
+// first row.
+func previewMetaRow(t *testing.T, a *App, markdown string) string {
+	t.Helper()
 	profile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
-	a := &App{prefs: prefsView{}, theme: buildTheme(true)}
-	a.prefs.PreviewStyle = "dark"
-	lines, err := a.renderGlamourLines("- [ ] Call due:2026-11-03T14:00 Repeat:2w:mon,thu SKIP:2027-03-13..2027-03-21 end\n", 100)
+	lines, err := a.renderGlamourLines(markdown, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(lines) == 0 {
 		t.Fatal("no rows rendered")
 	}
-	row := lines[0].text
-	for _, token := range []string{"due:2026-11-03T14:00", "Repeat:2w:mon,thu", "SKIP:2027-03-13..2027-03-21"} {
-		styled := lipgloss.NewStyle().Foreground(a.theme.Purple).Render(token)
-		if !strings.Contains(row, styled) {
-			t.Errorf("%q is not styled as one task-metadata token in %q", token, row)
+	return lines[0].text
+}
+
+func TestPreviewStylesEventTokens(t *testing.T) {
+	a := previewMetaApp()
+	row := previewMetaRow(t, a, "- Lecture when:2026-11-03T14:00-15:30 @repeat:weekly @until:2026-12-14 end\n")
+	for _, token := range []string{"when:2026-11-03T14:00-15:30", "@repeat:weekly", "@until:2026-12-14"} {
+		if !strings.Contains(row, previewMetaStyle(a, token)) {
+			t.Errorf("%q is not styled in %q", token, row)
 		}
+	}
+	row = previewMetaRow(t, a, "- Range when:2027-03-13/2027-03-21 @skip:Spring-Break end\n")
+	for _, token := range []string{"when:2027-03-13/2027-03-21", "@skip:Spring-Break"} {
+		if !strings.Contains(row, previewMetaStyle(a, token)) {
+			t.Errorf("%q is not styled in %q", token, row)
+		}
+	}
+	row = previewMetaRow(t, a, "- Work when:2026-11-03T09:00 task:[[Work#^ab12cd]] end\n")
+	if !strings.Contains(row, previewMetaStyle(a, "when:2026-11-03T09:00")) {
+		t.Errorf("when: is not styled in %q", row)
+	}
+	if !strings.Contains(row, previewMetaStyle(a, "task:Work")) {
+		t.Errorf("the task link is not styled in %q", row)
+	}
+	row = previewMetaRow(t, a, "- ask them when: tomorrow or when:soon or when:2026-11-03x end\n")
+	for _, token := range []string{"when:", "when:soon", "when:2026-11-03x"} {
+		if strings.Contains(row, previewMetaStyle(a, token)) {
+			t.Errorf("%q is styled in %q", token, row)
+		}
+	}
+}
+
+// A checkbox line with scheduled: keeps the style that v0.17.1 gives it.
+func TestPreviewKeepsScheduledStyled(t *testing.T) {
+	a := previewMetaApp()
+	row := previewMetaRow(t, a, "- [ ] Draft scheduled:2026-11-05T09:30 the report\n")
+	if !strings.Contains(row, previewMetaStyle(a, "scheduled:2026-11-05T09:30")) {
+		t.Errorf("scheduled: is not styled in %q", row)
 	}
 }
