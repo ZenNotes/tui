@@ -78,6 +78,9 @@ type rollSessions struct {
 	// newID gives the block id of the inserted open line. It is called only
 	// when the task rolls. It is nil for a task without sessions.
 	newID func() string
+	// moved maps the number of a session line under the task to its moved
+	// copy. The new open line holds the copy in place of that session.
+	moved map[int]string
 }
 
 // rollResult is the outcome of rollTaskLines.
@@ -139,6 +142,11 @@ func rollTaskLines(body string, targetIndex int, dialect TaskDialect, action Rol
 	inserted := 1
 	for i := at + 1; i < end; i++ {
 		child := lineRe.FindStringSubmatch(bare[i])
+		if repl, ok := sessions.moved[i]; ok {
+			copied = append(copied, repl)
+			record = append(record, bare[i])
+			continue
+		}
 		if child == nil {
 			copied = append(copied, bare[i])
 			record = append(record, bare[i])
@@ -323,4 +331,16 @@ func daysBetween(from, to string) int {
 		return 0
 	}
 	return int(b.Sub(a).Hours() / 24)
+}
+
+// taskSubtree gives the line numbers of the task at targetIndex and the end of
+// its block: the lines after the task up to end belong to it.
+func taskSubtree(body string, targetIndex int, dialect TaskDialect) (at, end int, ok bool) {
+	bare := repeatBareLines(strings.Split(body, "\n"))
+	numbers := taskLineNumbersIn(bare, dialect)
+	if targetIndex < 0 || targetIndex >= len(numbers) {
+		return 0, 0, false
+	}
+	at = numbers[targetIndex]
+	return at, taskBlockEnd(bare, at, leadingIndentWidth(bare[at])), true
 }

@@ -275,3 +275,42 @@ func TestPlanRollWritesNoCopyThatTheNoteHolds(t *testing.T) {
 		t.Errorf("body holds the Friday copy twice:\n%s", plan.Body)
 	}
 }
+
+func TestPlanRollSessionUnderItsTask(t *testing.T) {
+	id := wantID()
+	work := sessionNote{"Work.md", "Work", "- [ ] T @repeat:1w due:2026-11-02 ^ab12cd\n  - T task:[[Work#^ab12cd]] when:2026-11-02T09:00-10:00\n"}
+	plan, ok := planRollOf(t, "2026-11-02", "Work.md", 0, false, RollComplete, work)
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	want := "- [ ] T @repeat:1w due:2026-11-09 ^" + id + "\n" +
+		"  - T task:[[Work#^" + id + "]] when:2026-11-09T09:00-10:00\n" +
+		"- [x] T due:2026-11-02 ^ab12cd\n" +
+		"  - T task:[[Work#^ab12cd]] when:2026-11-02T09:00-10:00\n"
+	if plan.Body != want {
+		t.Fatalf("body:\n%s\nwant:\n%s", plan.Body, want)
+	}
+	if len(plan.Copies) != 0 {
+		t.Fatalf("copies: %+v", plan.Copies)
+	}
+}
+
+func TestInsertSessionCopiesKeepsEachEnding(t *testing.T) {
+	copies := []SessionCopy{{After: 0, Line: "X"}, {After: 2, Line: "Y"}}
+	got := InsertSessionCopies("a\r\nb\nc\r\nd", copies)
+	if want := "a\r\nX\r\nb\nc\r\nY\r\nd"; got != want {
+		t.Fatalf("mixed: got %q, want %q", got, want)
+	}
+	got = InsertSessionCopies("a\nb\r\nc", []SessionCopy{{After: 1, Line: "X"}})
+	if want := "a\nb\r\nX\r\nc"; got != want {
+		t.Fatalf("after crlf: got %q, want %q", got, want)
+	}
+	got = InsertSessionCopies("a\r\nb\r\n", []SessionCopy{{After: 0, Line: "X"}})
+	if want := "a\r\nX\r\nb\r\n"; got != want {
+		t.Fatalf("crlf: got %q, want %q", got, want)
+	}
+	got = InsertSessionCopies("a\nb\n", []SessionCopy{{After: 0, Line: "X"}})
+	if want := "a\nX\nb\n"; got != want {
+		t.Fatalf("lf: got %q, want %q", got, want)
+	}
+}

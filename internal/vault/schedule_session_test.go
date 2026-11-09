@@ -51,10 +51,13 @@ func TestSetTaskBlockID(t *testing.T) {
 
 func TestAppendLine(t *testing.T) {
 	cases := map[string][2]string{
-		"empty note":       {"", "- x\n"},
-		"final newline":    {"a\n", "a\n- x\n"},
-		"no final newline": {"a", "a\n- x\n"},
-		"crlf":             {"a\r\nb", "a\r\nb\r\n- x\r\n"},
+		"empty note":              {"", "- x\n"},
+		"final newline":           {"a\n", "a\n- x\n"},
+		"no final newline":        {"a", "a\n- x\n"},
+		"crlf":                    {"a\r\nb", "a\r\nb\r\n- x\r\n"},
+		"mixed, last crlf":        {"a\nb\r\nc", "a\nb\r\nc\r\n- x\r\n"},
+		"mixed, last lf":          {"a\r\nb\n", "a\r\nb\n- x\n"},
+		"mixed, no final newline": {"a\r\nb\nc", "a\r\nb\nc\n- x\n"},
 	}
 	for name, c := range cases {
 		if got := AppendLine(c[0], "- x"); got != c[1] {

@@ -85,10 +85,10 @@ type TaskRollPlan struct {
 // current sessions.
 //
 // A session is not copied when it is an event note, when it repeats, or when
-// its link does not name the task. Event notes are counted in InOwnNote. A
+// its link does not name the task. Event notes are counted in InOwnNote.
 // A session is also not copied when its note holds a line with the same
-// `when:` value and the same `task:` link.
-// task that does not roll has no copies and gets no new id.
+// `when:` value and the same `task:` link. A task that does not roll has no
+// copies and gets no new id.
 //
 // ok is false when the note has no task at that index.
 func PlanTaskRoll(in TaskRollInput) (plan TaskRollPlan, ok bool) {
@@ -115,19 +115,19 @@ func PlanTaskRoll(in TaskRollInput) (plan TaskRollPlan, ok bool) {
 		}
 		return id
 	}
-	roll := func(body string) rollResult {
+	roll := func(body string, moved map[int]string) rollResult {
 		if in.File {
 			next, rolled, days := rollTaskFile(body, in.Action, in.Now, in.WeekStart, in.Names, base)
 			return rollResult{next: next, rolled: rolled, days: days, ok: true}
 		}
-		s := rollSessions{base: base, fallbackDue: in.FallbackDue}
+		s := rollSessions{base: base, fallbackDue: in.FallbackDue, moved: moved}
 		if base != "" {
 			s.newID = newID
 		}
 		return rollTaskLines(body, in.Index, in.Dialect, in.Action, in.Now, in.WeekStart, in.Names, s)
 	}
 
-	res := roll(in.Body)
+	res := roll(in.Body, nil)
 	if !res.ok {
 		return TaskRollPlan{Body: in.Body}, false
 	}
@@ -181,34 +181,56 @@ func PlanTaskRoll(in TaskRollInput) (plan TaskRollPlan, ok bool) {
 	}
 	plan.Copies = other
 	if len(own) > 0 {
-		// The copies in the task note go in before the roll. They are not
-		// task lines, so the task index stays the same.
-		withCopies := InsertSessionCopies(in.Body, own)
-		again := roll(withCopies)
+		// A session under the task that rolls stays under the record. Its moved
+		// copy goes under the new open line. The other copies go in before the
+		// roll. They are not task lines, so the task index stays the same.
+		var outside []SessionCopy
+		moved := map[int]string{}
+		at, end, found := 0, 0, false
+		if !in.File {
+			at, end, found = taskSubtree(in.Body, in.Index, in.Dialect)
+		}
+		for _, c := range own {
+			if found && c.After > at && c.After < end {
+				moved[c.After] = c.Line
+			} else {
+				outside = append(outside, c)
+			}
+		}
+		shifted := map[int]string{}
+		for line, text := range moved {
+			shift := 0
+			for _, c := range outside {
+				if c.After < line {
+					shift++
+				}
+			}
+			shifted[line+shift] = text
+		}
+		again := roll(InsertSessionCopies(in.Body, outside), shifted)
 		plan.Body, plan.Inserted = again.next, again.inserted
 	}
 	return plan, true
 }
 
 // InsertSessionCopies puts each copy directly after the line it names. The
-// copies must all be for the note that body holds. Line endings are kept as
-// the note has them.
+// copies must all be for the note that body holds. Each line keeps its own
+// ending, and a copy gets the ending of the line before it.
 func InsertSessionCopies(body string, copies []SessionCopy) string {
-	crlf := strings.Contains(body, "\r\n")
-	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	lines := strings.Split(body, "\n")
 	ordered := append([]SessionCopy(nil), copies...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].After > ordered[j].After })
 	for _, c := range ordered {
 		if c.After < 0 || c.After >= len(lines) {
 			continue
 		}
-		lines = append(lines[:c.After+1], append([]string{c.Line}, lines[c.After+1:]...)...)
+		line := c.Line
+		if strings.HasSuffix(lines[c.After], "\r") {
+			line += "\r"
+		}
+		lines = append(lines[:c.After+1], append([]string{line}, lines[c.After+1:]...)...)
 	}
-	out := strings.Join(lines, "\n")
-	if crlf {
-		out = strings.ReplaceAll(out, "\n", "\r\n")
-	}
-	return out
+	return strings.Join(lines, "\n")
 }
 
 // rollTarget finds the task that the roll is for in the vault's tasks.

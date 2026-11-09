@@ -56,11 +56,13 @@ func SessionLine(text, link, when string) string {
 }
 
 // AppendLine puts line at the end of body as a new last line. A last line
-// that has no line ending gets one first. Line endings stay as the note has
-// them.
+// that has no line ending gets one first. The new line gets the ending of the
+// line before it, and the lines of the note keep their own endings.
 func AppendLine(body, line string) string {
 	eol := "\n"
-	if strings.Contains(body, "\r\n") {
+	// The ending is the last one in the note: the one that ends the last line,
+	// or else the one that ends the line before it.
+	if j := strings.LastIndex(body, "\n"); j > 0 && body[j-1] == '\r' {
 		eol = "\r\n"
 	}
 	if body != "" && !strings.HasSuffix(body, "\n") {
