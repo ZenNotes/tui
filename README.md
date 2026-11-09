@@ -549,6 +549,7 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 The editor is a full Vim: counts, registers, marks, macros, dot-repeat,
 undo and redo, text objects, visual, visual line and visual block, search,
 `:s` `:g` `:sort` `:norm` with ranges, `gq`, and heading motions `]]` `[[`.
+Prefer Helix? `[vim] motions = "helix"` switches to a select-then-act engine with its own `[keys]` bindings; see [`docs/helix.md`](docs/helix.md).
 Markdown on top: `Ctrl+L` toggles the checkbox on the line, `gd` follows a
 link, `gx` opens a URL, `gy` copies a link, `zc zo zM zR` fold headings,
 Enter continues lists, Tab indents list items, `[[` opens the note picker
@@ -1195,6 +1196,7 @@ cmd/zn                   entry point
 internal/cli             argument parsing, every zn command, help text
 internal/tui             the terminal app (Bubble Tea)
 internal/vim             the Vim engine, host-agnostic
+internal/helix           the Helix engine, host-agnostic (docs/helix.md)
 internal/vault           vault semantics: layout, parsing, tasks, comments, edits, templates
 internal/backend         local and remote backends behind one interface
 internal/remote          HTTP client for the ZenNotes server

@@ -553,7 +553,7 @@ func (m *menu) render(a *App, w, h int) string {
 // --- quick capture ---
 
 type captureOverlay struct {
-	ed  *vim.Editor
+	ed  modalEditor
 	cur cursorState
 }
 
@@ -561,7 +561,7 @@ func (c *captureOverlay) fieldCursor() cursorState { return c.cur }
 
 func (a *App) openQuickCapture() {
 	opts := a.editorOptions()
-	ed := vim.New("", opts, vim.Hooks{})
+	ed := a.newModalEditorWithOpts("", opts, vim.Hooks{}, nil)
 	ed.SetViewport(8)
 	if a.prefs.VimMode {
 		ed.HandleKey(vim.R('i'))
@@ -605,7 +605,7 @@ func (c *captureOverlay) render(a *App, w, h int) string {
 		c.cur = cursorState{visible: true, x: ix + edCur.x, y: iy + titleRows + edCur.y, shape: edCur.shape}
 	}
 	lines = append(lines, strings.Split(body, "\n")...)
-	mode := c.ed.Mode().Label()
+	mode := modeLabel(c.ed)
 	if !a.prefs.VimMode {
 		mode = "EDIT"
 	}
