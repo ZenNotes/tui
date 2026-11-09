@@ -64,6 +64,13 @@ func (e calEntry) hasTask() bool {
 	return e.kind == calDue || (e.kind == calSession && e.task.SourcePath != "")
 }
 
+// doneSession reports whether the entry is a work session that is shown as
+// done. Its occurrence is finished, so a key must not complete or cancel the
+// task again through it.
+func (e calEntry) doneSession() bool {
+	return e.kind == calSession && e.done
+}
+
 // clock is the entry's time of day as `HH:MM`, or "" when it is untimed. A due
 // entry shows the due time of its task.
 func (e calEntry) clock() string {

@@ -1720,12 +1720,25 @@ func (a *App) taskFieldPrompt(t vault.Task) {
 }
 
 func (a *App) taskMenu(t vault.Task) {
+	a.taskMenuFor(t, false)
+}
+
+// taskMenuFor opens the menu of a task. When done is true, the menu was opened
+// from a work session that is shown as done, and the keys that complete or
+// cancel the task only give a notice.
+func (a *App) taskMenuFor(t vault.Task, done bool) {
+	complete := func(a *App) { a.toggleTask(t) }
+	cancel := func(a *App) { a.setTaskCancelled(t, !t.Cancelled) }
+	if done {
+		complete = func(a *App) { a.notify(doneSessionRefusal) }
+		cancel = complete
+	}
 	a.showMenu(truncateCells(t.Content, 40), []menuItem{
 		{key: "o", label: "Open note", run: func(a *App) { a.openTaskSource(t) }},
-		{key: "x", label: "Toggle done", run: func(a *App) { a.toggleTask(t) }},
+		{key: "x", label: "Toggle done", run: complete},
 		{key: "/", label: "Toggle in progress", run: func(a *App) { a.setTaskInProgress(t, !t.InProgress) }},
 		{key: "w", label: "Toggle waiting", run: func(a *App) { a.setTaskWaiting(t, !t.Waiting) }},
-		{key: "c", label: "Toggle cancelled", run: func(a *App) { a.setTaskCancelled(t, !t.Cancelled) }},
+		{key: "c", label: "Toggle cancelled", run: cancel},
 		{sep: true},
 		{key: "p", label: "Priority", run: func(a *App) { a.taskPriorityMenu(t) }},
 		{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},

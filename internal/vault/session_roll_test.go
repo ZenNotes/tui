@@ -243,3 +243,35 @@ func TestPlanRollDueLandsOnRuleDateWhenSessionIsOnAnotherDay(t *testing.T) {
 		t.Fatalf("inserted line %q, want %q", first, want)
 	}
 }
+
+const rollGymNote = "---\npage-type: task\nstatus: open\ndue: 2026-11-11T18:00\nrepeat: mon/wed/fri\nlastCompleted: 2026-11-09\n---\n# Gym\n"
+
+func TestPlanRollWritesNoCopyThatTheNoteHolds(t *testing.T) {
+	gym := sessionNote{"Gym.md", "Gym", rollGymNote}
+	held := "- Workout when:2026-11-09T18:00-19:00 task:[[Gym]]\n" +
+		"- Workout when:2026-11-11T18:00-19:00 task:[[Gym]]\n" +
+		"- Workout when:2026-11-13T18:00-19:00 task:[[Gym]]\n"
+
+	// The plans note holds the Friday copy already, so only the Sunday copy is new.
+	plan, ok := planRollOf(t, "2026-11-11", "Gym.md", 0, true, RollComplete, gym, sessionNote{"Plans.md", "Plans", held})
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	if got := copyLines(plan); len(got) != 1 || got[0] != "Plans.md:- Workout when:2026-11-15T18:00-19:00 task:[[Gym]]" {
+		t.Errorf("copies %q, want only the Sunday copy", got)
+	}
+
+	// A line for the same day with another link does not count as the copy.
+	other := strings.Replace(held, "2026-11-13T18:00-19:00 task:[[Gym]]", "2026-11-13T18:00-19:00 task:[[Run]]", 1)
+	plan, _ = planRollOf(t, "2026-11-11", "Gym.md", 0, true, RollComplete, gym, sessionNote{"Plans.md", "Plans", other})
+	if got := copyLines(plan); len(got) != 1 || got[0] != "Plans.md:- Workout when:2026-11-13T18:00-19:00 task:[[Gym]]" {
+		t.Errorf("copies %q, want the Friday copy", got)
+	}
+
+	// The same holds for a session in the note of the task itself.
+	own := sessionNote{"Gym.md", "Gym", rollGymNote + held}
+	plan, _ = planRollOf(t, "2026-11-11", "Gym.md", 0, true, RollComplete, own)
+	if strings.Count(plan.Body, "when:2026-11-13T18:00-19:00 task:[[Gym]]") != 1 {
+		t.Errorf("body holds the Friday copy twice:\n%s", plan.Body)
+	}
+}

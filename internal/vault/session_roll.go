@@ -86,6 +86,8 @@ type TaskRollPlan struct {
 //
 // A session is not copied when it is an event note, when it repeats, or when
 // its link does not name the task. Event notes are counted in InOwnNote. A
+// A session is also not copied when its note holds a line with the same
+// `when:` value and the same `task:` link.
 // task that does not roll has no copies and gets no new id.
 //
 // ok is false when the note has no task at that index.
@@ -155,6 +157,9 @@ func PlanTaskRoll(in TaskRollInput) (plan TaskRollPlan, ok bool) {
 		}
 		line, good := sessionCopyLine(lines[e.Line], e.When, days, link)
 		if !good {
+			continue
+		}
+		if noteHoldsSession(body, line) {
 			continue
 		}
 		copies = append(copies, SessionCopy{Path: e.Path, After: e.Line, Line: line})
@@ -283,6 +288,35 @@ func sessionCopyLine(line, when string, days int, newID string) (string, bool) {
 		line = line[:e.start] + e.text + line[e.end:]
 	}
 	return line, true
+}
+
+// sessionKey gives the `when:` value and the `task:` link of a session line.
+func sessionKey(line string) (when, link string, ok bool) {
+	masked := inlineCodeRe.ReplaceAllStringFunc(line, func(s string) string {
+		return strings.Repeat(" ", len(s))
+	})
+	w := eventWhenRe.FindStringSubmatch(masked)
+	l := eventTaskRe.FindStringSubmatch(masked)
+	if w == nil || l == nil {
+		return "", "", false
+	}
+	return w[1], l[1], true
+}
+
+// noteHoldsSession reports whether body has a line with the same `when:` value
+// and the same `task:` link as the session line. A roll does not copy such a
+// session again.
+func noteHoldsSession(body, line string) bool {
+	when, link, ok := sessionKey(line)
+	if !ok {
+		return false
+	}
+	for _, held := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
+		if w, l, ok := sessionKey(held); ok && w == when && l == link {
+			return true
+		}
+	}
+	return false
 }
 
 // withLinkID puts id in a link to a block, such as `[[Work#^ab12cd]]`. A link
