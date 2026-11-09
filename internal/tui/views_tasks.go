@@ -1222,10 +1222,12 @@ func (a *App) afterTaskChange() {
 	a.refreshIndex()
 }
 
+// openTaskSource opens the note and moves to the task line.
+// LineNumber counts from zero. GotoLine counts from one.
 func (a *App) openTaskSource(t vault.Task) {
 	a.openNote(t.SourcePath, true)
 	if buf := a.buffers[t.SourcePath]; buf != nil && t.Kind != "file" {
-		buf.ed.GotoLine(t.LineNumber)
+		buf.ed.GotoLine(t.LineNumber + 1)
 	}
 }
 
