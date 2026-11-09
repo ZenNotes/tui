@@ -12,9 +12,9 @@ import (
 // `skip` and `until` lines included, and the whole body stay as they are. A stale
 // `completedDate` is removed, because an open note has none.
 //
-// The next date and the offset follow the rules of RollTaskInBody: the rule
-// counts from `due`, else today, and from today when it starts with `after-`. The
-// date keeps its `THH:MM`, and a note with no date gets `due`. A `scheduled`
+// The next date follows the rules of RollTaskInBody: the rule counts from
+// `due`, else today, and from today when it starts with `after-`. The date
+// keeps its `THH:MM`, and a note with no date gets `due`. A `scheduled`
 // key is not read and stays as written.
 //
 // Every other case is the plain status change, SetTaskFileStatus or
@@ -40,7 +40,7 @@ func RollTaskFileInBodyWith(body string, action RollAction, now time.Time, weekS
 // rollTaskFile does the work of RollTaskFileInBodyWith. base is the start date
 // of the earliest current work session, or empty. It takes the place of `due`
 // as the date the rule counts from, and a note with a session gets no `due`
-// that it did not have. days is how far the dates of the note moved.
+// that it did not have. days is how far the sessions of the note move.
 func rollTaskFile(body string, action RollAction, now time.Time, weekStart time.Weekday, names SkipResolver, base string) (next string, rolled bool, days int) {
 	task, ok := parseTaskFile("", "", FolderInbox, body, DialectCLI)
 	if !ok || task.Repeat == "" || task.Checked || task.Cancelled {
@@ -77,7 +77,7 @@ func rollTaskFile(body string, action RollAction, now time.Time, weekStart time.
 	case task.Due == "" && base == "":
 		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(following)})
 	case task.Due != "":
-		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(shiftDateTime(due, days))})
+		updates = append(updates, frontmatterLine{key: "due", value: StrPtr(rolledDateTime(due, days, following, base != ""))})
 	}
 	updates = append(updates, frontmatterLine{key: "lastCompleted", value: StrPtr(TodayISO(now))})
 	return setFrontmatterLines(body, updates), true, days

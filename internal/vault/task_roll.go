@@ -25,9 +25,11 @@ const (
 // The copy keeps the text, the priority, the tags and every field in their
 // order. It drops `@waiting` and `@status:`, which belong to one occurrence.
 // Its `due:` is replaced where it stood, and it keeps its `THH:MM` time and its
-// range. A task with no `due:` and no work session gets `due:` at the end of
-// the copy. The copy holds the subtask lines as written, with every checkbox
-// open and without the block ids that end a line, so an id stays on one line.
+// range. With a work session, the new `due:` is the next date of the rule.
+// Without one, the `due:` date is the base and goes to the next date. A task
+// with no `due:` and no work session gets `due:` at the end of
+// the copy. The copy holds the subtask lines as written, with every checkbox open and
+// without the block ids that end a line, so an id stays on one line.
 // A `scheduled:` token is plain text and stays as written.
 //
 // The record drops `@repeat:` and `@remind:`, so unticking it never starts a
@@ -88,7 +90,7 @@ type rollResult struct {
 	// ended is true when the task has a valid rule and no next date. The line
 	// is finished and has lost its rule, and nothing is inserted.
 	ended bool
-	// days is how far the dates of the new occurrence moved.
+	// days is how far each session of the new occurrence moves.
 	days int
 }
 
@@ -196,8 +198,8 @@ func cancelMarker(state string) string {
 // rollPlan is how a task line rolls.
 type rollPlan struct {
 	// rolled is true when the task gets a next occurrence, and then copyText
-	// is the text of the copy after its checkbox, and days is how far the
-	// dates of the copy moved.
+	// is the text of the copy after its checkbox, and days is how far each
+	// session copy moves.
 	rolled   bool
 	copyText string
 	days     int
@@ -246,7 +248,7 @@ func planRoll(m []string, bare []string, dialect TaskDialect, now time.Time, wee
 	if loc := inlineDueRe.FindStringSubmatchIndex(text); loc != nil {
 		value := text[loc[2]:loc[3]]
 		if date, _, _ := SplitDateTime(value); date != "" {
-			value = shiftDateTime(value, days)
+			value = rolledDateTime(value, days, following, sessions.base != "")
 		} else {
 			value = following
 		}
@@ -298,6 +300,17 @@ func shiftDateTime(value string, days int) string {
 		return value
 	}
 	return moved.AddDate(0, 0, days).Format(isoDay) + value[len(date):]
+}
+
+// rolledDateTime gives the due value of a new occurrence. A task with a
+// session moves its due value to following, the next date of the rule, and
+// keeps the time and the range. Otherwise the value moves by days.
+func rolledDateTime(value string, days int, following string, session bool) string {
+	date, _, _ := SplitDateTime(value)
+	if session && date != "" {
+		return following + value[len(date):]
+	}
+	return shiftDateTime(value, days)
 }
 
 // daysBetween counts whole calendar days from one `YYYY-MM-DD` date to a

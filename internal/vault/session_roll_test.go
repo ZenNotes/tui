@@ -86,11 +86,11 @@ func TestPlanRollCountsFromEarliestSession(t *testing.T) {
 		name, today, task, session, wantTask, wantSession string
 	}{
 		{"due and session", "2026-11-02", "- [ ] T due:2026-11-04T17:00-17:30 @repeat:3d ^ab12cd", "when:2026-11-02T09:30-10:00",
-			"- [ ] T due:2026-11-07T17:00-17:30 @repeat:3d ^" + id, "when:2026-11-05T09:30-10:00"},
+			"- [ ] T due:2026-11-05T17:00-17:30 @repeat:3d ^" + id, "when:2026-11-05T09:30-10:00"},
 		{"from completion", "2026-11-04", "- [ ] T due:2026-11-03 @repeat:after-3d ^ab12cd", "when:2026-11-02",
-			"- [ ] T due:2026-11-08 @repeat:after-3d ^" + id, "when:2026-11-07"},
+			"- [ ] T due:2026-11-07 @repeat:after-3d ^" + id, "when:2026-11-07"},
 		{"skip period", "2027-03-08", "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd", "when:2027-03-08T09:00-11:00",
-			"- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^" + id, "when:2027-03-22T09:00-11:00"},
+			"- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^" + id, "when:2027-03-22T09:00-11:00"},
 		{"across midnight", "2026-11-02", "- [ ] T @repeat:1w ^ab12cd", "when:2026-11-02T22:00/2026-11-03T02:00",
 			"- [ ] T @repeat:1w ^" + id, "when:2026-11-09T22:00/2026-11-10T02:00"},
 	} {
@@ -127,7 +127,7 @@ func TestPlanRollTaskNoteKeepsItsLink(t *testing.T) {
 	if !ok || !plan.Rolled {
 		t.Fatalf("plan: %+v, %v", plan, ok)
 	}
-	for _, want := range []string{"status: open", "due: 2026-11-11", "lastCompleted: 2026-11-02"} {
+	for _, want := range []string{"status: open", "due: 2026-11-09", "lastCompleted: 2026-11-02"} {
 		if !strings.Contains(plan.Body, want) {
 			t.Errorf("body lacks %q:\n%s", want, plan.Body)
 		}
@@ -210,5 +210,36 @@ func TestPlanRollCopiesSessionInTheTaskNote(t *testing.T) {
 		"- T task:[[Work#^" + id + "]] when:2026-11-09T09:00\n"
 	if plan.Body != want || len(plan.Copies) != 0 || plan.Inserted != 1 {
 		t.Fatalf("body:\n%s\nwant:\n%s\n%+v", plan.Body, want, plan)
+	}
+}
+
+func TestPlanRollDueLandsOnRuleDateWhenSessionIsOnAnotherDay(t *testing.T) {
+	id := wantID()
+	plans := sessionNote{"Plans.md", "Plans", "- Workout when:2026-11-08T18:00-19:00 task:[[Gym]]\n"}
+	wantSession := "Plans.md:- Workout when:2026-11-11T18:00-19:00 task:[[Gym]]"
+
+	// A task note: the due date is on a day that the rule allows.
+	gym := sessionNote{"Gym.md", "Gym", "---\npage-type: task\nstatus: open\ndue: 2026-11-07T18:00\nrepeat: mon/wed/fri\nskip: [2026-11-09]\n---\n\n# Gym\n"}
+	plan, ok := planRollOf(t, "2026-11-08", "Gym.md", 0, true, RollComplete, gym, plans)
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	if !strings.Contains(plan.Body, "\ndue: 2026-11-11T18:00\n") {
+		t.Fatalf("note: %q", plan.Body)
+	}
+	if got := copyLines(plan); len(got) != 1 || got[0] != wantSession {
+		t.Fatalf("copies %q", got)
+	}
+
+	// A checkbox line does the same, and keeps its time and range.
+	line := sessionNote{"Work.md", "Gym", "- [ ] Gym due:2026-11-07T18:00-19:00 @repeat:mon/wed/fri @skip:2026-11-09 ^ab12cd\n"}
+	link := sessionNote{"Plans.md", "Plans", "- Workout when:2026-11-08T18:00-19:00 task:[[Gym#^ab12cd]]\n"}
+	plan, ok = planRollOf(t, "2026-11-08", "Work.md", 0, false, RollComplete, line, link)
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	want := "- [ ] Gym due:2026-11-11T18:00-19:00 @repeat:mon/wed/fri @skip:2026-11-09 ^" + id
+	if first := strings.Split(plan.Body, "\n")[0]; first != want {
+		t.Fatalf("inserted line %q, want %q", first, want)
 	}
 }

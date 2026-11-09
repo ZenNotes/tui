@@ -165,7 +165,7 @@ func TestTasksViewRollCopiesSessions(t *testing.T) {
 		}
 		a, root := sessionRollApp(t, notes, "2027-03-08")
 		a.setTaskCancelled(firstTaskOf(t, root, "inbox/Work.md"), true)
-		wantWork := "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^{ID}\n" +
+		wantWork := "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^{ID}\n" +
 			"- [-] Assignment due:2027-03-12T23:59 @skip:2027-03-13/2027-03-21 ^ab12cd\n"
 		if got := maskRollID(t, readRollNote(t, root, "inbox/Work.md")); got != wantWork {
 			t.Errorf("Work.md:\n%s\nwant:\n%s", got, wantWork)

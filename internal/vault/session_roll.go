@@ -75,8 +75,10 @@ type TaskRollPlan struct {
 //
 // The roll counts from the start of the earliest current session, else from
 // the `due:` of the line, else from the `due` of the note, else from
-// FallbackDue, else from today. The `due:` date and each session move by the
-// same number of days. A session is copied directly below its original, with
+// FallbackDue, else from today. With a session, the `due:` date goes to the
+// next date of the rule and keeps its time and range. Each session moves by
+// its own distance from the old base. Without a session, the `due:` date is
+// the base and goes to the next date. A session is copied directly below its original, with
 // its `when:` moved and its `task:` link on the new occurrence. A link to a
 // whole note stays as it is. The copy has no `@until:` and no block id of its
 // own. The inserted open line gets a new block id only when the task has

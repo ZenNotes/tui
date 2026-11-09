@@ -86,14 +86,14 @@ func TestTaskToggleCopiesWorkSessions(t *testing.T) {
 			name: "due and session", today: "2026-11-02",
 			work:      "- [ ] T due:2026-11-04T17:00-17:30 @repeat:3d ^ab12cd\n",
 			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02T09:30-10:00\n",
-			wantWork:  "- [ ] T due:2026-11-07T17:00-17:30 @repeat:3d ^{ID}\n- [x] T due:2026-11-04T17:00-17:30 ^ab12cd\n",
+			wantWork:  "- [ ] T due:2026-11-05T17:00-17:30 @repeat:3d ^{ID}\n- [x] T due:2026-11-04T17:00-17:30 ^ab12cd\n",
 			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02T09:30-10:00\n- T task:[[Work#^{ID}]] when:2026-11-05T09:30-10:00\n",
 		},
 		{
 			name: "count from completion", today: "2026-11-04",
 			work:      "- [ ] T due:2026-11-03 @repeat:after-3d ^ab12cd\n",
 			plans:     "- T task:[[Work#^ab12cd]] when:2026-11-02\n",
-			wantWork:  "- [ ] T due:2026-11-08 @repeat:after-3d ^{ID}\n- [x] T due:2026-11-03 ^ab12cd\n",
+			wantWork:  "- [ ] T due:2026-11-07 @repeat:after-3d ^{ID}\n- [x] T due:2026-11-03 ^ab12cd\n",
 			wantPlans: "- T task:[[Work#^ab12cd]] when:2026-11-02\n- T task:[[Work#^{ID}]] when:2026-11-07\n",
 		},
 		{
@@ -107,7 +107,7 @@ func TestTaskToggleCopiesWorkSessions(t *testing.T) {
 			name: "skip period", today: "2027-03-08",
 			work:      "- [ ] Assignment due:2027-03-12T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^ab12cd\n",
 			plans:     "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n",
-			wantWork:  "- [ ] Assignment due:2027-03-26T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^{ID}\n- [x] Assignment due:2027-03-12T23:59 @skip:2027-03-13/2027-03-21 ^ab12cd\n",
+			wantWork:  "- [ ] Assignment due:2027-03-22T23:59 @repeat:1w @skip:2027-03-13/2027-03-21 ^{ID}\n- [x] Assignment due:2027-03-12T23:59 @skip:2027-03-13/2027-03-21 ^ab12cd\n",
 			wantPlans: "- Assignment task:[[Work#^ab12cd]] when:2027-03-08T09:00-11:00\n- Assignment task:[[Work#^{ID}]] when:2027-03-22T09:00-11:00\n",
 		},
 		{
@@ -188,7 +188,7 @@ func TestTaskToggleCopiesSessionOfATaskNote(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, errText)
 	}
 	report := readVaultNote(t, root, "inbox/Report.md")
-	for _, want := range []string{"status: open", "due: 2026-11-11", "lastCompleted: 2026-11-02"} {
+	for _, want := range []string{"status: open", "due: 2026-11-09", "lastCompleted: 2026-11-02"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("Report.md lacks %q:\n%s", want, report)
 		}
