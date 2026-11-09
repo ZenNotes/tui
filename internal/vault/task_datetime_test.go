@@ -238,3 +238,11 @@ func TestWhenWithDotsKeepsItsStart(t *testing.T) {
 		}
 	}
 }
+
+func TestSetTaskNoteDueKeepsCRLF(t *testing.T) {
+	body := "---\r\ntags: [task]\r\nstatus: open\r\ndue: 2026-11-03\r\n---\r\n\r\n# Pay rent\r\n"
+	want := strings.Replace(body, "2026-11-03", "2026-11-10", 1)
+	if got := SetTaskNoteDue(body, "2026-11-10"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

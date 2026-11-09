@@ -107,8 +107,21 @@ type frontmatterLine struct {
 // `2026-11-09T09:30` is not quoted, and it keeps the quotes a value already
 // had. Keys match case-insensitively and keep the casing they were written
 // with. A key the block lacks is appended, and a note without frontmatter is
-// returned as it is. Line endings are normalised to LF.
+// returned as it is. A note with only CRLF newlines keeps them. A note with
+// mixed endings comes out with LF.
 func setFrontmatterLines(body string, updates []frontmatterLine) string {
+	next := setFrontmatterLinesLF(body, updates)
+	if next == body {
+		return body
+	}
+	if crlf := strings.Count(body, "\r\n"); crlf > 0 && crlf == strings.Count(body, "\n") {
+		return strings.ReplaceAll(strings.ReplaceAll(next, "\r\n", "\n"), "\n", "\r\n")
+	}
+	return strings.ReplaceAll(next, "\r\n", "\n")
+}
+
+// setFrontmatterLinesLF does the work of setFrontmatterLines with LF endings.
+func setFrontmatterLinesLF(body string, updates []frontmatterLine) string {
 	norm := strings.ReplaceAll(body, "\r\n", "\n")
 	block, rest, ok := Frontmatter(norm)
 	if !ok {

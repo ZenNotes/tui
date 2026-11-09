@@ -175,3 +175,25 @@ func TestTaskTokenProblemsListsUntilProblems(t *testing.T) {
 		t.Errorf("task note without rule: %+v", got)
 	}
 }
+
+func TestRollTaskFileKeepsCRLF(t *testing.T) {
+	in := "---\r\ntags: [task]\r\nstatus: open\r\nrepeat: weekly\r\ndue: 2026-11-02\r\n---\r\n\r\n# Water\r\n"
+	next, rolled := RollTaskFileInBody(in, RollComplete, rollNow("2026-11-02"), time.Monday)
+	if !rolled {
+		t.Fatalf("not rolled: %q", next)
+	}
+	if strings.Contains(strings.ReplaceAll(next, "\r\n", ""), "\n") {
+		t.Fatalf("a bare LF is in %q", next)
+	}
+	if !strings.Contains(next, "due: 2026-11-09\r\n") {
+		t.Fatalf("due did not move: %q", next)
+	}
+}
+
+func TestSetFrontmatterLinesMixedEndingsUseLF(t *testing.T) {
+	in := "---\r\nstatus: open\ndue: 2026-11-02\r\n---\nbody\r\n"
+	got := setFrontmatterLines(in, []frontmatterLine{{key: "due", value: StrPtr("2026-11-09")}})
+	if want := "---\nstatus: open\ndue: 2026-11-09\n---\nbody\n"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
