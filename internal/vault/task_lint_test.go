@@ -2,6 +2,7 @@ package vault
 
 import (
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -231,5 +232,187 @@ func TestTaskTokenProblemsListsSkipNamesThatLeadBack(t *testing.T) {
 	line := "- [ ] t @repeat:1w @skip:b\n"
 	if got := TaskTokenProblemsWithEvents("A.md", line, events); len(got) != 0 {
 		t.Fatalf("task line: %+v", got)
+	}
+}
+
+// problemReasons maps each listed token to its reason, for tests that need
+// the words of a reason.
+func problemReasons(problems []TaskTokenProblem) map[string]string {
+	out := map[string]string{}
+	for _, p := range problems {
+		out[fmt.Sprintf("%d %s", p.Line, p.Token)] = p.Reason
+	}
+	return out
+}
+
+func TestTaskTokenProblemsListsEventProblems(t *testing.T) {
+	body := strings.Join([]string{
+		"- Dentist when:2026-11-03 when:2026-11-04",
+		"- Dentist when:2026-02-30",
+		"- Dentist when:2026-11-3",
+		"- Ask them when:tomorrow",
+		"- Dentist when:2026-11-03T25:00",
+		"- E when:2026-11-04/2026-11-03",
+		"- E when:2026-11-03T22:00/2026-11-03T21:00",
+		"- E when:2026-11-03T22:00/2026-11-04",
+		"- E when:2026-11-03/2026-02-30",
+		"- Late when:2026-11-03T23:00-01:00",
+		"- Fine when:2026-11-03T09:00-10:00 @repeat:weekly @skip:2026-12-21/2027-01-03 @until:2027-06-01",
+		"- Gym when:2026-11-02T07:00 @repeat:1w/done @repeat:after-1w",
+		"- Gym when:2026-11-02T07:00 @repeat:nonsense @skip:2027-02-30 @skip:2027-03-21/2027-03-13",
+		"- Gym when:2026-11-02T07:00 @until:2027-06-01",
+		"- Gym when:2026-11-02T07:00 @repeat:1w @until:2026-10-01",
+		"- see `when:2026-02-30 @repeat:nonsense`",
+		"- Plan when:2026-11-03 @repeat:after-1w",
+		"- Dentist !high @waiting when:2026-11-03",
+		"```",
+		"- Dentist when:2026-02-30",
+		"```",
+		"- [ ] Call Ana when:2026-11-03T14:00",
+	}, "\n")
+	got := problemSummary(TaskTokenProblems("Plans.md", body))
+	want := []string{
+		"Plans.md:1 when:2026-11-03",
+		"Plans.md:2 when:2026-02-30",
+		"Plans.md:3 when:2026-11-3",
+		"Plans.md:5 when:2026-11-03T25:00",
+		"Plans.md:6 when:2026-11-04/2026-11-03",
+		"Plans.md:7 when:2026-11-03T22:00/2026-11-03T21:00",
+		"Plans.md:8 when:2026-11-03T22:00/2026-11-04",
+		"Plans.md:9 when:2026-11-03/2026-02-30",
+		"Plans.md:10 when:2026-11-03T23:00-01:00",
+		"Plans.md:12 @repeat:1w/done",
+		"Plans.md:12 @repeat:after-1w",
+		"Plans.md:13 @repeat:nonsense",
+		"Plans.md:13 @skip:2027-02-30",
+		"Plans.md:13 @skip:2027-03-21/2027-03-13",
+		"Plans.md:14 @until:2027-06-01",
+		"Plans.md:15 @until:2026-10-01",
+		"Plans.md:17 @repeat:after-1w",
+		"Plans.md:22 when:2026-11-03T14:00",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems\n got %q\nwant %q", got, want)
+	}
+	reasons := problemReasons(TaskTokenProblems("Plans.md", body))
+	if r := reasons["10 when:2026-11-03T23:00-01:00"]; !strings.Contains(r, "2026-11-03T23:00/2026-11-04T01:00") {
+		t.Errorf("reason for the end before the start: %q", r)
+	}
+	for key, r := range reasons {
+		if strings.TrimSpace(r) == "" {
+			t.Errorf("%s has no reason", key)
+		}
+	}
+}
+
+func TestTaskTokenProblemsListsEventNoteProblems(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       []string
+	}{
+		{"no when", "---\npage-type: event\n---\n", []string{"E.md:2 page-type:event"}},
+		{"bad when", "---\npage-type: event\nwhen: 2026-02-30\n---\n", []string{"E.md:3 when:2026-02-30"}},
+		{"bad range", "---\npage-type: event\nwhen: 2026-11-04/2026-11-03\n---\n", []string{"E.md:3 when:2026-11-04/2026-11-03"}},
+		{"after", "---\npage-type: event\nwhen: 2026-11-03\nrepeat: after-1w\n---\n", []string{"E.md:4 repeat:after-1w"}},
+		{"bad rule", "---\npage-type: event\nwhen: 2026-11-03\nrepeat: nonsense\nskip: [2027-02-30, 2027-03-13]\n---\n",
+			[]string{"E.md:4 repeat:nonsense", "E.md:5 skip:2027-02-30"}},
+		{"until", "---\npage-type: event\nwhen: 2026-11-03\nrepeat: 1w\nuntil: 2026-10-01\n---\n", []string{"E.md:5 until:2026-10-01"}},
+		{"until without rule", "---\npage-type: event\nwhen: 2026-11-03\nuntil: 2027-10-01\n---\n", []string{"E.md:4 until:2027-10-01"}},
+		{"fine", "---\npage-type: event\nwhen: 2026-11-03T14:00-15:30\nrepeat: weekly\nskip: [2026-11-10]\nuntil: 2027-01-01\n---\n", nil},
+		{"event list", "---\npage-type: event-list\nwhen: 2026-11-03\n---\n- A when:2026-11-03\n", nil},
+		{"events off", "---\nevents: false\n---\n- A when:2026-02-30\n", nil},
+		{"not an event", "---\nwhen: 2026-02-30\nrepeat: nonsense\n---\n", nil},
+	}
+	for _, tc := range cases {
+		got := problemSummary(TaskTokenProblems("E.md", tc.body))
+		if len(got) == 0 {
+			got = nil
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%s\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestTaskTokenProblemsListsEventSkipNames(t *testing.T) {
+	a := noteEvent("A", FolderInbox, "when: 2027-03-01\nrepeat: 1w\nskip: [b]\n")
+	b := noteEvent("B", FolderInbox, "when: 2027-03-02\nrepeat: 1w\nskip: [a]\n")
+	events := append(a, b...)
+	body := "---\npage-type: event\nwhen: 2027-03-01\nrepeat: 1w\nskip: [b, nope]\n---\n- Gym when:2027-03-01 @repeat:1w @skip:a @skip:nope\n"
+	got := problemSummary(TaskTokenProblemsWithEvents("A.md", body, events))
+	want := []string{"A.md:5 skip:b", "A.md:5 skip:nope", "A.md:7 @skip:nope"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestTaskTokenProblemsListsCutRepeatValues(t *testing.T) {
+	body := strings.Join([]string{
+		"- [ ] a @repeat:mon,thu",
+		"- Gym when:2026-11-02 @repeat:mon,thu",
+		"- [ ] b @repeat:mon/thu",
+		"- [ ] c @repeat:daily.",
+		"- [ ] d @repeat:weekly,",
+	}, "\n")
+	problems := TaskTokenProblems("n.md", body)
+	if got, want := problemSummary(problems), []string{"n.md:1 @repeat:mon,thu", "n.md:2 @repeat:mon,thu"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems\n got %q\nwant %q", got, want)
+	}
+	for _, p := range problems {
+		if !strings.Contains(p.Reason, ",") || !strings.Contains(p.Reason, "mon/thu") {
+			t.Errorf("reason lacks the cut character or the slash form: %q", p.Reason)
+		}
+	}
+}
+
+func TestTaskTokenProblemsListsDanglingLinksAndDuplicateIds(t *testing.T) {
+	v := newTestVault(t)
+	writeFile(t, filepath.Join(v.Root(), "inbox", "Work.md"), "- [ ] Write report ^ab12cd\n- [ ] Plan ^ef34gh\n")
+	writeFile(t, filepath.Join(v.Root(), "inbox", "Other.md"), "- [ ] Twin ^ef34gh\n- Bullet ^zz99zz\n- Bullet two ^zz99zz\n")
+	writeFile(t, filepath.Join(v.Root(), "inbox", "Plans.md"), strings.Join([]string{
+		"- Good task:[[Work#^ab12cd]] when:2026-11-03T14:00",
+		"- Missing task:[[Gone#^ab12cd]] when:2026-11-03T15:00",
+		"- Nobody task:[[Work#^nothing]] when:2026-11-03T16:00",
+		"- Plain task:[[Other#^zz99zz]] when:2026-11-03T17:00",
+		"- Whole task:[[Nowhere]] when:2026-11-03T18:00",
+		"- Note only task:[[Work#^ab12cd]]",
+	}, "\n")+"\n")
+	writeFile(t, filepath.Join(v.Root(), "inbox", "Event.md"), "---\npage-type: event\nwhen: 2026-11-03\ntask: \"[[Gone]]\"\n---\n")
+	problems, err := v.ScanTaskTokenProblems()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := problemSummary(problems)
+	want := []string{
+		"inbox/Event.md:4 task:[[Gone]]",
+		"inbox/Other.md:1 ^ef34gh",
+		"inbox/Other.md:2 ^zz99zz",
+		"inbox/Other.md:3 ^zz99zz",
+		"inbox/Plans.md:3 task:[[Work#^nothing]]",
+		"inbox/Plans.md:4 task:[[Other#^zz99zz]]",
+		"inbox/Plans.md:5 task:[[Nowhere]]",
+		"inbox/Work.md:2 ^ef34gh",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("problems\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestTaskTokenProblemsIgnoresProseBareTokensAndCategoryNotes(t *testing.T) {
+	body := strings.Join([]string{
+		"---",
+		"page-type: event-list",
+		"when: 2026-11-03",
+		"---",
+		"Dentist when:2026-02-30",
+		"- Ask them when:tomorrow",
+		"- Ask them when: 2026-02-30",
+		"- Ask them WHEN:2026-02-30",
+		"- dinner:when:2026-02-30",
+		"- [ ] A scheduled:2026-11-05 repeat:1w until:2026-02-30 skip:2027-02-30",
+		"- [ ] B scheduled:2026-11-03T25:00 when:tomorrow",
+	}, "\n")
+	if got := TaskTokenProblems("Plans.md", body); len(got) != 0 {
+		t.Fatalf("problems: %+v", got)
 	}
 }

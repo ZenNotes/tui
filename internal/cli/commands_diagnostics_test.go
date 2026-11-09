@@ -201,7 +201,7 @@ func TestDoctorCountsOneBadTokenInSingular(t *testing.T) {
 	root := t.TempDir()
 	writeVaultFile(t, root, "a.md", "- [ ] odd @repeat:fortnightly\n")
 	out, _ := doctorText(t, root)
-	if !strings.Contains(out, "1 task time, repeat rule or skip item is not valid and is ignored") {
+	if !strings.Contains(out, "1 task or event value is not valid and zn ignores it") {
 		t.Fatalf("warning not in the singular:\n%s", out)
 	}
 }
@@ -298,5 +298,84 @@ func TestDoctorListsUnresolvedSkipName(t *testing.T) {
 	}
 	if strings.Contains(out, "@skip:spring-break") {
 		t.Fatalf("a name that an event note answers was reported:\n%s", out)
+	}
+}
+
+// Each kind of event, link and checkbox problem is a line of the warning with
+// a reason, and the exit status is the one of a clean vault.
+func TestDoctorListsEveryNewKindWithReason(t *testing.T) {
+	isolatedCLI(t)
+	clean := t.TempDir()
+	writeVaultFile(t, clean, "ok.md", "- Fine when:2026-11-03\n")
+	_, cleanCode := doctorText(t, clean)
+
+	root := t.TempDir()
+	writeVaultFile(t, root, "Plans.md", strings.Join([]string{
+		"- Bad when:2026-02-30",
+		"- Twice when:2026-11-03 when:2026-11-04",
+		"- Late when:2026-11-03T23:00-01:00",
+		"- Gym when:2026-11-02 @repeat:after-1w",
+		"- Run when:2026-11-02 @repeat:mon,thu",
+		"- Write task:[[Nowhere]] when:2026-11-03T14:00",
+		"- [ ] Call Ana when:2026-11-03T14:00",
+		"- Shared ^dup123",
+		"- Shared too ^dup123",
+	}, "\n")+"\n")
+	writeVaultFile(t, root, "Empty.md", "---\npage-type: event\n---\n")
+	out, code := doctorText(t, root)
+	for _, want := range []string{
+		"Plans.md:1", "when:2026-02-30",
+		"Plans.md:2", "Plans.md:3", "2026-11-03T23:00/2026-11-04T01:00",
+		"Plans.md:4", "@repeat:after-1w",
+		"Plans.md:5", "@repeat:mon,thu",
+		"Plans.md:6", "task:[[Nowhere]]",
+		"Plans.md:7", "when:2026-11-03T14:00",
+		"Plans.md:8", "^dup123", "Plans.md:9",
+		"Empty.md",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "Plans.md:") && len(strings.Fields(line)) < 3 {
+			t.Fatalf("a listed line has no reason: %q", line)
+		}
+	}
+	if code != cleanCode {
+		t.Fatalf("exit status %d with warnings, %d on a clean vault", code, cleanCode)
+	}
+}
+
+// A checkbox line with a `when:` value is listed, and says that task lines do
+// not read it.
+func TestDoctorListsCheckboxWhen(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	writeVaultFile(t, root, "w.md", "# W\n- [ ] Call Ana when:2026-11-03T14:00\n")
+	out, _ := doctorText(t, root)
+	for _, want := range []string{"w.md:2", "when:2026-11-03T14:00", "task line"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// A vault with valid events, bare tokens, scheduled values and category notes
+// gets no warning.
+func TestDoctorQuietWithoutProblems(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	writeVaultFile(t, root, "w.md", strings.Join([]string{
+		"- [ ] A scheduled:2026-11-05 repeat:1w until:2026-02-30",
+		"- [ ] B scheduled:2026-11-03T25:00",
+		"- Ask them when:tomorrow",
+		"- Dentist !high @waiting when:2026-11-03",
+	}, "\n")+"\n")
+	writeVaultFile(t, root, "t.md", "---\ntags: [task]\nscheduled: 2026-02-30\n---\n")
+	writeVaultFile(t, root, "Plans.md", "---\npage-type: event-list\nwhen: 2026-11-03\n---\n- Gym when:2026-11-02T07:00 @repeat:weekly\n")
+	out, _ := doctorText(t, root)
+	if strings.Contains(out, "WARN") {
+		t.Fatalf("warning for a clean vault:\n%s", out)
 	}
 }
