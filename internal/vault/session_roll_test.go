@@ -314,3 +314,84 @@ func TestInsertSessionCopiesKeepsEachEnding(t *testing.T) {
 		t.Fatalf("lf: got %q, want %q", got, want)
 	}
 }
+
+// A session line under the task that is not current stays only under the
+// record. The new open line gets a copy of the subtask, but not of the line.
+func TestPlanRollSessionOfSubtaskStaysUnderRecord(t *testing.T) {
+	work := sessionNote{"Work.md", "Work", "- [ ] T @repeat:1w due:2026-11-02 ^ab12cd\n" +
+		"  - [ ] Sub ^sub111\n" +
+		"    - S2 task:[[Work#^sub111]] when:2026-11-02T11:00-12:00\n"}
+	plan, ok := planRollOf(t, "2026-11-02", "Work.md", 0, false, RollComplete, work)
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	if n := strings.Count(plan.Body, "S2 task:"); n != 1 {
+		t.Fatalf("the session is written %d times:\n%s", n, plan.Body)
+	}
+	lines := strings.Split(plan.Body, "\n")
+	if len(lines) < 6 || !strings.HasPrefix(lines[1], "  - [ ] Sub") || strings.Contains(lines[1], "^sub111") {
+		t.Fatalf("copy of the subtask:\n%s", plan.Body)
+	}
+	if !strings.HasPrefix(lines[2], "- [x] T") || !strings.Contains(plan.Body, "    - S2 task:[[Work#^sub111]] when:2026-11-02T11:00-12:00") {
+		t.Fatalf("record:\n%s", plan.Body)
+	}
+}
+
+// A repeating session under the task is not copied into the new occurrence,
+// and a second roll adds no line.
+func TestPlanRollRepeatingSessionUnderTaskIsNotCopied(t *testing.T) {
+	session := "  - S1 task:[[Work#^ab12cd]] when:2026-11-02T09:00-10:00 @repeat:1d\n"
+	work := sessionNote{"Work.md", "Work", "- [ ] T @repeat:1w due:2026-11-02 ^ab12cd\n" + session}
+	plan, ok := planRollOf(t, "2026-11-02", "Work.md", 0, false, RollComplete, work)
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	if n := strings.Count(plan.Body, "S1 task:"); n != 1 {
+		t.Fatalf("the session is written %d times:\n%s", n, plan.Body)
+	}
+	// The open line is the first line. It is the task that the next roll takes.
+	again := sessionNote{"Work.md", "Work", plan.Body}
+	next, ok := planRollOf(t, "2026-11-09", "Work.md", 0, false, RollComplete, again)
+	if !ok || !next.Rolled {
+		t.Fatalf("second plan: %+v, %v", next, ok)
+	}
+	if n := strings.Count(next.Body, "S1 task:"); n != 1 {
+		t.Fatalf("the session is written %d times after two rolls:\n%s", n, next.Body)
+	}
+	if got, was := len(strings.Split(next.Body, "\n")), len(strings.Split(plan.Body, "\n")); got != was+1 {
+		t.Fatalf("second roll changed the line count from %d to %d:\n%s", was, got, next.Body)
+	}
+}
+
+// The moved sessions follow the copies that go in above them. The block has
+// a child that is not a session between two sessions.
+func TestPlanRollMovedSessionsShiftWithCopiesAbove(t *testing.T) {
+	id := wantID()
+	work := sessionNote{"Work.md", "Work", "- Own task:[[Work#^ab12cd]] when:2026-11-02T08:00-08:30\n" +
+		"- [ ] T @repeat:1w due:2026-11-02 ^ab12cd\n" +
+		"  - A task:[[Work#^ab12cd]] when:2026-11-02T09:00-10:00\n" +
+		"  - plain child\n" +
+		"  - B task:[[Work#^ab12cd]] when:2026-11-02T11:00-12:00\n" +
+		"- Below task:[[Work#^ab12cd]] when:2026-11-02T13:00-14:00\n"}
+	plan, ok := planRollOf(t, "2026-11-02", "Work.md", 0, false, RollComplete, work)
+	if !ok || !plan.Rolled {
+		t.Fatalf("plan: %+v, %v", plan, ok)
+	}
+	newer := "task:[[Work#^" + id + "]] when:2026-11-"
+	old := "task:[[Work#^ab12cd]] when:2026-11-"
+	want := "- Own " + old + "02T08:00-08:30\n" +
+		"- Own " + newer + "09T08:00-08:30\n" +
+		"- [ ] T @repeat:1w due:2026-11-09 ^" + id + "\n" +
+		"  - A " + newer + "09T09:00-10:00\n" +
+		"  - plain child\n" +
+		"  - B " + newer + "09T11:00-12:00\n" +
+		"- [x] T due:2026-11-02 ^ab12cd\n" +
+		"  - A " + old + "02T09:00-10:00\n" +
+		"  - plain child\n" +
+		"  - B " + old + "02T11:00-12:00\n" +
+		"- Below " + old + "02T13:00-14:00\n" +
+		"- Below " + newer + "09T13:00-14:00\n"
+	if plan.Body != want {
+		t.Fatalf("body:\n%s\nwant:\n%s", plan.Body, want)
+	}
+}

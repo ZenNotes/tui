@@ -79,7 +79,8 @@ type rollSessions struct {
 	// when the task rolls. It is nil for a task without sessions.
 	newID func() string
 	// moved maps the number of a session line under the task to its moved
-	// copy. The new open line holds the copy in place of that session.
+	// copy. The new open line holds the copy in place of that session. Any
+	// other session line under the task stays only under the record.
 	moved map[int]string
 }
 
@@ -147,6 +148,11 @@ func rollTaskLines(body string, targetIndex int, dialect TaskDialect, action Rol
 			record = append(record, bare[i])
 			continue
 		}
+		if isSessionLine(bare[i]) {
+			// A session line that is not moved stays only under the record.
+			record = append(record, bare[i])
+			continue
+		}
 		if child == nil {
 			copied = append(copied, bare[i])
 			record = append(record, bare[i])
@@ -172,6 +178,12 @@ func rollTaskLines(body string, targetIndex int, dialect TaskDialect, action Rol
 	}
 	out = append(out, lines[end:]...)
 	return rollResult{next: strings.Join(out, "\n"), inserted: inserted, ok: true, rolled: true, days: plan.days}
+}
+
+// isSessionLine reports whether a line holds both a `task:` link and a
+// `when:` value, so it is a work session.
+func isSessionLine(line string) bool {
+	return eventTaskRe.MatchString(line) && eventWhenRe.MatchString(line)
 }
 
 // isOpenState reports whether a checkbox state is open or in progress.

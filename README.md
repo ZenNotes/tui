@@ -518,6 +518,8 @@ effects:
 - A roll does not copy a session that is an event note, a session that repeats
   or a session when its note already has a line with the same `when:` and `task:` values. The terminal app
   tells you when it cannot copy a session.
+- A session under the task stays under the record. Its copy goes under the new
+  open line. Other session lines under the task stay only under the record.
 
 A calendar entry for a session shows the mark of its task: `☐` open, `◩` in
 progress, `☑` done, `☒` cancelled, `→` forwarded and `?` when the link names no

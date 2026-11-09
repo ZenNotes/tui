@@ -84,6 +84,10 @@ type TaskRollPlan struct {
 // own. The inserted open line gets a new block id only when the task has
 // current sessions.
 //
+// A session under the task that rolls stays under the record. Its copy goes
+// under the new open line. Other session lines in the subtree of the task
+// stay only under the record.
+//
 // A session is not copied when it is an event note, when it repeats, or when
 // its link does not name the task. Event notes are counted in InOwnNote.
 // A session is also not copied when its note holds a line with the same
