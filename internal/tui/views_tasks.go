@@ -1567,7 +1567,7 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 				}
 			}
 			if t.Kind == "file" {
-				body = vault.SetTaskFileStatus(body, v, time.Now())
+				body = vault.SetTaskFileStatus(body, v, a.taskClock())
 			} else {
 				body = vault.SetTaskChecked(body, t.TaskIndex, v)
 			}
@@ -1597,7 +1597,7 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 				body = vault.SetTaskDue(body, t.TaskIndex, v)
 			}
 		}
-		now := time.Now()
+		now := a.taskClock()
 		switch status {
 		case "done":
 			checked(true)
