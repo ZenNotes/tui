@@ -78,7 +78,7 @@ func (p *outlinePanel) handleKey(a *App, k vim.Key) {
 	if k.Is("enter") || (a.listKeyAllowed(k) && (k.IsRune('l') || k.IsRune('o'))) {
 		if p.list.cursor < len(p.items) {
 			if buf := a.activeBuffer(); buf != nil {
-				buf.ed.GotoLine(p.items[p.list.cursor].Line - 1)
+				buf.ed.GotoLine(p.items[p.list.cursor].Line)
 				a.focus = focusPane
 			}
 		}

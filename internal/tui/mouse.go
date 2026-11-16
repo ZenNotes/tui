@@ -409,7 +409,7 @@ func (a *App) sidePanelClick(m tea.MouseMsg, double bool, main rect) {
 		if idx >= 0 && idx < len(a.outline.items) {
 			a.outline.list.cursor = idx
 			if buf := a.activeBuffer(); buf != nil {
-				buf.ed.GotoLine(a.outline.items[idx].Line - 1)
+				buf.ed.GotoLine(a.outline.items[idx].Line)
 			}
 		}
 	case focusConnections:
