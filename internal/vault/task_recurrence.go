@@ -295,9 +295,14 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 	// The occurrence keeps the text, priority, tags and every other field, in
 	// their order, with `due:` replaced where it stood. `@waiting` and the board's
 	// `@status:` belong to one occurrence and do not carry.
+	// A `^id` block marker has to end its line, so a `due:` the roll adds goes
+	// in before it.
+	ownMarker := trailingBlockIDFrom(rest)
 	var nextRest string
 	if due != nil {
 		nextRest = rest[:due[0]] + rest[due[2]:due[3]] + "due:" + nextDue + rest[due[1]:]
+	} else if ownMarker >= 0 {
+		nextRest = withoutBlockID(rest, ownMarker) + " due:" + nextDue + " " + rest[ownMarker:]
 	} else {
 		nextRest = tidyEndRe.ReplaceAllString(rest, "") + " due:" + nextDue
 	}
@@ -305,28 +310,49 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 	nextRest = repeatTidy(repeatStatusRe.ReplaceAllString(nextRest, "${1}"))
 	next := []string{m[1] + " ]" + nextRest}
 
+	// Block ids (`^id`) stay with the open occurrence and leave the record
+	// (ZenNotes/zennotes#1083), as the desktop's roll does: a link or embed of a
+	// repeating task means the series, and lookup takes the first of a repeated
+	// id, which is the occurrence above. A fence ends a task's subtree, so no
+	// line here is code and each `^id` is one.
+	//
 	// The subtree comes along with every checkbox open again, and the record
 	// cancels the subtasks it left open, so only the fresh copies read as live.
+	type recordLine struct {
+		text string
+		src  int
+	}
 	end := taskBlockEnd(bare, at, leadingIndentWidth(bare[at]))
-	recordChildren := []string{}
+	recordChildren := []recordLine{}
 	insertedTasks := 1
 	for i := at + 1; i < end; i++ {
 		child := lineRe.FindStringSubmatch(bare[i])
 		if child == nil {
 			next = append(next, bare[i])
-			recordChildren = append(recordChildren, bare[i])
-			continue
-		}
-		insertedTasks++
-		next = append(next, child[1]+" "+child[3])
-		if child[2] == " " || child[2] == "/" {
-			recordChildren = append(recordChildren, child[1]+"-"+child[3])
 		} else {
-			recordChildren = append(recordChildren, bare[i])
+			insertedTasks++
+			next = append(next, child[1]+" "+child[3])
 		}
+		text := bare[i]
+		if from := trailingBlockIDFrom(text); from >= 0 {
+			// A marker alone on its line names the block above it; the record
+			// has no use for the line once the id is gone.
+			text = withoutBlockID(text, from)
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+		}
+		if rec := lineRe.FindStringSubmatch(text); child != nil && rec != nil && (rec[2] == " " || rec[2] == "/") {
+			text = rec[1] + "-" + rec[3]
+		}
+		recordChildren = append(recordChildren, recordLine{text, i})
 	}
 
-	recordRest := repeatRuleTokenRe.ReplaceAllString(rest, "${1}")
+	recordSource := rest
+	if ownMarker >= 0 {
+		recordSource = withoutBlockID(rest, ownMarker)
+	}
+	recordRest := repeatRuleTokenRe.ReplaceAllString(recordSource, "${1}")
 	recordRest = repeatTidy(repeatRemindRe.ReplaceAllString(recordRest, "${1}"))
 	mark := "x"
 	if opts.Skip {
@@ -345,8 +371,8 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 		out = append(out, line+ending(at))
 	}
 	out = append(out, m[1]+mark+"]"+recordRest+ending(at))
-	for k, line := range recordChildren {
-		out = append(out, line+ending(at+1+k))
+	for _, line := range recordChildren {
+		out = append(out, line.text+ending(line.src))
 	}
 	out = append(out, lines[end:]...)
 	return RecurringCompletion{
@@ -355,6 +381,23 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 		InsertedLines: len(next),
 		InsertedTasks: insertedTasks,
 	}, true
+}
+
+// trailingBlockIDFrom is where the `^id` marker ending text starts (its caret),
+// or -1 when text ends in none. The grammar is blockIDRe, the one link anchors
+// resolve with.
+func trailingBlockIDFrom(text string) int {
+	m := blockIDRe.FindStringSubmatchIndex(text)
+	if m == nil {
+		return -1
+	}
+	return m[2] - 1
+}
+
+// withoutBlockID is text cut at a block marker found at from, trailing blanks
+// trimmed.
+func withoutBlockID(text string, from int) string {
+	return strings.TrimRight(text[:from], " \t")
 }
 
 func repeatBareLines(lines []string) []string {
