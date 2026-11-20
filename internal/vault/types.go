@@ -129,17 +129,48 @@ type Task struct {
 	// Forwarded is a `[>]` record: the task moved to another note.
 	Forwarded bool   `json:"forwarded"`
 	Due       string `json:"due,omitempty"`
-	Priority  string `json:"priority,omitempty"`
-	Waiting   bool   `json:"waiting"`
+	// DueTime is the `HH:MM` of a `due:2026-11-03T14:00` value, empty when the
+	// due date carries no valid time. Due itself stays date-only.
+	DueTime string `json:"dueTime,omitempty"`
+	// DueEnd is the `HH:MM` end of a `due:2026-11-03T14:00-15:30` value, empty
+	// when the value has no valid end later than its start.
+	DueEnd   string `json:"dueEnd,omitempty"`
+	Priority string `json:"priority,omitempty"`
+	Waiting  bool   `json:"waiting"`
 	// Fields holds inline `@key:value` tokens (lower-cased), the note's
 	// frontmatter `status:` folded in. Any key can drive a Kanban board.
 	Fields map[string]string `json:"fields,omitempty"`
 	Status string            `json:"status,omitempty"`
 	Tags   []string          `json:"tags"`
 	// Kind is "file" for a whole-note task; empty means an inline checkbox.
-	Kind          string `json:"kind,omitempty"`
-	Scheduled     string `json:"scheduled,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	// Scheduled carries the `scheduled` value that a remote server sends. A
+	// local scan never sets it.
+	Scheduled string `json:"scheduled,omitempty"`
+	// Repeat is the lower-cased `@repeat:` rule, empty when the task has none or
+	// the rule does not parse.
+	Repeat string `json:"repeat,omitempty"`
+	// Skip holds the valid `@skip:` items in their written form: days and
+	// inclusive ranges that a repeating task passes over.
+	// Names and invalid items are not here.
+	Skip []string `json:"skip,omitempty"`
+	// Until is the last date a repeating task may land on, as `YYYY-MM-DD`.
+	// It is empty unless the task has a valid rule and a valid date.
+	Until string `json:"until,omitempty"`
+	// BlockID is the Obsidian block id that ends a checkbox line, without the
+	// `^`. It is empty when the line has none.
+	BlockID       string `json:"blockId,omitempty"`
 	CompletedDate string `json:"completedDate,omitempty"`
+	// LastCompleted is the `lastCompleted` date of a repeating task note. It
+	// is not in the JSON.
+	LastCompleted string `json:"-"`
+	// SessionDate, SessionTime and SessionEnd come from the first current
+	// work session of the task that has not ended. JoinSessions sets them. A
+	// scan never does, and they are not in the JSON. SessionEnd is an
+	// `HH:MM` end of the session.
+	SessionDate string `json:"-"`
+	SessionTime string `json:"-"`
+	SessionEnd  string `json:"-"`
 	// DueInferred marks a due date derived from the containing daily note
 	// rather than written on the line. Set by the TUI, never by a scan.
 	DueInferred bool `json:"dueInferred,omitempty"`
@@ -234,6 +265,8 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		InProgress    bool              `json:"inProgress"`
 		Forwarded     *bool             `json:"forwarded,omitempty"`
 		Due           string            `json:"due,omitempty"`
+		DueTime       string            `json:"dueTime,omitempty"`
+		DueEnd        string            `json:"dueEnd,omitempty"`
 		Priority      string            `json:"priority,omitempty"`
 		Waiting       bool              `json:"waiting"`
 		Fields        map[string]string `json:"fields,omitempty"`
@@ -241,6 +274,10 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		Tags          []string          `json:"tags"`
 		Kind          string            `json:"kind,omitempty"`
 		Scheduled     string            `json:"scheduled,omitempty"`
+		Repeat        string            `json:"repeat,omitempty"`
+		Skip          []string          `json:"skip,omitempty"`
+		Until         string            `json:"until,omitempty"`
+		BlockID       string            `json:"blockId,omitempty"`
 		CompletedDate string            `json:"completedDate,omitempty"`
 		DueInferred   bool              `json:"dueInferred,omitempty"`
 	}
@@ -249,7 +286,7 @@ func (t Task) MarshalJSON() ([]byte, error) {
 		LineNumber: t.LineNumber, TaskIndex: t.TaskIndex, RawText: t.RawText, Content: t.Content,
 		Checked: t.Checked, Cancelled: t.Cancelled, InProgress: t.InProgress, Due: t.Due, Priority: t.Priority,
 		Waiting: t.Waiting, Fields: t.Fields, Status: t.Status, Tags: t.Tags, Kind: t.Kind,
-		Scheduled: t.Scheduled, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
+		DueTime: t.DueTime, DueEnd: t.DueEnd, Scheduled: t.Scheduled, Repeat: t.Repeat, Skip: t.Skip, Until: t.Until, BlockID: t.BlockID, CompletedDate: t.CompletedDate, DueInferred: t.DueInferred,
 	}
 	if t.Kind != "file" {
 		forwarded := t.Forwarded

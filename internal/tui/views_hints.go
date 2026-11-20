@@ -14,9 +14,9 @@ func (v *tasksView) hintPairs(a *App) []hintPair {
 			return append([]hintPair{{"key:j/k", "task"}, {"nav.toggleTask", "toggle"}, {"key:Enter", "open"}, {"key:T", "due today"}, {"key:@", "due date"}, {"key:</>", "shift due"}, {"nav.contextMenu", "menu"}, {"key:Tab", "focus"}, {"key:Esc", "back"}}, common...)
 		}
 		if c.sub != calMonth {
-			return append([]hintPair{{"key:h/l", "day"}, {"key:j/k", "scroll"}, {"key:[/]", "month"}, {"key:t", "today"}, {"key:Esc", "month/week/day"}, {"key:Tab", "focus"}, {"key:Enter", "day tasks"}, {"key:o", "daily note"}}, common...)
+			return append([]hintPair{{"key:h/l", "day"}, {"key:j/k", "slot"}, {"key:Tab", "next task"}, {"key:a", "all day"}, {"key:Enter", "open"}, {"key:W", "session"}, {"key:N", "event"}, {"key:H/L", "month"}, {"key:t", "today"}, {"key:Esc", "month/week/day"}, {"key:o", "daily note"}, {"key:z", "hour step"}}, common...)
 		}
-		return append([]hintPair{{"key:h/j/k/l", "day"}, {"key:[/]", "month"}, {"key:t", "today"}, {"key:Esc", "month/week/day"}, {"key:Tab", "focus"}, {"key:Enter", "day tasks"}, {"key:o", "daily note"}}, common...)
+		return append([]hintPair{{"key:h/j/k/l", "day"}, {"key:H/L", "month"}, {"key:[/]", "month"}, {"key:t", "today"}, {"key:Esc", "month/week/day"}, {"key:Tab", "focus"}, {"key:Enter", "day tasks"}, {"key:W", "session"}, {"key:N", "event"}, {"key:o", "daily note"}}, common...)
 	}
 	return append([]hintPair{{"nav.moveDown|nav.moveUp", "move"}, {"nav.toggleTask", "toggle"}, {"nav.openResult", "open"}, {"key:p", "priority"}, {"key:d", "due"}, {"key:w", "waiting"}, {"key:c", "cancel"}, {"key:/", "in progress"}, {"key:e", "edit"}, {"key:s", "field"}, {"key:</>", "shift due"}, {"tasks.moveTaskUp|tasks.moveTaskDown", "reorder"}, {"nav.contextMenu", "menu"}}, common...)
 }
@@ -57,6 +57,10 @@ func (v *tasksView) scrollBy(a *App, delta int) {
 			v.card = max(0, min(max(0, len(v.columns[v.col].cards)-1), v.card+delta))
 		}
 	case "calendar":
+		if c := v.calc(); c.sub != calMonth && c.visibleHourRows() > 0 && !c.hourListWhole() {
+			c.scrollHours(sign(delta))
+			return
+		}
 		v.selectDay(a, v.day.AddDate(0, 0, 7*sign(delta)))
 	default:
 		v.list.move(delta, len(v.rows))

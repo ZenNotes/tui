@@ -126,9 +126,10 @@ func TestDoneOnARecurringTaskWritesTheNextOccurrence(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 
-	// Only finishing repeats. Cancelling ends it, and an ordinary task is one line.
+	// Cancelling rolls too, with a cancelled record, and an ordinary task is one line.
 	mustCall(t, cs, "update_task", map[string]any{"id": "cancelled.md#0", "state": "cancelled"})
-	if got := readFile(t, root, "cancelled.md"); got != "- [-] water @repeat:daily due:2026-01-01\n" {
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	if got := readFile(t, root, "cancelled.md"); got != "- [ ] water @repeat:daily due:"+tomorrow+"\n- [-] water due:2026-01-01\n" {
 		t.Fatalf("%q", got)
 	}
 	mustCall(t, cs, "update_task", map[string]any{"id": "plain.md#0", "state": "done"})

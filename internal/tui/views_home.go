@@ -70,7 +70,7 @@ func (v *homeView) refresh(a *App) {
 	if a.idx == nil {
 		return
 	}
-	now := time.Now()
+	now := a.taskClock()
 	// Daily note.
 	_, _, title, rel := a.periodicLocation(periodic.Daily, now)
 	v.dailyTitle = title
@@ -204,7 +204,7 @@ func (v *homeView) render(a *App, w, h int, focused bool) string {
 	addLine := func(s string) { lines = append(lines, strings.Repeat(" ", pad)+padRight(s, inner)) }
 
 	// Header: vault, date, numbers.
-	now := time.Now()
+	now := a.taskClock()
 	left := th.Title.Render("✦ "+a.vaultLabel()) + th.Dim.Render("  "+now.Format("Monday, January 2"))
 	stats := []string{th.Base.Render(fmt.Sprint(v.stats.notes)) + th.Dim.Render(" notes"), th.Base.Render(fmt.Sprint(v.stats.open)) + th.Dim.Render(" open")}
 	if v.stats.dueToday > 0 {
@@ -501,11 +501,20 @@ func (v *homeView) taskRow(a *App, t vault.Task, w int, selected bool) string {
 	case t.InProgress:
 		glyph = "◩"
 	}
+	now := a.taskClock()
 	meta := ""
-	if vault.IsOverdue(t, time.Now()) {
-		meta = th.Overdue.Render("overdue " + t.Due)
+	due := withTaskClock(t.Due, t.DueTime, t.DueEnd, a.prefs.TimeFormat)
+	if vault.IsOverdue(t, now) {
+		meta = th.Overdue.Render("overdue " + due)
 	} else if t.Due != "" {
-		meta = th.Dim.Render(t.Due)
+		meta = th.Dim.Render(due)
+	}
+	// A work session that is planned for today shows its start time.
+	if t.SessionDate == vault.TodayISO(now) && t.SessionTime != "" {
+		if meta != "" {
+			meta += " "
+		}
+		meta += th.Dim.Render("ses " + formatTaskClock(t.SessionTime, a.prefs.TimeFormat))
 	}
 	if t.Priority != "" {
 		meta += " " + lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority)
@@ -543,7 +552,7 @@ func (v *homeView) weekLines(a *App, w int, selected bool) []string {
 	byDay := vault.BucketTasksByDueDate(a.displayTasks())
 	daily := a.dailyNotesByDate()
 	names, nums, counts := "", "", ""
-	today := time.Now()
+	today := a.taskClock()
 	for i, d := range v.week {
 		key := d.Format("2006-01-02")
 		name := d.Format("Mon")[:2]

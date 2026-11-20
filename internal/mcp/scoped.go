@@ -1189,7 +1189,38 @@ func (sb *scopedBackend) ToggleTask(ctx context.Context, taskID string, dialect 
 	if err != nil {
 		return nil, err
 	}
-	return sb.inner.ToggleTask(ctx, meta.Path+taskID[hash:], dialect)
+	id := meta.Path + taskID[hash:]
+	if inner, ok := sb.inner.(interface {
+		ToggleTaskWithin(ctx context.Context, taskID string, dialect vault.TaskDialect, canWrite func(rel string) bool) (*vault.Task, error)
+	}); ok {
+		// A roll can write other notes, the ones that hold the work sessions
+		// of the task. It writes only the ones this client may write.
+		canWrite := func(rel string) bool {
+			_, err := sb.noteFor(ctx, rel, AccessWrite)
+			return err == nil
+		}
+		return inner.ToggleTaskWithin(ctx, id, dialect, canWrite)
+	}
+	return sb.inner.ToggleTask(ctx, id, dialect)
+}
+
+// RollEditedTask is the roll of update_task. It needs write access to the note
+// of the task, and it writes a session copy only into a note that this client
+// may write. A backend that cannot roll gives a result that is not applied.
+func (sb *scopedBackend) RollEditedTask(ctx context.Context, rel, body string, index int, action vault.RollAction, _ func(rel string) bool) (vault.RollEdit, error) {
+	meta, err := sb.noteFor(ctx, rel, AccessWrite)
+	if err != nil {
+		return vault.RollEdit{}, err
+	}
+	inner, ok := sb.inner.(backend.TaskRoller)
+	if !ok {
+		return vault.RollEdit{}, nil
+	}
+	canWrite := func(other string) bool {
+		_, err := sb.noteFor(ctx, other, AccessWrite)
+		return err == nil
+	}
+	return inner.RollEditedTask(ctx, meta.Path, body, index, action, canWrite)
 }
 
 // DatabaseOps is never reached through MCP; there is no database tool.

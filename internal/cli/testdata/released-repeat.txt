@@ -1,0 +1,8 @@
+[ ]  inbox/chores.md#0                         Water the plants @repeat:daily  due:2027-03-08
+[ ]  inbox/chores.md#1                         Take out the bins @repeat:weekly  due:2027-03-09
+[ ]  inbox/chores.md#2                         Gym @repeat:mon/thu  due:2027-03-08
+[ ]  inbox/chores.md#3                         Change the filter @repeat:after-3d  due:2027-03-10
+[ ]  inbox/chores.md#4                         Back up the laptop @repeat:weekly
+[ ]  inbox/chores.md#5                         Stretch @repeat:daily
+[ ]  inbox/chores.md#6                         Call the bank @repeat:after-3d @remind:2027-03-09T09:00  due:2027-03-11
+[ ]  inbox/pay-rent.md#task                    pay-rent  due:2027-03-12  !high

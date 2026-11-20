@@ -941,8 +941,8 @@ func coreTools() []toolDef {
 		},
 		{
 			name:        "toggle_task",
-			description: "Flip a task’s checkbox state using its id from list_tasks (\"<path>#<index>\"). An id counts the task’s position in its note, so list_tasks again after that note changes. Finishing a task with `@repeat:` writes its next occurrence above it and returns the finished one under its new id. Returns the updated task, or null if the id no longer matches a task.",
-			schema:      `{"type":"object","properties":{"id":{"type":"string","description":"Task id: sourcePath#taskIndex."}},"required":["id"]}`,
+			description: "Flip a task’s checkbox state using its id from list_tasks (\"<path>#<index>\"), or the form \"<path>#^<blockId>\" for a task line that ends with a block id. An index counts the task’s position in its note, so list_tasks again after that note changes; a block id stays the same. Finishing a task with `@repeat:` writes its next occurrence above it and returns the finished one under its new id. Returns the updated task, or null if the id no longer matches a task.",
+			schema:      `{"type":"object","properties":{"id":{"type":"string","description":"Task id: sourcePath#taskIndex, or sourcePath#^blockId."}},"required":["id"]}`,
 			handler: func(ctx context.Context, a args, b Backend) (any, error) {
 				id, err := a.requireString("id")
 				if err != nil {
@@ -1400,7 +1400,7 @@ func BuildServer(opts Options) *sdk.Server {
 					return errorResult("Error: " + ctx.Err().Error()), nil
 				}
 			}
-			result, err := runRecording(ctx, def.name, args(a), b, agent, func() (any, error) {
+			result, err := runRecording(ctx, def.name, args(a), b, agent, func(ctx context.Context) (any, error) {
 				return def.handler(ctx, args(a), b)
 			})
 			if err != nil {
