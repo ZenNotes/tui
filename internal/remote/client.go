@@ -65,9 +65,15 @@ func ConnectionErrorMessage(baseURL string, err error) string {
 	return fmt.Sprintf("Could not connect to the ZenNotes server at %s. Make sure the server is running and the URL is correct.%s%s", baseURL, detail, hint)
 }
 
-func requestErrorMessage(baseURL, path string, status int, statusText, text string) string {
+func requestErrorMessage(baseURL, path string, status int, statusText, contentType, text string) string {
 	if status == 401 {
 		return fmt.Sprintf("The ZenNotes server rejected the connection. Check the auth token for %s and try again.", baseURL)
+	}
+	// The ZenNotes server answers in plain text. An HTML 403 came from
+	// something in front of it, most often an access gateway turning away a
+	// request without its headers; its page would only be noise here.
+	if status == http.StatusForbidden && strings.Contains(strings.ToLower(contentType), "text/html") {
+		return GatewayRefusedMessage(baseURL)
 	}
 	msg := fmt.Sprintf("Remote server request failed (%d %s) for %s", status, statusText, path)
 	if text != "" {
@@ -80,16 +86,64 @@ func requestErrorMessage(baseURL, path string, status int, statusText, text stri
 type Client struct {
 	BaseURL   string
 	AuthToken string
-	http      *http.Client
+	// Headers go with every request and the change feed's handshake, for an
+	// access gateway in front of the server (see headers.go).
+	Headers    []Header
+	headersErr error
+	http       *http.Client
 }
 
-// NewClient binds a client to a server and an optional token.
+// NewClient binds a client to a server and an optional token. It sends the
+// extra headers from ZENNOTES_REMOTE_HEADERS; a value that does not parse
+// fails every request with the reason, before anything is sent.
 func NewClient(baseURL, authToken string) *Client {
+	headers, err := EnvHeaders()
 	return &Client{
-		BaseURL:   NormalizeBaseURL(baseURL),
-		AuthToken: authToken,
-		http:      &http.Client{Timeout: 60 * time.Second},
+		BaseURL:    NormalizeBaseURL(baseURL),
+		AuthToken:  authToken,
+		Headers:    headers,
+		headersErr: err,
+		http:       &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+// requestHeaders is what every request to the server carries: the token,
+// then the extra headers, which never replace one already set.
+func (c *Client) requestHeaders(h http.Header) error {
+	if c.headersErr != nil {
+		return c.headersErr
+	}
+	if c.AuthToken != "" && h.Get("Authorization") == "" {
+		h.Set("Authorization", "Bearer "+c.AuthToken)
+	}
+	ApplyHeaders(h, c.Headers)
+	return nil
+}
+
+// send performs a prepared request and turns every failure into the error a
+// caller shows: the network, a gateway's sign-in redirect, a non-2xx answer.
+// A returned response is 2xx and the caller closes it.
+func (c *Client) send(req *http.Request, path string) (*http.Response, error) {
+	if err := c.requestHeaders(req.Header); err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, errors.New(ConnectionErrorMessage(c.BaseURL, err))
+	}
+	if msg := gatewayRedirectMessage(c.BaseURL, resp.Request.URL); msg != "" {
+		resp.Body.Close()
+		return nil, &RequestError{Status: http.StatusForbidden, Message: msg}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		defer resp.Body.Close()
+		text, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return nil, &RequestError{
+			Status:  resp.StatusCode,
+			Message: requestErrorMessage(c.BaseURL, path, resp.StatusCode, http.StatusText(resp.StatusCode), resp.Header.Get("Content-Type"), strings.TrimSpace(string(text))),
+		}
+	}
+	return resp, nil
 }
 
 // NewClientWithTransport is a client whose requests go through transport instead
@@ -118,24 +172,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	if err != nil {
 		return err
 	}
-	if c.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
-	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := c.http.Do(req)
+	resp, err := c.send(req, path)
 	if err != nil {
-		return errors.New(ConnectionErrorMessage(c.BaseURL, err))
+		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return &RequestError{
-			Status:  resp.StatusCode,
-			Message: requestErrorMessage(c.BaseURL, path, resp.StatusCode, http.StatusText(resp.StatusCode), strings.TrimSpace(string(text))),
-		}
-	}
 	if out == nil || resp.StatusCode == http.StatusNoContent {
 		return nil
 	}
@@ -155,18 +199,11 @@ func (c *Client) GetRaw(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
-	}
-	resp, err := c.http.Do(req)
+	resp, err := c.send(req, path)
 	if err != nil {
-		return nil, errors.New(ConnectionErrorMessage(c.BaseURL, err))
+		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		text, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return nil, &RequestError{Status: resp.StatusCode, Message: requestErrorMessage(c.BaseURL, path, resp.StatusCode, http.StatusText(resp.StatusCode), strings.TrimSpace(string(text)))}
-	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 }
 

@@ -10,7 +10,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
-	"strings"
 )
 
 func (c *Client) ImportAsset(ctx context.Context, note, name string, body io.Reader) (vault.ImportedAsset, error) {
@@ -38,18 +37,11 @@ func (c *Client) ImportAsset(ctx context.Context, note, name string, body io.Rea
 		return vault.ImportedAsset{}, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	if c.AuthToken != "" {
-		req.Header.Set("Authorization", "Bearer "+c.AuthToken)
-	}
-	resp, err := c.http.Do(req)
+	resp, err := c.send(req, "/api/assets/upload")
 	if err != nil {
 		return vault.ImportedAsset{}, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		return vault.ImportedAsset{}, &RequestError{Status: resp.StatusCode, Message: requestErrorMessage(c.BaseURL, "/api/assets/upload", resp.StatusCode, http.StatusText(resp.StatusCode), strings.TrimSpace(string(raw)))}
-	}
 	var out vault.ImportedAsset
 	err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
 	return out, err

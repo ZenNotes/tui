@@ -149,6 +149,7 @@ var globalFlags = []helpRow{
 var environmentRows = []helpRow{
 	{"ZENNOTES_VAULT", "Default vault root when --vault is not given", ""},
 	{"ZENNOTES_REMOTE_TOKEN", "Server token for CI and scripts; `zn connect` stores one for you otherwise", ""},
+	{"ZENNOTES_REMOTE_HEADERS", "Extra headers for a server behind an access gateway such as Cloudflare Access, one \"Name: value\" per line", ""},
 	{"ZENNOTES_SERVER", "Default server when neither --vault nor --server is given (otherwise zn follows the vault the app has open)", ""},
 	{"ZENNOTES_CONFIG_DIR", "Override the ZenNotes config directory", ""},
 	{"ZENNOTES_WORKSPACE_SOURCE", "Default workspace source: app or terminal. `zn tui` uses terminal unless its flag overrides it", ""},

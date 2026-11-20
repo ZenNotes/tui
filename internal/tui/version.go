@@ -20,6 +20,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/selfupdate"
 	"github.com/ZenNotes/tui/internal/vim"
 )
@@ -155,6 +156,11 @@ func connectedServerVersion(ctx context.Context, address, token string) string {
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	// A server behind an access gateway answers only with its headers. A
+	// value that does not parse sends none; every other request names why.
+	if headers, err := remote.EnvHeaders(); err == nil {
+		remote.ApplyHeaders(req.Header, headers)
 	}
 	client := &http.Client{Timeout: 2 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)

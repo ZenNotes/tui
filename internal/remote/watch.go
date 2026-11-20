@@ -17,9 +17,11 @@ type ChangeEvent struct {
 }
 
 func (c *Client) WatchChanges(ctx context.Context) (<-chan ChangeEvent, error) {
+	// The handshake is a plain HTTP request, and a gateway checks it like any
+	// other: without the extra headers the socket never opens.
 	headers := http.Header{}
-	if c.AuthToken != "" {
-		headers.Set("Authorization", "Bearer "+c.AuthToken)
+	if err := c.requestHeaders(headers); err != nil {
+		return nil, err
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

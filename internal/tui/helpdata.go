@@ -245,6 +245,7 @@ func helpLines(a *App, filter string) []string {
 		"~/.config/zennotes/config.toml\tShared with the desktop app: [vim], [editor], [appearance], [view], [keymaps], [text_replacements]",
 		".zennotes/vault.json\tVault settings: system folders, periodic notes, favorites, task exclusions",
 		"ZENNOTES_VAULT / ZENNOTES_SERVER / ZENNOTES_REMOTE_TOKEN\tPick a vault or server without flags",
+		"ZENNOTES_REMOTE_HEADERS\tExtra headers for a server behind an access gateway, one \"Name: value\" per line",
 		"zn tui --vault <name|path>\tOpen a specific vault; --server <name|url> opens a self-hosted server",
 		"",
 		"## Not in the terminal",

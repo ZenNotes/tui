@@ -976,6 +976,7 @@ automation use.
 | `ZENNOTES_VAULT` | Default local vault root |
 | `ZENNOTES_SERVER` | Default server selector; precedes `ZENNOTES_VAULT` |
 | `ZENNOTES_REMOTE_TOKEN` | Remote API token for scripts; explicit `--token` wins |
+| `ZENNOTES_REMOTE_HEADERS` | Extra headers for a server behind an access gateway such as Cloudflare Access, one `Name: value` per line |
 | `ZENNOTES_WORKSPACE_SOURCE` | CLI source: `app` or `terminal` |
 | `ZENNOTES_CONFIG_DIR` | Override configuration, workspace, and credential locations; also isolates managed instances |
 | `XDG_CONFIG_HOME` | Base directory for portable configuration when no explicit override is set |
@@ -988,6 +989,37 @@ Tokens for a remote server are selected from an explicit flag, then the
 environment, then the applicable saved credentials. `zn connect` stores them
 separately from workspace profiles. MCP clients can therefore use a saved
 connection without embedding tokens in their own configuration.
+
+### A server behind Cloudflare Access or another gateway
+
+An access gateway in front of the server turns away every request without its
+credentials. `zn`, `zn tui` and `zn mcp` send them as extra headers on every
+request, the live-update WebSocket included, from `ZENNOTES_REMOTE_HEADERS`:
+one `Name: value` per line, blank lines and `#` lines skipped. For a
+Cloudflare Access service token:
+
+```sh
+export ZENNOTES_REMOTE_HEADERS=$'CF-Access-Client-Id: <client id>.access\nCF-Access-Client-Secret: <client secret>'
+zn list --server https://notes.example.com
+```
+
+An MCP client's JSON config can only write the line break as `\n`, which
+counts as one:
+
+```json
+"env": {
+  "ZENNOTES_REMOTE_HEADERS": "CF-Access-Client-Id: <client id>.access\nCF-Access-Client-Secret: <client secret>"
+}
+```
+
+Keep the server's own token in `--token`, `ZENNOTES_REMOTE_TOKEN` or
+`zn connect`: the gateway checks the headers, then the server checks the
+token. Authorization and the headers the connection sets itself (Host,
+Content-Type, Upgrade and the like) are refused, and a value that does not
+parse stops the command before anything is sent. Headers are never written to
+`credentials.toml`. The desktop app takes the same lines in its connect
+dialog and keeps them in the system keychain, which zn cannot read, so give
+zn the variable too.
 
 ## Troubleshooting
 
