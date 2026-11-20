@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const noteMetadataDir = "note-metadata"
@@ -64,7 +65,12 @@ func (v *Vault) writeNoteFileAtomic(abs string, data []byte) error {
 	// before replacing the note, so a new inode cannot seed a newer date here.
 	info, err := os.Stat(abs)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := os.Remove(metadataPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		// A new note records now rather than leaving its date to the file's
+		// birthtime. On NTFS a file made under a name deleted in the last 15
+		// seconds gets the deleted file's birthtime back (file system
+		// tunneling), and the next save would write that date down for good.
+		// This replaces any record an earlier note of the name left behind.
+		if err := v.writeCreationMetadata(metadataPath, time.Now().UnixMilli()); err != nil {
 			return err
 		}
 	} else if err != nil {
@@ -76,17 +82,20 @@ func (v *Vault) writeNoteFileAtomic(abs string, data []byte) error {
 			return err
 		}
 		if created == 0 {
-			created = originalCreatedAt
-			raw, err := json.Marshal(noteCreationMetadata{Version: 1, CreatedAt: created})
-			if err != nil {
-				return err
-			}
-			if err := writeFileAtomic(metadataPath, append(raw, '\n'), v.fileMode, v.dirMode); err != nil {
+			if err := v.writeCreationMetadata(metadataPath, originalCreatedAt); err != nil {
 				return err
 			}
 		}
 	}
 	return writeFileAtomic(abs, data, v.fileMode, v.dirMode)
+}
+
+func (v *Vault) writeCreationMetadata(metadataPath string, createdAt int64) error {
+	raw, err := json.Marshal(noteCreationMetadata{Version: 1, CreatedAt: createdAt})
+	if err != nil {
+		return err
+	}
+	return writeFileAtomic(metadataPath, append(raw, '\n'), v.fileMode, v.dirMode)
 }
 
 // Move the sidecar in the same transaction as its note or folder. If metadata

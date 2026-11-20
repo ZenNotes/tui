@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 const originalCreatedAt int64 = 1600000000123
@@ -79,6 +80,55 @@ func TestNoteCreationMetadataSurvivesWritesAndLifecycle(t *testing.T) {
 	}
 	if meta.CreatedAt == originalCreatedAt {
 		t.Fatal("recreated note inherited deleted date")
+	}
+}
+
+// On NTFS a file made under a name deleted in the last 15 seconds gets the
+// deleted file's birthtime back (file system tunneling), so a new note's date
+// cannot come from the file. Each way of making one records it in the sidecar
+// at once, and the first save keeps that record.
+func TestNewNoteRecordsItsOwnCreationDate(t *testing.T) {
+	create := map[string]func(v *Vault) (NoteMeta, error){
+		"CreateNote": func(v *Vault) (NoteMeta, error) { return v.CreateNote(FolderInbox, "Original", "", nil) },
+		"WriteNote":  func(v *Vault) (NoteMeta, error) { return v.WriteNote("inbox/Original.md", "# Original\n") },
+	}
+	for name, make := range create {
+		t.Run(name, func(t *testing.T) {
+			v := newTestVault(t)
+			rel := "inbox/Original.md"
+			writeFile(t, filepath.Join(v.root, rel), "# Original\n")
+			seedNoteMetadata(t, v, rel)
+			if err := v.DeleteNote(rel); err != nil {
+				t.Fatal(err)
+			}
+			before := time.Now().UnixMilli()
+			meta, err := make(v)
+			after := time.Now().UnixMilli()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if meta.Path != rel {
+				t.Fatalf("path = %s, want %s", meta.Path, rel)
+			}
+			sidecar := filepath.Join(v.root, ".zennotes", "note-metadata", rel+".metadata.json")
+			recorded, err := readCreationMetadata(sidecar)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if recorded < before || recorded > after {
+				t.Fatalf("recorded createdAt = %d, want between %d and %d", recorded, before, after)
+			}
+			if meta.CreatedAt != recorded {
+				t.Fatalf("createdAt = %d, want the recorded %d", meta.CreatedAt, recorded)
+			}
+			saved, err := v.WriteNote(rel, "# Original\n\nEdited.\n")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if saved.CreatedAt != recorded {
+				t.Fatalf("after a save createdAt = %d, want %d", saved.CreatedAt, recorded)
+			}
+		})
 	}
 }
 
