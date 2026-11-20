@@ -69,6 +69,7 @@ func validateKnownValues(doc map[string]any, strict bool) error {
 		"appearance": {"theme_mode": {"dark", "light", "system", "auto"}},
 		"terminal":   {"images": {"auto", "kitty", "off"}, "math": {"typst", "latex"}},
 	}
+	addHelixEnums(enums)
 	for section, keys := range enums {
 		table, _ := doc[section].(map[string]any)
 		for key, choices := range keys {

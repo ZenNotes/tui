@@ -324,7 +324,7 @@ func (a *App) paneClick(p *pane, m tea.MouseMsg, double bool) {
 	}
 	buf.ed.SetCursor(pos)
 	if double && a.prefs.VimMode {
-		buf.ed.Feed("viw")
+		buf.ed.Feed(a.engine().selectWord)
 		return
 	}
 	if a.prefs.VimMode {
