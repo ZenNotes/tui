@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/selfupdate"
 	"github.com/ZenNotes/tui/internal/server"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 type workspaceStatus struct {
@@ -114,7 +116,54 @@ type diagnosticCheck struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
 	// Hint is what to run to fix a failed check, one command or line each.
+	// For a warning it is the problem lines.
 	Hint []string `json:"hint,omitempty"`
+	// Warn marks a check that reports a problem but is still OK: it never
+	// changes the exit status.
+	Warn bool `json:"warn,omitempty"`
+}
+
+// maxWarnLines is how many problem lines a warning shows before "+N more".
+const maxWarnLines = 10
+
+// taskValueChecks is one warning for each kind of task value that no app reads.
+// A kind with no problem gives no check.
+func taskValueChecks(ctx context.Context, v *vault.Vault) []diagnosticCheck {
+	problems, lintErr := v.LintTaskValues(ctx)
+	kinds := []struct {
+		check         vault.TaskValueCheck
+		name, message string
+	}{
+		{vault.TaskValueRepeat, "task repeat values", "@repeat: values that no app reads"},
+		{vault.TaskValueDue, "task due values", "due: values that zn does not read as a date"},
+		{vault.TaskValueBlockID, "block ids", "block ids on more than one line"},
+	}
+	checks := []diagnosticCheck{}
+	for _, kind := range kinds {
+		lines := []string{}
+		for _, p := range problems {
+			if p.Check != kind.check {
+				continue
+			}
+			numbers := make([]string, len(p.Lines))
+			for i, n := range p.Lines {
+				numbers[i] = strconv.Itoa(n)
+			}
+			lines = append(lines, fmt.Sprintf("%s:%s  %s  %s", p.Path, strings.Join(numbers, ","), p.Value, p.Reason))
+		}
+		if len(lines) == 0 {
+			continue
+		}
+		total := len(lines)
+		if total > maxWarnLines {
+			lines = append(lines[:maxWarnLines], fmt.Sprintf("+%d more", total-maxWarnLines))
+		}
+		checks = append(checks, diagnosticCheck{Name: kind.name, OK: true, Warn: true, Message: fmt.Sprintf("%d %s", total, kind.message), Hint: lines})
+	}
+	if lintErr != nil {
+		checks = append(checks, diagnosticCheck{Name: "task values", OK: true, Warn: true, Message: "the check did not finish (" + lintErr.Error() + "), so it can miss problems"})
+	}
+	return checks
 }
 
 // latexPackages are the LaTeX packages zn's render document and default
@@ -231,6 +280,12 @@ func cmdDoctor(ctx context.Context, args Args) error {
 			cancel()
 		}
 		add("access", "Workspace is accessible", err)
+		// A remote vault is not read here: its notes stay on the server.
+		if local, ok := b.(*backend.Local); ok && err == nil {
+			lint, cancel := context.WithTimeout(ctx, 30*time.Second)
+			checks = append(checks, taskValueChecks(lint, local.Vault())...)
+			cancel()
+		}
 	}
 	m := server.DefaultManager()
 	instances, instanceErr := m.List()
@@ -259,6 +314,8 @@ func cmdDoctor(ctx context.Context, args Args) error {
 			state := "OK"
 			if !check.OK {
 				state = "FAIL"
+			} else if check.Warn {
+				state = "WARN"
 			}
 			emitLine(fmt.Sprintf("%s  %s: %s", state, check.Name, check.Message))
 			for _, line := range check.Hint {

@@ -115,7 +115,7 @@ var helpSections = []helpSection{
 		{"config set <key> <value>", "Validate and save a portable preference", "--json"},
 		{"config edit", "Open config.toml in $EDITOR", ""},
 		{"status", "Show the selected workspace, its source and config location", "--json"},
-		{"doctor", "Check configuration, workspace access and server connectivity", "--json"},
+		{"doctor", "Check configuration, workspace access and server connectivity. Warn about task values that no app reads", "--json"},
 		{"completion <shell>", "Print Bash, Zsh, Fish or PowerShell completions", ""},
 		{"update", "Update the CLI using its installation owner", "--check  --version <v>  --json"},
 	}},
