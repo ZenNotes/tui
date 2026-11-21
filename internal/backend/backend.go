@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/ZenNotes/tui/internal/database"
 	"github.com/ZenNotes/tui/internal/vault"
@@ -99,6 +100,16 @@ type Options struct {
 	// SyncTitleHeading is the desktop's "Sync title heading on rename"
 	// preference, applied by the local backend.
 	SyncTitleHeading bool
+
+	// WeekStartSunday makes weeks start on Sunday in repeat rules counted in
+	// weeks; the default is Monday. Applied by the local backend.
+	WeekStartSunday bool
+	// Now is the clock task toggles read; nil means time.Now. Applied by the
+	// local backend.
+	Now func() time.Time
+	// TaskWarning receives a warning when a task roll does not finish all of
+	// its writes. Applied by the local backend; nil drops the warning.
+	TaskWarning func(string)
 }
 
 // New binds a target to a backend.

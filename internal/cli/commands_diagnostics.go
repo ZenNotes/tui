@@ -14,6 +14,7 @@ import (
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/selfupdate"
 	"github.com/ZenNotes/tui/internal/server"
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 type workspaceStatus struct {
@@ -115,6 +116,9 @@ type diagnosticCheck struct {
 	Message string `json:"message"`
 	// Hint is what to run to fix a failed check, one command or line each.
 	Hint []string `json:"hint,omitempty"`
+	// Warn marks a passing check that still wants attention. It is shown as a
+	// WARN line and never counts as a failure.
+	Warn bool `json:"-"`
 }
 
 // latexPackages are the LaTeX packages zn's render document and default
@@ -174,6 +178,43 @@ func osDistro() string {
 	return strings.Join(ids, " ")
 }
 
+// maxTaskTokenLines is how many bad tokens the doctor lists before it only
+// counts the rest.
+const maxTaskTokenLines = 10
+
+// taskTokenCheck lints the task tokens of the local vault at root. A warning
+// is a passing check, so it never changes the exit status: its lines ride in
+// Hint, as `path:line  token  reason`, with a final `+N more` past the limit. It
+// reports false when there is nothing to warn about.
+func taskTokenCheck(root string) (diagnosticCheck, bool) {
+	v, err := vault.Open(root)
+	if err != nil {
+		return diagnosticCheck{}, false
+	}
+	problems, err := v.ScanTaskTokenProblems()
+	if err != nil || len(problems) == 0 {
+		return diagnosticCheck{}, false
+	}
+	message := fmt.Sprintf("%d task or event values are not correct. zn does not use them", len(problems))
+	if len(problems) == 1 {
+		message = "1 task or event value is not correct. zn does not use it"
+	}
+	check := diagnosticCheck{
+		Name:    "task tokens",
+		Warn:    true,
+		OK:      true,
+		Message: message,
+	}
+	for i, p := range problems {
+		if i == maxTaskTokenLines {
+			check.Hint = append(check.Hint, fmt.Sprintf("+%d more", len(problems)-maxTaskTokenLines))
+			break
+		}
+		check.Hint = append(check.Hint, fmt.Sprintf("%s:%d  %s  %s", p.Path, p.Line, p.Token, p.Reason))
+	}
+	return check, true
+}
+
 func cmdDoctor(ctx context.Context, args Args) error {
 	checks := []diagnosticCheck{}
 	add := func(name, good string, err error) {
@@ -231,6 +272,11 @@ func cmdDoctor(ctx context.Context, args Args) error {
 			cancel()
 		}
 		add("access", "Workspace is accessible", err)
+		if err == nil && target.Kind == backend.KindLocal {
+			if check, found := taskTokenCheck(target.Root); found {
+				checks = append(checks, check)
+			}
+		}
 	}
 	m := server.DefaultManager()
 	instances, instanceErr := m.List()
@@ -259,6 +305,8 @@ func cmdDoctor(ctx context.Context, args Args) error {
 			state := "OK"
 			if !check.OK {
 				state = "FAIL"
+			} else if check.Warn {
+				state = "WARN"
 			}
 			emitLine(fmt.Sprintf("%s  %s: %s", state, check.Name, check.Message))
 			for _, line := range check.Hint {

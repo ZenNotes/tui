@@ -72,6 +72,17 @@ func calManyUndated(n int) []vault.Task {
 	return out
 }
 
+// calFocusNext moves the focus off the grid to the next part. The month view
+// uses Tab. The week and day views keep Tab for the timed entries, so there
+// Enter on an empty slot does it.
+func calFocusNext(a *App, tv *tasksView, sub calSub) {
+	if sub == calMonth {
+		calPress(a, tv, vim.KeyTab)
+		return
+	}
+	calPress(a, tv, vim.KeyEnter)
+}
+
 func TestTabCyclesGridItemsStrip(t *testing.T) {
 	for _, vimOn := range []bool{true, false} {
 		for _, s := range calStripSubs {
@@ -79,7 +90,7 @@ func TestTabCyclesGridItemsStrip(t *testing.T) {
 			a.prefs.VimMode = vimOn
 			calToSub(t, a, tv, s.sub)
 			ctx := fmt.Sprintf("%s vim=%v", s.name, vimOn)
-			calPress(a, tv, vim.KeyTab)
+			calFocusNext(a, tv, s.sub)
 			requireFocus(t, tv, calFocusItems, ctx+" first Tab")
 			calPress(a, tv, vim.KeyTab)
 			requireFocus(t, tv, calFocusStrip, ctx+" second Tab")
@@ -98,7 +109,7 @@ func TestTabSkipsEmptyStrip(t *testing.T) {
 	for _, s := range calStripSubs {
 		a, tv := calTestApp(t, []vault.Task{calDatedTask()})
 		calToSub(t, a, tv, s.sub)
-		calPress(a, tv, vim.KeyTab)
+		calFocusNext(a, tv, s.sub)
 		requireFocus(t, tv, calFocusItems, s.name+" first Tab")
 		calPress(a, tv, vim.KeyTab)
 		requireFocus(t, tv, calFocusGrid, s.name+" Tab from the items skips the empty strip")
@@ -109,7 +120,7 @@ func TestTabSkipsEmptyItemPanel(t *testing.T) {
 	for _, s := range calStripSubs {
 		a, tv := calTestApp(t, []vault.Task{calStripTask("u#0", "loose end")})
 		calToSub(t, a, tv, s.sub)
-		calPress(a, tv, vim.KeyTab)
+		calFocusNext(a, tv, s.sub)
 		requireFocus(t, tv, calFocusStrip, s.name+" Tab on an empty day skips the item panel")
 		calPress(a, tv, vim.KeyTab)
 		requireFocus(t, tv, calFocusGrid, s.name+" Tab from the strip")
@@ -142,7 +153,7 @@ func TestStripJKMovesAndScrolls(t *testing.T) {
 		a, tv := calTestApp(t, calManyUndated(30))
 		a.prefs.VimMode = true
 		calToSub(t, a, tv, s.sub)
-		calPress(a, tv, vim.KeyTab)
+		calFocusNext(a, tv, s.sub)
 		if text := calScreenText(calScreen(a, tv, 140, 40)); strings.Contains(text, "loose item 29") {
 			t.Fatalf("%s: the strip shows all 30 tasks, so it cannot scroll:\n%s", s.name, text)
 		}
@@ -293,7 +304,7 @@ func TestStripEscReturnsToGrid(t *testing.T) {
 			a, tv := calTestApp(t, calManyUndated(2))
 			a.prefs.VimMode = vimOn
 			calToSub(t, a, tv, s.sub)
-			calPress(a, tv, vim.KeyTab)
+			calFocusNext(a, tv, s.sub)
 			requireFocus(t, tv, calFocusStrip, "setup")
 			calPress(a, tv, vim.KeyEsc)
 			ctx := fmt.Sprintf("%s vim=%v", s.name, vimOn)

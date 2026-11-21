@@ -3,8 +3,10 @@ package backend
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/ZenNotes/tui/internal/database"
+	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/vault"
 )
 
@@ -21,6 +23,14 @@ func newLocal(root string, opts Options) (*Local, error) {
 		return nil, err
 	}
 	v.SyncTitleHeading = opts.SyncTitleHeading
+	if opts.WeekStartSunday {
+		v.WeekStart = time.Sunday
+	}
+	v.Now = opts.Now
+	v.TaskWarning = opts.TaskWarning
+	v.DailyNoteDate = func(rel, title string) (string, bool) {
+		return periodic.DailyNoteDate(rel, title, v.Settings(), v.PrimaryNotesLocation() == vault.PrimaryNotesRoot)
+	}
 	return &Local{vault: v}, nil
 }
 
@@ -145,8 +155,34 @@ func (l *Local) ScanTasks(_ context.Context, opts vault.ParseTasksOptions) ([]va
 func (l *Local) ScanTasksForPath(_ context.Context, rel string, opts vault.ParseTasksOptions) ([]vault.Task, error) {
 	return l.vault.ScanTasksForPath(rel, opts)
 }
-func (l *Local) ToggleTask(_ context.Context, taskID string, dialect vault.TaskDialect) (*vault.Task, error) {
-	return l.vault.ToggleTask(taskID, dialect)
+func (l *Local) ToggleTask(ctx context.Context, taskID string, dialect vault.TaskDialect) (*vault.Task, error) {
+	return l.vault.ToggleTaskWith(taskID, dialect, vault.ToggleOptions{Around: aroundNoteWrites(ctx)})
+}
+
+// RollEditedTask rolls a task whose line the caller has edited in body and not
+// written. See vault.RollEditedTask.
+func (l *Local) RollEditedTask(ctx context.Context, rel, body string, index int, action vault.RollAction, canWrite func(rel string) bool) (vault.RollEdit, error) {
+	return l.vault.RollEditedTask(rel, body, index, action, vault.DialectCLI, vault.ToggleOptions{CanWrite: canWrite, Around: aroundNoteWrites(ctx)})
+}
+
+type aroundWritesKey struct{}
+
+// WithAroundNoteWrites gives ToggleTask a function to call around each extra
+// note that a roll writes. It runs before the write. The function that it
+// returns runs after the write.
+func WithAroundNoteWrites(ctx context.Context, around func(rel string) func()) context.Context {
+	return context.WithValue(ctx, aroundWritesKey{}, around)
+}
+
+func aroundNoteWrites(ctx context.Context) func(rel string) func() {
+	around, _ := ctx.Value(aroundWritesKey{}).(func(rel string) func())
+	return around
+}
+
+// ToggleTaskWithin is ToggleTask for a caller with limited access: a roll
+// writes a session copy only into a note that canWrite accepts.
+func (l *Local) ToggleTaskWithin(ctx context.Context, taskID string, dialect vault.TaskDialect, canWrite func(rel string) bool) (*vault.Task, error) {
+	return l.vault.ToggleTaskWith(taskID, dialect, vault.ToggleOptions{CanWrite: canWrite, Around: aroundNoteWrites(ctx)})
 }
 
 func (l *Local) ListTemplates(context.Context) ([]vault.CustomTemplateFile, error) {

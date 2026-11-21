@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -145,6 +146,95 @@ func TestAgentForClientMatchesTheDesktop(t *testing.T) {
 	} {
 		if got := agentForClient(in); got != want {
 			t.Errorf("agentForClient(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+const rollWorkNote = "inbox/Work.md"
+const rollWorkBody = "intro\n- [ ] Water plants @repeat:mon/thu ^ab12cd\noutro\n"
+const rollSession = "- Water plants task:[[Work#^ab12cd]] when:2026-11-02T09:00-09:15\n"
+
+// A roll that copies a work session into a category note records that note
+// as it records the note of the task: the text before, one edit, the text after.
+func TestMCPRecordsACategoryNoteThatARollWrites(t *testing.T) {
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	root := t.TempDir()
+	before := map[string]string{rollWorkNote: rollWorkBody, "quick/Plans.md": rollSession}
+	writeNotes(t, root, before)
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	if text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": rollWorkNote + "#^ab12cd"}); isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	for rel, want := range before {
+		rec := vault.ReadAgentEdit(root, rel)
+		if rec == nil {
+			t.Fatalf("no record for %s", rel)
+		}
+		if rec.Before != want {
+			t.Fatalf("%s: before = %q", rel, rec.Before)
+		}
+		if rec.After == nil || *rec.After != readNote(t, root, rel) {
+			t.Fatalf("%s: after = %v", rel, rec.After)
+		}
+		if len(rec.Edits) != 1 || rec.Edits[0].Tool != "toggle_task" {
+			t.Fatalf("%s: edits = %+v", rel, rec.Edits)
+		}
+	}
+}
+
+// A scoped client's roll writes only the notes in scope, so only those notes
+// get records.
+func TestMCPRecordsOnlyTheCategoryNotesInScope(t *testing.T) {
+	root := t.TempDir()
+	writeNotes(t, root, map[string]string{
+		".zennotes/vault.json":     `{"primaryNotesLocation":"root"}`,
+		"Projects/Work.md":         "- [ ] Water plants @repeat:mon/thu ^ab12cd\n",
+		"Projects/Plans.md":        rollSession,
+		"Projects/Clients/Plan.md": rollSession,
+	})
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	scope := testScope(t, "write", []string{"Projects"}, []string{"Projects/Clients"})
+	cs := runScopedWith(t, root, scope, backend.Options{Now: func() time.Time { return today }})
+	if text, isErr := callTool(t, cs, "toggle_task", map[string]any{"id": "Projects/Work.md#^ab12cd"}); isErr {
+		t.Fatalf("toggle_task: %s", text)
+	}
+	if rec := vault.ReadAgentEdit(root, "Projects/Plans.md"); rec == nil || rec.Before != rollSession || len(rec.Edits) != 1 {
+		t.Fatalf("Plans record = %+v", rec)
+	}
+	if vault.ReadAgentEdit(root, "Projects/Clients/Plan.md") != nil {
+		t.Fatal("a note out of scope must have no record")
+	}
+}
+
+// update_task records a category note that its roll writes, as toggle_task does.
+func TestMCPRecordsACategoryNoteThatUpdateTaskWrites(t *testing.T) {
+	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
+	root := t.TempDir()
+	before := map[string]string{rollWorkNote: rollWorkBody, "quick/Plans.md": rollSession}
+	writeNotes(t, root, before)
+	today := time.Date(2026, 11, 2, 12, 0, 0, 0, time.Local)
+	cs := runServerWith(t, backend.Options{Now: func() time.Time { return today }}, func() (backend.Target, error) {
+		return backend.Target{Kind: backend.KindLocal, Root: root}, nil
+	})
+	if text, isErr := callTool(t, cs, "update_task", map[string]any{"id": rollWorkNote + "#0", "state": "done"}); isErr {
+		t.Fatalf("update_task: %s", text)
+	}
+	for rel, want := range before {
+		rec := vault.ReadAgentEdit(root, rel)
+		if rec == nil {
+			t.Fatalf("no record for %s", rel)
+		}
+		if rec.Before != want {
+			t.Fatalf("%s: before = %q", rel, rec.Before)
+		}
+		if rec.After == nil || *rec.After != readNote(t, root, rel) {
+			t.Fatalf("%s: after = %v", rel, rec.After)
+		}
+		if len(rec.Edits) != 1 || rec.Edits[0].Tool != "update_task" {
+			t.Fatalf("%s: edits = %+v", rel, rec.Edits)
 		}
 	}
 }

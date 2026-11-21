@@ -15,6 +15,9 @@ import (
 // sessionFile remembers open tabs and sidebar state per vault.
 type sessionFile struct {
 	Vaults map[string]sessionState `json:"vaults"`
+	// LastCategory holds, for each vault, the category note that a work
+	// session was last written to.
+	LastCategory map[string]string `json:"lastCategory,omitempty"`
 }
 
 type sessionState struct {
@@ -119,14 +122,27 @@ func (a *App) saveSession() {
 	if err := os.MkdirAll(filepath.Dir(sessionPath()), 0o755); err != nil {
 		return
 	}
+	if err := writeSessionFile(f); err != nil {
+		a.notifyError("Save workspace: " + err.Error())
+		return
+	}
+	a.sessionDirty = false
+	a.sessionSaved = time.Now()
+}
+
+// writeSessionFile replaces the session file with f. The write goes through a
+// temporary file, so a failed write never leaves a cut file.
+func writeSessionFile(f sessionFile) error {
+	if err := os.MkdirAll(filepath.Dir(sessionPath()), 0o755); err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(sessionPath()), ".session-*.tmp")
 	if err != nil {
-		a.notifyError("Save workspace: " + err.Error())
-		return
+		return err
 	}
 	defer os.Remove(tmp.Name())
 	if _, err = tmp.Write(data); err == nil {
@@ -139,12 +155,7 @@ func (a *App) saveSession() {
 	if err == nil {
 		err = os.Rename(tmp.Name(), sessionPath())
 	}
-	if err != nil {
-		a.notifyError("Save workspace: " + err.Error())
-		return
-	}
-	a.sessionDirty = false
-	a.sessionSaved = time.Now()
+	return err
 }
 
 // restoreSession reopens the previous tabs of this vault.

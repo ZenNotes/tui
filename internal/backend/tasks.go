@@ -32,6 +32,16 @@ type UpdateTaskInput struct {
 	ExpectedText *string
 }
 
+// TaskRoller is a backend that rolls a repeating task with the local roll. A
+// local backend is one. A remote backend is not, and keeps the roll of the
+// released version.
+type TaskRoller interface {
+	// RollEditedTask rolls the task at index in the note rel. Its line is
+	// edited in body and not written. Applied in the result is false when the
+	// task has no rule that rolls: nothing is written then.
+	RollEditedTask(ctx context.Context, rel, body string, index int, action vault.RollAction, canWrite func(rel string) bool) (vault.RollEdit, error)
+}
+
 // taskFieldValueRe is what the task parser reads as an `@key:value` value.
 var taskFieldValueRe = regexp.MustCompile(`^[\p{L}\d][\p{L}\d/_-]*$`)
 
@@ -92,20 +102,31 @@ func UpdateTask(ctx context.Context, b Backend, in UpdateTaskInput) (*vault.Task
 	if err != nil {
 		return nil, err
 	}
+	var roller func(edited string, action vault.RollAction) (vault.RollEdit, error)
+	if tr, ok := b.(TaskRoller); ok && b.Kind() == KindLocal {
+		roller = func(edited string, action vault.RollAction) (vault.RollEdit, error) {
+			return tr.RollEditedTask(ctx, task.SourcePath, edited, task.TaskIndex, action, nil)
+		}
+	}
 	var next string
 	finalLine := task.LineNumber
+	var rolled vault.RollEdit
 	if task.Kind == "file" {
 		if next, err = updateFileTask(note.Body, *task, in); err != nil {
 			return nil, err
 		}
 	} else {
 		var found bool
-		if next, finalLine, found, err = updateTaskLine(note.Body, *task, in); err != nil {
+		if next, finalLine, found, rolled, err = updateTaskLine(note.Body, *task, in, roller); err != nil {
 			return nil, err
 		}
 		if !found {
 			return nil, nil
 		}
+	}
+	if rolled.Applied {
+		// The roll wrote the note, and the record sits below the new occurrence.
+		return findTaskByIndex(ctx, b, task.SourcePath, task.TaskIndex+rolled.Inserted)
 	}
 	if next != note.Body {
 		if _, err := b.WriteNote(ctx, task.SourcePath, next); err != nil {
@@ -135,6 +156,19 @@ func findTask(ctx context.Context, b Backend, rel, index string) (*vault.Task, e
 	return nil, nil
 }
 
+func findTaskByIndex(ctx context.Context, b Backend, rel string, index int) (*vault.Task, error) {
+	tasks, err := taskScan(ctx, b, rel)
+	if err != nil {
+		return nil, err
+	}
+	for i := range tasks {
+		if tasks[i].Kind == "" && tasks[i].TaskIndex == index {
+			return &tasks[i], nil
+		}
+	}
+	return nil, nil
+}
+
 func findTaskOnLine(ctx context.Context, b Backend, rel string, line int) (*vault.Task, error) {
 	tasks, err := taskScan(ctx, b, rel)
 	if err != nil {
@@ -150,20 +184,27 @@ func findTaskOnLine(ctx context.Context, b Backend, rel string, line int) (*vaul
 
 // updateTaskLine returns the note and the line the task now stands on, which
 // moves when finishing a recurring task writes its next occurrence above it.
-func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, int, bool, error) {
+//
+// roller is nil on a backend that keeps the released roll. Otherwise it rolls
+// an open task that is finished or cancelled. When the roll applies, it has
+// written the note already, and the last result says how far the task moved.
+func updateTaskLine(body string, task vault.Task, in UpdateTaskInput, roller func(edited string, action vault.RollAction) (vault.RollEdit, error)) (string, int, bool, vault.RollEdit, error) {
 	if task.Forwarded && in.State != nil {
-		return "", 0, false, errors.New("That task was forwarded to another note; change it there.")
+		return "", 0, false, vault.RollEdit{}, errors.New("That task was forwarded to another note; change it there.")
 	}
 	// Split on the bare newline, so every line keeps its own ending.
 	lines := strings.Split(body, "\n")
 	if task.LineNumber < 0 || task.LineNumber >= len(lines) || strings.TrimRight(lines[task.LineNumber], " \t\r") != strings.TrimRight(task.RawText, " \t\r") {
-		return "", 0, false, nil
+		return "", 0, false, vault.RollEdit{}, nil
 	}
 	ending := ""
 	if strings.HasSuffix(lines[task.LineNumber], "\r") {
 		ending = "\r"
 	}
 	line := strings.TrimSuffix(lines[task.LineNumber], "\r")
+	// An open task that is finished or cancelled may roll. The roll sets the
+	// marker itself, so the line keeps its marker until the roll is known.
+	rollable := roller != nil && in.State != nil && (*in.State == "done" || *in.State == "cancelled") && !task.Checked && !task.Cancelled
 	if in.Text != nil {
 		line = vault.SetTaskText(line, 0, *in.Text)
 	}
@@ -174,7 +215,9 @@ func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, i
 		case "in-progress":
 			line = vault.SetTaskInProgress(line, 0, true)
 		case "cancelled":
-			line = vault.SetTaskCancelled(line, 0, true)
+			if !rollable {
+				line = vault.SetTaskCancelled(line, 0, true)
+			}
 		}
 	}
 	if in.Due != nil {
@@ -190,15 +233,32 @@ func updateTaskLine(body string, task vault.Task, in UpdateTaskInput) (string, i
 		line = vault.SetTaskField(line, 0, "status", *in.Status)
 	}
 	lines[task.LineNumber] = line + ending
+	if rollable {
+		action := vault.RollComplete
+		if *in.State == "cancelled" {
+			action = vault.RollCancel
+		}
+		// Last, so a due date changed in the same call is what the series counts from.
+		rolled, err := roller(strings.Join(lines, "\n"), action)
+		if err != nil {
+			return "", 0, false, vault.RollEdit{}, err
+		}
+		if rolled.Applied {
+			return "", task.LineNumber, true, rolled, nil
+		}
+		if action == vault.RollCancel {
+			lines[task.LineNumber] = vault.SetTaskCancelled(line, 0, true) + ending
+		}
+	}
 	if in.State != nil && *in.State == "done" {
 		// Last, so a due date changed in the same call is what the series counts from.
 		joined := strings.Join(lines, "\n")
 		if done, recurring := vault.CompleteRecurringTaskOnLine(joined, task.LineNumber, vault.DialectApp, vault.RecurringOptions{Today: vault.TodayISO(time.Now())}); recurring {
-			return done.Body, task.LineNumber + done.InsertedLines, true, nil
+			return done.Body, task.LineNumber + done.InsertedLines, true, vault.RollEdit{}, nil
 		}
 		lines[task.LineNumber] = vault.SetTaskChecked(line, 0, true) + ending
 	}
-	return strings.Join(lines, "\n"), task.LineNumber, true, nil
+	return strings.Join(lines, "\n"), task.LineNumber, true, vault.RollEdit{}, nil
 }
 
 // updateFileTask edits a whole-note task, whose fields are its frontmatter. Its

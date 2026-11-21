@@ -98,7 +98,7 @@ func workTools() []toolDef {
 	return []toolDef{
 		{
 			name:        "update_task",
-			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes, except that state done on a task with `@repeat:` writes its next occurrence above it, as toggle_task does, and returns the finished one. An id counts the task's position in its note, so pass expectedText to be told when an edit moved it. On a task note, state, status and waiting are one field: pass only one. Returns the updated task, or null if the id no longer matches one.",
+			description: "Change a task by its id from list_tasks: due date, priority, @waiting, state, status (Kanban column) or text. Only what you pass changes; pass \"\" to clear due, priority or status. The task stays where it is, and the rest of the note keeps its bytes, except that state done on a task with `@repeat:` writes its next occurrence above it, as toggle_task does, and returns the finished one. Cancelling a repeating task writes its next occurrence too, and returns the cancelled record. An id counts the task's position in its note, so pass expectedText to be told when an edit moved it. On a task note, state, status and waiting are one field: pass only one. Returns the updated task, or null if the id no longer matches one.",
 			schema: `{"type":"object","properties":{
 "id":{"type":"string","description":"Task id from list_tasks: sourcePath#taskIndex."},
 "due":{"type":"string","description":"YYYY-MM-DD, or \"\" to clear."},

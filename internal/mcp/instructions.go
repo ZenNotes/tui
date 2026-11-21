@@ -211,8 +211,38 @@ const DefaultInstructions = "You are connected to a user's ZenNotes vault: plain
 	"(`#important`, `#hard`). When unsure, omit.\n" +
 	"\n" +
 	"**Tasks**: GitHub-flavored `- [ ]` with optional\n" +
-	"`due:YYYY-MM-DD`, `!high` / `!med` / `!low`, `@waiting`, and\n" +
-	"`#tag`.\n" +
+	"`due:YYYY-MM-DD[THH:MM[-HH:MM]]`, `!high` / `!med` / `!low`,\n" +
+	"`@waiting`, and `#tag`. The time is a 24-hour `HH:MM`; one that is\n" +
+	"not is ignored and the date stays. A line may end with a block id\n" +
+	"(` ^ab12cd`): keep it as it is.\n" +
+	"\n" +
+	"A task may repeat with `@repeat:daily`, `weekly`, `monthly`,\n" +
+	"`yearly`, `3d`, `2w`, `6m`, `1y`, `weekdays`, `mon/thu` or\n" +
+	"`after-3d` (counts from the day it is finished). Extensions are\n" +
+	"`3q`, `quarterly`, `2w-mon/thu`, `monthly-15`, `monthly-start`,\n" +
+	"`monthly-end`, `monthly-2-tue`, `monthly-last-fri`,\n" +
+	"`quarterly-start`, `quarterly-end` and `yearly-03-14`; another app\n" +
+	"treats an extension as an ordinary task. `@until:YYYY-MM-DD` is the\n" +
+	"last date a rule may land on, and does nothing without `@repeat:`.\n" +
+	"`@skip:` takes one day (`@skip:2027-03-13`), one range\n" +
+	"(`@skip:2027-03-13/2027-03-21`) or one event note title with\n" +
+	"hyphens for spaces (`@skip:Spring-Break`); repeat the field for\n" +
+	"more. Finishing an open repeating task, or cancelling it with\n" +
+	"update_task, in a local vault writes its next occurrence above it\n" +
+	"and leaves the finished or cancelled record below. A note is a task\n" +
+	"note when its frontmatter has `tags: [task]` or `page-type: task`;\n" +
+	"it takes the keys `repeat`, `until` and `skip` (a value or a list),\n" +
+	"and a task note with a rule moves its `due` on instead.\n" +
+	"\n" +
+	"A list item that is not a checkbox and holds one `when:` token,\n" +
+	"such as `- Lecture when:2026-11-03T14:00-15:30 @repeat:weekly`, is\n" +
+	"an event in the calendar of zn's terminal app. A range across days\n" +
+	"is `when:2027-03-13/2027-03-21`. An event note has\n" +
+	"`page-type: event` and the keys `when`, `title`, `repeat`, `until`\n" +
+	"and `skip`. A category note has `page-type: event-list` and holds\n" +
+	"event lines. Leave events as they are unless the user asks. An\n" +
+	"event with `task:[[Note#^ab12cd]]` is a work session of the task\n" +
+	"that ends with `^ab12cd`.\n" +
 	"\n" +
 	"**Callouts**: `> [!note]`, `> [!tip]`, `> [!warning]`. A `-` right after the\n" +
 	"type (`> [!example]- Screenshots`) makes the callout start collapsed, a `+`\n" +
@@ -230,7 +260,9 @@ const DefaultInstructions = "You are connected to a user's ZenNotes vault: plain
 	"  confirmation.\n" +
 	"- Before rename_note, run backlinks.\n" +
 	"- Task ids from list_tasks (`path#index`) count a task's position in\n" +
-	"  its note, so list_tasks again after that note changes. Pass them to\n" +
+	"  its note, so list_tasks again after that note changes. A task line\n" +
+	"  that ends with a block id also has the id `path#^blockid`, which\n" +
+	"  toggle_task accepts and which stays the same. Pass them to\n" +
 	"  toggle_task, or to update_task to change a due date, priority,\n" +
 	"  @waiting, state, status or text. Use update_task rather than editing\n" +
 	"  a task's line by hand, and give it expectedText when the note may\n" +

@@ -1,0 +1,2 @@
+- Water plants task:[[Work#^ab12cd]] when:2026-11-09T09:00-09:15
+- Essay task:[[Essay]] when:2026-11-08T10:00

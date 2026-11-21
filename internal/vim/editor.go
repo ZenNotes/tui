@@ -127,6 +127,15 @@ type Hooks struct {
 	LineRows func(line int) int
 	// Changed is called after every committed change.
 	Changed func()
+	// CompleteCheckbox lets the host replace a plain tick. It is called
+	// before ToggleCheckboxAtCursor turns the open or in-progress checkbox
+	// on line (0-based) into `[x]`, with the whole text as it stands and that
+	// line still unticked. A host that returns ok and the full new text (the
+	// tick plus whatever else it writes, such as a repeating task's next
+	// occurrence) has that text take the place of the plain tick, in the same
+	// change, so one undo reverts both. Not ok leaves the plain tick. Typing
+	// inside a checkbox and unticking never call it.
+	CompleteCheckbox func(text string, line int) (next string, ok bool)
 }
 
 type snapshot struct {

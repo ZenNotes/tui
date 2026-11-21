@@ -74,11 +74,21 @@ func TestRunReturnsOnClientDisconnect(t *testing.T) {
 // client; resolve is consulted before every tool call, like the app's config.
 func runServer(t *testing.T, resolve func() (backend.Target, error)) *sdk.ClientSession {
 	t.Helper()
-	return runScopedServer(t, resolve, nil)
+	return runScopedServerWith(t, backend.Options{}, resolve, nil)
 }
 
 // runScopedServer is runServer for a client launched with a scope.
 func runScopedServer(t *testing.T, resolve func() (backend.Target, error), scope *Scope) *sdk.ClientSession {
+	return runScopedServerWith(t, backend.Options{}, resolve, scope)
+}
+
+// runServerWith is runServer with the options the backend opens under.
+func runServerWith(t *testing.T, opts backend.Options, resolve func() (backend.Target, error)) *sdk.ClientSession {
+	return runScopedServerWith(t, opts, resolve, nil)
+}
+
+// runScopedServerWith is runServer with backend options and a scope.
+func runScopedServerWith(t *testing.T, opts backend.Options, resolve func() (backend.Target, error), scope *Scope) *sdk.ClientSession {
 	t.Helper()
 	t.Setenv("ZENNOTES_CONFIG_DIR", t.TempDir())
 	ctx, cancel := context.WithCancel(context.Background())
@@ -88,7 +98,7 @@ func runScopedServer(t *testing.T, resolve func() (backend.Target, error), scope
 		defer close(done)
 		_ = Run(ctx, Options{
 			ResolveTarget: resolve,
-			OpenBackend:   func(t backend.Target) (Backend, error) { return backend.New(t, backend.Options{}) },
+			OpenBackend:   func(t backend.Target) (Backend, error) { return backend.New(t, opts) },
 			Scope:         scope,
 			Transport:     serverT,
 		})
