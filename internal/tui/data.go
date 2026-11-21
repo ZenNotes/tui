@@ -252,6 +252,24 @@ func (a *App) dailyDueByPath() map[string]string {
 	return out
 }
 
+// dailyDueOfPath is the date of the daily note at path. It is empty when the
+// note is not a daily note, or when the settings do not count a task from the
+// date of its note.
+func (a *App) dailyDueOfPath(path string) string {
+	if a.idx == nil || !a.idx.settings.DailyNotes.Enabled || !a.idx.settings.DailyNotes.TasksDueOnNoteDate {
+		return ""
+	}
+	n, ok := a.noteMeta(path)
+	if !ok || n.Folder != vault.FolderInbox {
+		return ""
+	}
+	_, sub := a.folderOfPath(n.Path)
+	if date, ok := periodic.DateOf(periodic.Daily, sub, n.Title, a.idx.settings, a.primaryAtRoot()); ok {
+		return date.Format("2006-01-02")
+	}
+	return ""
+}
+
 // displayTasks are the tasks the Tasks surfaces show: daily-note due
 // inference applied, archived notes retired unless the preference keeps them.
 func (a *App) displayTasks() []vault.Task {

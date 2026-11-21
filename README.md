@@ -604,6 +604,9 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   note titles, `!priority`, `#tags` and `@fields`. `:filters` / `:savefilter`
   manage shared named queries. Prefix terminal operators with `where:`,
   for example `where: is:open due:today -meeting`.
+  A task with `@repeat:` in a daily note counts from the date of that note,
+  as in the desktop app. The menu item Skip this time (`n`) cancels one
+  occurrence and writes the next.
   The calendar has month, week and day views; `Esc` cycles them, and a
   start in `calendar` mode always opens the month grid. On a narrow
   terminal the month shows a compact grid with a count per day and the

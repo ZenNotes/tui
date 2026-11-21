@@ -196,7 +196,7 @@ func helpLines(a *App, filter string) []string {
 		"J K\tMove the task up or down inside its note (list in note order)",
 		"O / :order\tList order: note order or priority (high first in each group); shared with the desktop's Order menu via tasks_list_order",
 		"n f F A\tNew task in the daily note, filter, clear the filter, include archived",
-		"m\tTask menu (includes forward to today's daily note)",
+		"m\tTask menu (includes forward to today's daily note, and Skip this time for a task with @repeat:)",
 		"Board: h l j k\tMove between columns and cards; H L move the card; g cycles the grouping",
 		"Calendar: h j k l [ ] t\tMove days and months, t is today; Esc cycles month, week and day; Enter and Tab move focus to the day's tasks and the No-date strip; o opens the daily note",
 		"Calendar task: T @\tMove the focused task to today; pick its due date from a menu",
