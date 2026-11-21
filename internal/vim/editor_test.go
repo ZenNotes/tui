@@ -585,3 +585,131 @@ func TestLoadTextDuringInsertKeepsTheChangeOpen(t *testing.T) {
 		t.Fatalf("undo gave %q", got)
 	}
 }
+
+// rollHook records its calls. For an open checkbox it puts a copy of the
+// task above it, ticks the task, and reports the task line as the only one it
+// replaced.
+type rollHook struct {
+	calls    []int
+	selected []bool
+	decline  bool
+}
+
+func (h *rollHook) hooks() Hooks {
+	return Hooks{CompleteCheckbox: func(text string, line int, selected func(int) bool) (string, int, bool) {
+		h.calls = append(h.calls, line)
+		h.selected = append(h.selected, selected(line))
+		if h.decline {
+			return "", 0, false
+		}
+		lines := strings.Split(text, "\n")
+		out := append([]string{}, lines[:line]...)
+		out = append(out, lines[line], strings.Replace(lines[line], "[ ]", "[x]", 1))
+		out = append(out, lines[line+1:]...)
+		return strings.Join(out, "\n"), 1, true
+	}}
+}
+
+func TestToggleCheckboxHookReplacesTheTickInOneUndoStep(t *testing.T) {
+	h := &rollHook{}
+	e := New("intro\n- [ ] open\n- [/] doing", DefaultOptions(), h.hooks())
+	e.SetCursor(Pos{1, 4})
+	e.ToggleCheckboxAtCursor()
+	if want := "intro\n- [ ] open\n- [x] open\n- [/] doing"; e.Text() != want {
+		t.Fatalf("got %q, want %q", e.Text(), want)
+	}
+	if c := e.Cursor(); c.Line != 1 || c.Col != 4 {
+		t.Errorf("cursor = %+v, want line 1 col 4", c)
+	}
+	e.Feed("u")
+	if want := "intro\n- [ ] open\n- [/] doing"; e.Text() != want {
+		t.Errorf("one undo must revert the whole change: got %q", e.Text())
+	}
+}
+
+func TestToggleCheckboxHookCursorColumnIsClamped(t *testing.T) {
+	h := &rollHook{}
+	e := New("- [ ] a", DefaultOptions(), h.hooks())
+	e.SetCursor(Pos{0, 6})
+	e.ToggleCheckboxAtCursor()
+	if c := e.Cursor(); c.Line != 0 || c.Col != 6 {
+		t.Errorf("cursor = %+v, want line 0 col 6", c)
+	}
+	e = New("- [ ] a", DefaultOptions(), (&rollHook{decline: true}).hooks())
+	e.SetCursor(Pos{0, 3})
+	e.ToggleCheckboxAtCursor()
+	if want := "- [x] a"; e.Text() != want {
+		t.Errorf("declined hook: got %q, want %q", e.Text(), want)
+	}
+}
+
+func TestToggleCheckboxHookRunsForOpenCheckboxesOnly(t *testing.T) {
+	h := &rollHook{}
+	e := New("- [x] done\n- [-] dropped\n- [>] moved\nplain\n- bullet\n- [/] doing\n- [ ] open", DefaultOptions(), h.hooks())
+	for i := 0; i < 5; i++ {
+		e.SetCursor(Pos{i, 0})
+		e.ToggleCheckboxAtCursor()
+	}
+	if len(h.calls) != 0 {
+		t.Fatalf("hook ran for %v, want no call", h.calls)
+	}
+	e.SetCursor(Pos{5, 0})
+	e.ToggleCheckboxAtCursor()
+	if len(h.calls) != 1 || h.calls[0] != 5 {
+		t.Errorf("hook calls = %v, want [5]", h.calls)
+	}
+}
+
+func TestTypingInsideCheckboxNeverCallsTheHook(t *testing.T) {
+	h := &rollHook{}
+	e := New("- [ ] open", DefaultOptions(), h.hooks())
+	e.Feed("lllxix")
+	e.HandleKey(KeyEsc)
+	e.Feed("0lrx")
+	if len(h.calls) != 0 {
+		t.Errorf("hook ran for %v while typing, want no call", h.calls)
+	}
+}
+
+func TestToggleCheckboxVisualSkipsLinesTheHookReplaced(t *testing.T) {
+	// The hook replaces a task and the two lines under it.
+	hook := Hooks{CompleteCheckbox: func(text string, line int, selected func(int) bool) (string, int, bool) {
+		if line != 0 {
+			return "", 0, false
+		}
+		lines := strings.Split(text, "\n")
+		out := []string{"- [ ] a", "  - [ ] a1", "  - [ ] a2", "- [x] a", "  - [-] a1", "  - [-] a2"}
+		return strings.Join(append(out, lines[3:]...), "\n"), 3, true
+	}}
+	e := New("- [ ] a\n  - [ ] a1\n  - [ ] a2\n- [ ] b", DefaultOptions(), hook)
+	e.Feed("VG")
+	e.ToggleCheckboxAtCursor()
+	want := "- [ ] a\n  - [ ] a1\n  - [ ] a2\n- [x] a\n  - [-] a1\n  - [-] a2\n- [x] b"
+	if e.Text() != want {
+		t.Fatalf("got %q, want %q", e.Text(), want)
+	}
+	if e.Mode() != ModeNormal {
+		t.Errorf("mode = %v, want normal", e.Mode())
+	}
+	e.Feed("u")
+	if want := "- [ ] a\n  - [ ] a1\n  - [ ] a2\n- [ ] b"; e.Text() != want {
+		t.Errorf("one undo must revert everything: got %q", e.Text())
+	}
+}
+
+func TestToggleCheckboxHookSeesTheSelection(t *testing.T) {
+	h := &rollHook{decline: true}
+	e := New("- [ ] a\n- [ ] b\n- [ ] c", DefaultOptions(), h.hooks())
+	e.SetCursor(Pos{1, 0})
+	e.Feed("Vj")
+	e.ToggleCheckboxAtCursor()
+	if len(h.calls) != 2 || !h.selected[0] || !h.selected[1] {
+		t.Errorf("calls %v selected %v, want lines 1 and 2 selected", h.calls, h.selected)
+	}
+	h = &rollHook{decline: true}
+	e = New("- [ ] a", DefaultOptions(), h.hooks())
+	e.ToggleCheckboxAtCursor()
+	if len(h.selected) != 1 || h.selected[0] {
+		t.Errorf("a lone cursor selects no line, got %v", h.selected)
+	}
+}

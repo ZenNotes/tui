@@ -953,8 +953,13 @@ func (a *App) previewToggleTask(t *tab, buf *noteBuffer) {
 		return
 	}
 	cur := buf.ed.Cursor()
-	buf.ed.SetCursor(vim.Pos{Line: row.taskLine(), Col: 0})
+	line, before := row.taskLine(), buf.ed.LineCount()
+	buf.ed.SetCursor(vim.Pos{Line: line, Col: 0})
 	buf.ed.ToggleCheckboxAtCursor()
+	// A repeating task adds lines above itself, so a cursor below moves down.
+	if cur.Line > line {
+		cur.Line += buf.ed.LineCount() - before
+	}
 	buf.ed.SetCursor(cur)
 }
 

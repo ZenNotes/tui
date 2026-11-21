@@ -143,7 +143,45 @@ func (a *App) editorHooks(buf *noteBuffer) vim.Hooks {
 			}
 			a.armAutosave()
 		},
+		CompleteCheckbox: func(text string, line int, selected func(int) bool) (string, int, bool) {
+			return a.rollCheckboxText(buf, text, line, selected)
+		},
 	}
+}
+
+// recordTaskRe splits a task line into what comes before the state character,
+// the state character and the rest.
+var recordTaskRe = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+\[)(.)(\].*)$`)
+
+// rollCheckboxText ticks the open task on line (0-based) of a note buffer's
+// text. A task with a valid `@repeat:` rule gets its next occurrence above it,
+// as the app does. The subtasks that selected names are done in the record
+// and not cancelled. ok is false for any other task, and the editor then
+// writes the plain tick. replaced is the number of old lines the roll rewrote.
+func (a *App) rollCheckboxText(buf *noteBuffer, text string, line int, selected func(int) bool) (next string, replaced int, ok bool) {
+	res, ok := vault.CompleteRecurringTaskOnLine(text, line, vault.DialectApp, vault.RecurringOptions{
+		Today:       vault.TodayISO(calendarNow()),
+		FallbackDue: a.dailyDueOfPath(buf.path),
+	})
+	if !ok {
+		return "", 0, false
+	}
+	old := strings.Split(text, "\n")
+	out := strings.Split(res.Body, "\n")
+	// The record starts after the new occurrence, and its subtasks follow it. A line that holds only a block id
+	// is not in it, so the two sides are matched one line at a time.
+	rec := line + res.InsertedLines + 1
+	for i := line + 1; i < line+res.InsertedLines && rec < len(out); i++ {
+		if vault.IsBlockIDOnlyLine(old[i]) {
+			continue
+		}
+		if o, r := recordTaskRe.FindStringSubmatch(old[i]), recordTaskRe.FindStringSubmatch(out[rec]); selected != nil && selected(i) &&
+			o != nil && r != nil && (o[2] == " " || o[2] == "/") && r[2] == "-" {
+			out[rec] = r[1] + "x" + r[3]
+		}
+		rec++
+	}
+	return strings.Join(out, "\n"), res.InsertedLines, true
 }
 
 // editorLineRows is how many rows a line takes in the pane showing it.
