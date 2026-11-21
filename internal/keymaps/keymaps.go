@@ -131,7 +131,7 @@ func NewResolver(overrides map[string]string) *Resolver {
 	for _, e := range Catalog {
 		r.byID[e.ID] = e
 	}
-	for id, binding := range overrides {
+	for id, binding := range canonicalOverrides(overrides) {
 		if _, known := r.byID[id]; known {
 			r.overrides[id] = strings.TrimSpace(binding)
 		}
