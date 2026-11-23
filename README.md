@@ -822,14 +822,25 @@ Search, interactive note opening and autosaves run in the background.
 The status line reports loading, saving and conflicts. Remote servers use
 the change feed, with 30-second polling and reconnect fallback. External
 changes refresh clean buffers and preserve dirty ones. Use `:conflict` to
-reload, keep local edits or save a copy. A close/switch reports a pending or
+reload, keep local edits, keep both (the external version is saved beside the
+note as "Title (server copy)", or "Title (external copy)" in a local vault,
+then your edits are saved) or save a copy. A
+close/switch reports a pending or
 failed save; if shutdown cannot save edits, it reports a recovery JSON file
 under the user-data directory's `tui-recovery/` folder.
 
-Conflict checks compare the current content before saving. The existing
-server API does not support atomic conditional writes, so simultaneous
-writes between that check and the save still require coordination. Startup
-restoration and explicit lifecycle operations can wait for I/O.
+Conflict checks compare the current content before saving. A server with
+conditional note writes (ZenNotes server `supportsConditionalNoteWrites`)
+then saves on the version that check read, so a save another device makes in
+between is refused and shows as a conflict instead of being written over. The
+same holds for every command and MCP tool that reads a note, changes it and
+writes it back (append, prepend, insert, replace, edit a section, toggle or
+update a task): when the note moved, it is read again and the change made on
+the newer text, up to three times, then the command fails and writes nothing.
+`zn write` and `write_note` replace the whole note and stay last writer wins.
+A local vault or an older server has no conditional writes, so there a save
+landing between the check and the write still wins. Startup restoration and
+explicit lifecycle operations can wait for I/O.
 
 ### Mouse and themes
 
@@ -1062,7 +1073,7 @@ health. A failed check produces a nonzero exit code.
 | Remote authentication fails | Confirm the token matches the server. Run `zn connect <url>` to verify/store it; check `ZENNOTES_REMOTE_TOKEN` for an unintended override. |
 | Cannot reach a LAN server on macOS | Check the URL, port, base path, running service, and Local Network permission for the terminal/app. |
 | Live remote updates stop | Check WebSocket forwarding for `/api/watch` (under the configured base path); polling/reconnect is the fallback. |
-| Note conflicts | Use `:conflict` to reload, keep local edits, or save a copy. Dirty buffers are preserved; see the read-before-write limitation above. |
+| Note conflicts | Use `:conflict` to reload, keep local edits, keep both, or save a copy. Dirty buffers are preserved; see the read-before-write limitation above. |
 | Save fails on exit | Follow the reported recovery JSON path under the user-data `tui-recovery/` directory. |
 | Images appear as cards | Inline images need Kitty graphics support; inside tmux enable `allow-passthrough on`. |
 | Alt/Option shortcuts do not work | Configure Option-as-Alt in your terminal, or use leader keys, Ctrl shortcuts, and the command palette. |

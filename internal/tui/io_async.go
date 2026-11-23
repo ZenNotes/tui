@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ZenNotes/tui/internal/backend"
+	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/vault"
 	tea "github.com/charmbracelet/bubbletea"
 	"path"
@@ -12,10 +13,15 @@ import (
 	"time"
 )
 
-var errNoteConflict = errors.New("external edits detected; use :conflict to reload, keep local, or save a copy")
+var errNoteConflict = errors.New("external edits detected; use :conflict to reload, keep local, keep both, or save a copy")
 
-// A preflight check prevents overwriting known external edits. Servers without
-// conditional writes still have a race between this read and the write.
+// A preflight check prevents overwriting known external edits: the note must
+// still hold the text the buffer was opened with or last saved (baseline). A
+// server with conditional writes then writes on the version that read
+// returned, so a save another device makes between the check and the write is
+// refused (409) and ends in the same conflict as one the check saw. A local
+// vault or an older server hands out no hash, and there a save that lands in
+// between is still written over.
 func writeSnapshot(ctx context.Context, b backend.Backend, path, baseline, text string) (vault.NoteMeta, error) {
 	current, err := readSnapshot(ctx, b, path)
 	if err != nil {
@@ -31,7 +37,11 @@ func writeSnapshot(ctx context.Context, b backend.Backend, path, baseline, text 
 		file, err := b.WriteTemplate(ctx, vault.WriteTemplateInput{Slug: strings.TrimSuffix(current.Title, ".md"), Raw: text, PreviousSourcePath: path})
 		return vault.NoteMeta{Path: file.SourcePath, Title: current.Title}, err
 	}
-	return b.WriteNote(ctx, path, text)
+	meta, err := b.WriteNoteIfUnchanged(ctx, path, text, current.Sha256)
+	if remote.IsNoteChanged(err) {
+		return vault.NoteMeta{}, errNoteConflict
+	}
+	return meta, err
 }
 func (a *App) queueSave(buf *noteBuffer) {
 	if buf == nil || buf.saving || !buf.dirty() || buf.diskChanged {
@@ -175,6 +185,9 @@ func (a *App) conflictMenu() {
 				a.queueSave(buf)
 			})
 		}},
+		{key: "b", label: "Keep both (external version as a new note, then save local edits)", run: func(a *App) {
+			a.keepBothVersions(buf)
+		}},
 		{key: "c", label: "Save local edits as a new note", run: func(a *App) {
 			a.promptFor("Save copy", buf.meta.Title+" (local copy)", "Original remains unchanged", func(a *App, title string) {
 				if title == "" {
@@ -186,6 +199,54 @@ func (a *App) conflictMenu() {
 			})
 		}},
 	})
+}
+
+// keepBothVersions is the keep-both outcome the desktop gives a save that
+// found the note changed on the server: the version there is kept beside the
+// note as "<title> (server copy)" ("(external copy)" in a local vault, where
+// it came from another program), and the buffer's edits are then saved over
+// the note on the version just read. The copy is made first; if it cannot be,
+// nothing is overwritten.
+func (a *App) keepBothVersions(buf *noteBuffer) {
+	content, err := readSnapshot(a.ctx, a.backend, buf.path)
+	if err != nil {
+		a.notifyError(err.Error())
+		return
+	}
+	if content.Body != buf.ed.Text() {
+		if strings.HasPrefix(buf.path, ".zennotes/templates/") {
+			a.notifyError("A template cannot keep a copy beside it; reload it or keep local edits")
+			return
+		}
+		title := buf.meta.Title
+		if title == "" {
+			title = content.Title
+		}
+		folder, sub := a.folderOfPath(buf.path)
+		body := content.Body
+		suffix := " (external copy)"
+		if a.backend.Kind() == backend.KindRemote {
+			suffix = " (server copy)"
+		}
+		copyMeta, err := a.backend.CreateNote(a.ctx, folder, title+suffix, sub, &body)
+		if err != nil {
+			a.notifyError("Could not keep the external version: " + err.Error())
+			return
+		}
+		a.ignoreChange(copyMeta.Path)
+		a.addNoteToIndex(copyMeta)
+		a.refreshIndex()
+		a.notify("Kept the external version as " + copyMeta.Path)
+	}
+	buf.savedText = content.Body
+	buf.meta = content.NoteMeta
+	buf.diskChanged = false
+	buf.loadErr = nil
+	if buf.dirty() {
+		a.queueSave(buf)
+	} else {
+		buf.ed.MarkSaved()
+	}
 }
 
 type searchResultMsg struct {

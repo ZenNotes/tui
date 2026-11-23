@@ -132,7 +132,7 @@ func helpLines(a *App, filter string) []string {
 		":complete :table :formatting\tTag/callout/fence completion, table rows/columns/alignment, formatting actions; Ctrl+Space completes in insert mode",
 		":bulk :mark\tMark notes and apply open/move/archive/trash/restore; Ctrl+Space marks rows, Shift+Up/Down extends; folder marks include their notes",
 		":filters :savefilter :boardoptions\tShared saved task queries; board grouping/root, column labels and card order",
-		":conflict\tResolve external edits: reload, keep local, or save a copy; pending/failed saves keep edits recoverable",
+		":conflict\tResolve external edits: reload, keep local, keep both (the external version as a new note), or save a copy; pending/failed saves keep edits recoverable",
 		":vault [name|path] :server [name|url] :local\tSwitch vaults and servers in place; the picker lists what zn and the desktop app know and can add a folder or connect to a server (the token prompt is masked and the token is stored); the vault you switch to becomes the default for the next launch",
 		":rollover\tMove the newest earlier daily note's open tasks into today's note and open it",
 		":forward :inprogress :cancel\tThe task under the cursor: forward it to today's note, mark it [/], mark it [-]",

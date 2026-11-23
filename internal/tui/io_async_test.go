@@ -69,6 +69,11 @@ func (b *slowIOBackend) WriteNote(ctx context.Context, path, text string) (vault
 	return b.Backend.WriteNote(ctx, path, text)
 }
 
+// A save goes through the conditional write; the gate holds it the same way.
+func (b *slowIOBackend) WriteNoteIfUnchanged(ctx context.Context, path, text, _ string) (vault.NoteMeta, error) {
+	return b.WriteNote(ctx, path, text)
+}
+
 func suppressAsyncTestTimers(a *App) {
 	a.pendingCmds = nil
 	a.pollArmed = true

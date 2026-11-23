@@ -11,6 +11,7 @@ import (
 
 	"github.com/atotto/clipboard"
 
+	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/periodic"
 	"github.com/ZenNotes/tui/internal/search"
 	"github.com/ZenNotes/tui/internal/templates"
@@ -100,18 +101,33 @@ func (a *App) mutateNote(path string, mutate func(body string) (string, bool)) e
 		buf.ed.SetCursor(cur)
 		return a.saveBuffer(buf)
 	}
-	content, err := a.backend.ReadNote(context.Background(), path)
+	if strings.HasPrefix(path, ".zennotes/templates/") {
+		content, err := a.backend.ReadNote(context.Background(), path)
+		if err != nil {
+			return err
+		}
+		next, changed := mutate(content.Body)
+		if !changed {
+			return nil
+		}
+		if _, err := writeSnapshot(context.Background(), a.backend, path, content.Body, next); err != nil {
+			return err
+		}
+		a.ignoreChange(path)
+		return nil
+	}
+	// A note no tab holds is changed on the version read, and read again
+	// and changed anew when a server says it moved in between.
+	_, wrote, err := backend.RewriteNote(context.Background(), a.backend, path, func(note vault.NoteContent) (string, bool, error) {
+		next, changed := mutate(note.Body)
+		return next, changed, nil
+	})
 	if err != nil {
 		return err
 	}
-	next, changed := mutate(content.Body)
-	if !changed {
-		return nil
+	if wrote {
+		a.ignoreChange(path)
 	}
-	if _, err := writeSnapshot(context.Background(), a.backend, path, content.Body, next); err != nil {
-		return err
-	}
-	a.ignoreChange(path)
 	return nil
 }
 
