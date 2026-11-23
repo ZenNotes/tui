@@ -3,12 +3,15 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ZenNotes/tui/internal/backend"
 	"github.com/ZenNotes/tui/internal/config"
+	"github.com/ZenNotes/tui/internal/remote"
 	"github.com/ZenNotes/tui/internal/remote/remotetest"
 )
 
@@ -152,5 +155,56 @@ func TestASaveToAnOlderServerSendsNoBase(t *testing.T) {
 	}
 	if got, _ := server.Body(conditionalNote); !strings.HasSuffix(got, "More.\n") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// Against a real server: a save from another client between the TUI's check
+// and its write is refused there, and the file keeps their text.
+func TestARealServerRefusesATUISaveOverAConcurrentOne(t *testing.T) {
+	binary := os.Getenv(remotetest.BinaryEnv)
+	if binary == "" {
+		t.Skip("set " + remotetest.BinaryEnv + " to a ZenNotes server binary to run against a real server")
+	}
+	const token = "isolated-tui-conditional-token"
+	opened := "# Alpha\n\nSaved content.\n"
+	theirs := opened + "\nTheir line.\n"
+	root := t.TempDir()
+	file := filepath.Join(root, "inbox", "Alpha.md")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(opened), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := remotetest.StartBinary(t, binary, root, token)
+	other := remote.NewClient(base, token)
+	caps, err := other.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy := remotetest.NewProxy(t, base)
+	b, err := backend.New(backend.Target{Kind: backend.KindRemote, BaseURL: proxy.URL, AuthToken: token}, backend.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy.SetBeforeWrite(func() {
+		if _, err := other.WriteNote(context.Background(), conditionalNote, theirs); err != nil {
+			t.Error(err)
+		}
+	})
+	mine := opened + "\nMy line.\n"
+	_, err = writeSnapshot(context.Background(), b, conditionalNote, opened, mine)
+	if caps["supportsConditionalNoteWrites"] != true {
+		// An older server: the save lands as it always did.
+		if data, _ := os.ReadFile(file); err != nil || string(data) != mine {
+			t.Fatalf("older server: err %v, on disk %q", err, data)
+		}
+		return
+	}
+	if !errors.Is(err, errNoteConflict) {
+		t.Fatalf("expected a conflict, got %v", err)
+	}
+	if data, _ := os.ReadFile(file); string(data) != theirs {
+		t.Fatalf("on disk: %q", data)
 	}
 }

@@ -36,8 +36,15 @@ on the tool counts: do not sync over it.
 verify the real server implementation, build the API-only server binary and run:
 
 ```sh
-ZENNOTES_SERVER_CONTRACT_BINARY=/absolute/path/to/server go test ./internal/remote ./internal/mcp
+ZENNOTES_SERVER_CONTRACT_BINARY=/absolute/path/to/server go test ./internal/remote ./internal/mcp ./internal/backend
+ZENNOTES_SERVER_CONTRACT_BINARY=/absolute/path/to/server go test -run RealServer ./internal/tui
 ```
+
+The `./internal/backend` and `./internal/tui` runs cover conditional note writes
+(`supportsConditionalNoteWrites`, ZenNotes/zennotes#1108): a proxy in front of the
+server lands another client's save between zn's read and its write, and the test
+checks the server refused the write and kept that save. Against a server without
+the capability they check that zn edits and saves exactly as before.
 
 The integration tests start that binary on loopback with disposable vault and
 configuration directories, verify persisted note bytes, and clean up the child

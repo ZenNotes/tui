@@ -41,7 +41,8 @@ jobs:
           go-version: stable
       - run: go build -trimpath -o "$ZENNOTES_SERVER_CONTRACT_BINARY" ./cmd/zennotes-server
         working-directory: .znserver
-      - run: go test -count=1 ./internal/mcp ./internal/remote
+      - run: go test -count=1 ./internal/mcp ./internal/remote ./internal/backend
+      - run: go test -count=1 -run RealServer ./internal/tui
 
   homebrew:
     runs-on: ${{ matrix.os }}
