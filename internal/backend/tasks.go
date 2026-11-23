@@ -88,29 +88,30 @@ func UpdateTask(ctx context.Context, b Backend, in UpdateTaskInput) (*vault.Task
 	if in.ExpectedText != nil && strings.TrimSpace(*in.ExpectedText) != strings.TrimSpace(task.Content) {
 		return nil, fmt.Errorf("Task %s now reads %q, not %q: the note changed. Run list_tasks again for its id.", in.ID, task.Content, *in.ExpectedText)
 	}
-	note, err := b.ReadNote(ctx, task.SourcePath)
-	if err != nil {
+	// Written on the version read (RewriteNote). A note that moved before the
+	// write is read again and the same line edited; the line number came from
+	// the scan above, which is why expectedText is the guard against a task
+	// that moved away from it.
+	finalLine := task.LineNumber
+	missing := false
+	if _, _, err := RewriteNote(ctx, b, task.SourcePath, func(note vault.NoteContent) (string, bool, error) {
+		finalLine, missing = task.LineNumber, false
+		if task.Kind == "file" {
+			next, err := updateFileTask(note.Body, *task, in)
+			return next, err == nil && next != note.Body, err
+		}
+		next, line, found, err := updateTaskLine(note.Body, *task, in)
+		if err != nil || !found {
+			missing = !found
+			return "", false, err
+		}
+		finalLine = line
+		return next, next != note.Body, nil
+	}); err != nil {
 		return nil, err
 	}
-	var next string
-	finalLine := task.LineNumber
-	if task.Kind == "file" {
-		if next, err = updateFileTask(note.Body, *task, in); err != nil {
-			return nil, err
-		}
-	} else {
-		var found bool
-		if next, finalLine, found, err = updateTaskLine(note.Body, *task, in); err != nil {
-			return nil, err
-		}
-		if !found {
-			return nil, nil
-		}
-	}
-	if next != note.Body {
-		if _, err := b.WriteNote(ctx, task.SourcePath, next); err != nil {
-			return nil, err
-		}
+	if missing {
+		return nil, nil
 	}
 	if finalLine != task.LineNumber {
 		return findTaskOnLine(ctx, b, task.SourcePath, finalLine)

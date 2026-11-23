@@ -755,6 +755,14 @@ func (sb *scopedBackend) WriteNote(ctx context.Context, rel, body string) (vault
 	return sb.inner.WriteNote(ctx, meta.Path, body)
 }
 
+func (sb *scopedBackend) WriteNoteIfUnchanged(ctx context.Context, rel, body, baseSha256 string) (vault.NoteMeta, error) {
+	meta, err := sb.noteFor(ctx, rel, AccessWrite)
+	if err != nil {
+		return vault.NoteMeta{}, err
+	}
+	return sb.inner.WriteNoteIfUnchanged(ctx, meta.Path, body, baseSha256)
+}
+
 func (sb *scopedBackend) CreateNote(ctx context.Context, folder vault.NoteFolder, title, subpath string, body *string) (vault.NoteMeta, error) {
 	if err := sb.need(AccessWrite); err != nil {
 		return vault.NoteMeta{}, err

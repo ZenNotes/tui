@@ -344,13 +344,20 @@ func (c *Client) ListAssets(ctx context.Context) ([]vault.AssetMeta, error) {
 	return out, nil
 }
 
+// ReadNote carries the server's sha256 of the note in NoteMeta.Sha256 when the
+// server sends one (supportsConditionalNoteWrites), for a later write's base.
 func (c *Client) ReadNote(ctx context.Context, rel string) (vault.NoteContent, error) {
-	var out vault.NoteContent
+	var out struct {
+		vault.NoteContent
+		Sha256 string `json:"sha256"`
+	}
 	if err := c.Get(ctx, "/api/notes/read?path="+url.QueryEscape(rel), &out); err != nil {
 		return vault.NoteContent{}, err
 	}
-	out.NoteMeta = withLinks([]vault.NoteMeta{out.NoteMeta})[0]
-	return out, nil
+	note := out.NoteContent
+	note.NoteMeta = withLinks([]vault.NoteMeta{note.NoteMeta})[0]
+	note.Sha256 = out.Sha256
+	return note, nil
 }
 
 func (c *Client) SearchText(ctx context.Context, query string) ([]vault.TextSearchMatch, error) {
@@ -406,15 +413,42 @@ func (c *Client) ScanTasksForPath(ctx context.Context, rel string, includeExclud
 // --- writes ---
 
 func (c *Client) noteResult(ctx context.Context, path string, body any) (vault.NoteMeta, error) {
-	var out vault.NoteMeta
+	var out struct {
+		vault.NoteMeta
+		Sha256 string `json:"sha256"`
+	}
 	if err := c.Post(ctx, path, body, &out); err != nil {
 		return vault.NoteMeta{}, err
 	}
-	return withLinks([]vault.NoteMeta{out})[0], nil
+	meta := withLinks([]vault.NoteMeta{out.NoteMeta})[0]
+	meta.Sha256 = out.Sha256
+	return meta, nil
 }
 
+// WriteNote replaces a note's body unconditionally, last writer wins.
 func (c *Client) WriteNote(ctx context.Context, rel, body string) (vault.NoteMeta, error) {
-	return c.noteResult(ctx, "/api/notes/write", map[string]any{"path": rel, "body": body})
+	return c.WriteNoteIfUnchanged(ctx, rel, body, "")
+}
+
+// WriteNoteIfUnchanged writes a note only if it is still the version
+// baseSha256 names: the sha256 a read or a write of it returned. A server with
+// conditional writes refuses with 409 and writes nothing when the note changed
+// or is gone since, which comes back as a *NoteChangedError. An empty base, or
+// one that is not a hex SHA-256, sends none and the write is unconditional;
+// an older server ignores the field, so it is only worth sending a value the
+// server itself handed out.
+func (c *Client) WriteNoteIfUnchanged(ctx context.Context, rel, body, baseSha256 string) (vault.NoteMeta, error) {
+	payload := map[string]any{"path": rel, "body": body}
+	base := ""
+	if IsSha256Hex(baseSha256) {
+		base = baseSha256
+		payload["baseSha256"] = base
+	}
+	meta, err := c.noteResult(ctx, "/api/notes/write", payload)
+	if err != nil && base != "" && StatusOf(err) == http.StatusConflict {
+		return vault.NoteMeta{}, &NoteChangedError{Path: rel}
+	}
+	return meta, err
 }
 
 func (c *Client) CreateNote(ctx context.Context, folder vault.NoteFolder, title, subpath string) (vault.NoteMeta, error) {

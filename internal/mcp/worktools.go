@@ -306,15 +306,19 @@ func workTools() []toolDef {
 				if err != nil {
 					return nil, err
 				}
-				note, err := b.ReadNote(ctx, rel)
+				// Written on the version read: a note another device saved in
+				// between is read again and the section found anew.
+				meta, _, err := backend.RewriteNote(ctx, b, rel, func(note vault.NoteContent) (string, bool, error) {
+					section, err := vault.FindSection(note.Body, heading, line)
+					if err != nil {
+						return "", false, err
+					}
+					return vault.EditSectionInBody(note.Body, section, editMode, text), true, nil
+				})
 				if err != nil {
 					return nil, err
 				}
-				section, err := vault.FindSection(note.Body, heading, line)
-				if err != nil {
-					return nil, err
-				}
-				return b.WriteNote(ctx, note.Path, vault.EditSectionInBody(note.Body, section, editMode, text))
+				return meta, nil
 			},
 		},
 	}

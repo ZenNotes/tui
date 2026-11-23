@@ -43,6 +43,12 @@ type Backend interface {
 	ListFolders(ctx context.Context) ([]vault.FolderEntry, error)
 	ReadNote(ctx context.Context, rel string) (vault.NoteContent, error)
 	WriteNote(ctx context.Context, rel, body string) (vault.NoteMeta, error)
+	// WriteNoteIfUnchanged writes only if the note is still the version
+	// baseSha256 names (NoteMeta.Sha256 from a read or a write of it), else
+	// fails with a remote.NoteChangedError and writes nothing. An empty base
+	// is WriteNote. Only a server hands out a hash, so a local vault, whose
+	// reads carry none, writes as WriteNote.
+	WriteNoteIfUnchanged(ctx context.Context, rel, body, baseSha256 string) (vault.NoteMeta, error)
 	CreateNote(ctx context.Context, folder vault.NoteFolder, title, subpath string, body *string) (vault.NoteMeta, error)
 	AppendToNote(ctx context.Context, rel, text string) (vault.NoteMeta, error)
 	PrependToNote(ctx context.Context, rel, text string) (vault.NoteMeta, error)

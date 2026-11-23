@@ -120,9 +120,21 @@ func (r *Remote) ReadNote(ctx context.Context, rel string) (vault.NoteContent, e
 func (r *Remote) WriteNote(ctx context.Context, rel, body string) (vault.NoteMeta, error) {
 	return r.client.WriteNote(ctx, rel, body)
 }
+func (r *Remote) WriteNoteIfUnchanged(ctx context.Context, rel, body, baseSha256 string) (vault.NoteMeta, error) {
+	return r.client.WriteNoteIfUnchanged(ctx, rel, body, baseSha256)
+}
+
+// rewrite is RewriteNote for an edit that always writes.
+func (r *Remote) rewrite(ctx context.Context, rel string, edit func(body string) string) (vault.NoteMeta, error) {
+	meta, _, err := RewriteNote(ctx, r, rel, func(note vault.NoteContent) (string, bool, error) {
+		return edit(note.Body), true, nil
+	})
+	return meta, err
+}
 
 // CreateNote takes two round trips: the server's create route takes no body,
-// so a note with content is created and then written.
+// so a note with content is created and then written, on the version the
+// create returned when the server names one.
 func (r *Remote) CreateNote(ctx context.Context, folder vault.NoteFolder, title, subpath string, body *string) (vault.NoteMeta, error) {
 	if folder == vault.FolderTrash {
 		return vault.NoteMeta{}, errors.New("Refusing to create a note directly in trash/")
@@ -134,23 +146,15 @@ func (r *Remote) CreateNote(ctx context.Context, folder vault.NoteFolder, title,
 	if body == nil {
 		return meta, nil
 	}
-	return r.client.WriteNote(ctx, meta.Path, *body)
+	return r.client.WriteNoteIfUnchanged(ctx, meta.Path, *body, meta.Sha256)
 }
 
 func (r *Remote) AppendToNote(ctx context.Context, rel, text string) (vault.NoteMeta, error) {
-	note, err := r.client.ReadNote(ctx, rel)
-	if err != nil {
-		return vault.NoteMeta{}, err
-	}
-	return r.client.WriteNote(ctx, rel, vault.AppendToBody(note.Body, text))
+	return r.rewrite(ctx, rel, func(body string) string { return vault.AppendToBody(body, text) })
 }
 
 func (r *Remote) PrependToNote(ctx context.Context, rel, text string) (vault.NoteMeta, error) {
-	note, err := r.client.ReadNote(ctx, rel)
-	if err != nil {
-		return vault.NoteMeta{}, err
-	}
-	return r.client.WriteNote(ctx, rel, vault.PrependToBody(note.Body, text))
+	return r.rewrite(ctx, rel, func(body string) string { return vault.PrependToBody(body, text) })
 }
 
 func (r *Remote) RenameNote(ctx context.Context, rel, nextTitle string) (vault.NoteMeta, error) {
@@ -186,25 +190,22 @@ func (r *Remote) DeleteNote(ctx context.Context, rel string) error {
 func (r *Remote) EmptyTrash(ctx context.Context) error { return r.client.EmptyTrash(ctx) }
 
 func (r *Remote) InsertAtLine(ctx context.Context, rel string, lineNumber int, text string) (vault.NoteMeta, error) {
-	note, err := r.client.ReadNote(ctx, rel)
-	if err != nil {
-		return vault.NoteMeta{}, err
-	}
-	return r.client.WriteNote(ctx, rel, vault.InsertAtLineInBody(note.Body, lineNumber, text))
+	return r.rewrite(ctx, rel, func(body string) string { return vault.InsertAtLineInBody(body, lineNumber, text) })
 }
 
 // ReplaceInNote: no match means no write, so the receipt comes from the
 // listing instead of a round trip that would re-save identical bytes.
 func (r *Remote) ReplaceInNote(ctx context.Context, rel, find, replace string, all bool) (vault.NoteMeta, int, error) {
-	note, err := r.client.ReadNote(ctx, rel)
+	count := 0
+	meta, wrote, err := RewriteNote(ctx, r, rel, func(note vault.NoteContent) (string, bool, error) {
+		body, n, err := vault.ReplaceInBody(note.Body, find, replace, all)
+		count = n
+		return body, n > 0, err
+	})
 	if err != nil {
 		return vault.NoteMeta{}, 0, err
 	}
-	body, count, err := vault.ReplaceInBody(note.Body, find, replace, all)
-	if err != nil {
-		return vault.NoteMeta{}, 0, err
-	}
-	if count == 0 {
+	if !wrote {
 		path := vault.NormalizeRelPath(rel)
 		notes, err := r.client.ListNotes(ctx)
 		if err != nil {
@@ -217,8 +218,7 @@ func (r *Remote) ReplaceInNote(ctx context.Context, rel, find, replace string, a
 		}
 		return vault.NoteMeta{}, 0, fmt.Errorf("Note not found: %s", rel)
 	}
-	meta, err := r.client.WriteNote(ctx, rel, body)
-	return meta, count, err
+	return meta, count, nil
 }
 
 func (r *Remote) CreateFolder(ctx context.Context, folder vault.NoteFolder, subpath string) error {
@@ -277,39 +277,36 @@ func (r *Remote) ToggleTask(ctx context.Context, taskID string, dialect vault.Ta
 	if err != nil {
 		return nil, err
 	}
-	note, err := r.client.ReadNote(ctx, rel)
+	finalID := taskID
+	// Redone from the read on each attempt: a refused write means the note
+	// moved, and with it maybe the task's checkbox.
+	_, found, err := RewriteNote(ctx, r, rel, func(note vault.NoteContent) (string, bool, error) {
+		finalID = taskID
+		if indexStr == "task" {
+			current, err := r.client.ScanTasksForPath(ctx, rel, true)
+			if err != nil {
+				return "", false, err
+			}
+			for _, t := range current {
+				if t.ID == taskID {
+					return vault.ToggleFileTaskInBody(note.Body, t.Checked, time.Now()), true, nil
+				}
+			}
+			return "", false, nil
+		}
+		index, err := vault.ParseTaskIndex(taskID, indexStr)
+		if err != nil {
+			return "", false, err
+		}
+		next, finalIndex, found := vault.ToggleTaskRepeating(note.Body, index, dialect, time.Now())
+		finalID = rel + "#" + strconv.Itoa(finalIndex)
+		return next, found, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	var next string
-	found := false
-	finalID := taskID
-	if indexStr == "task" {
-		current, err := r.client.ScanTasksForPath(ctx, rel, true)
-		if err != nil {
-			return nil, err
-		}
-		for _, t := range current {
-			if t.ID == taskID {
-				next = vault.ToggleFileTaskInBody(note.Body, t.Checked, time.Now())
-				found = true
-				break
-			}
-		}
-	} else {
-		index, err := vault.ParseTaskIndex(taskID, indexStr)
-		if err != nil {
-			return nil, err
-		}
-		var finalIndex int
-		next, finalIndex, found = vault.ToggleTaskRepeating(note.Body, index, dialect, time.Now())
-		finalID = rel + "#" + strconv.Itoa(finalIndex)
-	}
 	if !found {
 		return nil, nil
-	}
-	if _, err := r.client.WriteNote(ctx, rel, next); err != nil {
-		return nil, err
 	}
 	after, err := r.client.ScanTasksForPath(ctx, rel, true)
 	if err != nil {

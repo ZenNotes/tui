@@ -143,12 +143,11 @@ func remirrorPage(ctx context.Context, b backend.Backend, doc *database.Doc, row
 	if pagePath == "" {
 		return ""
 	}
-	note, err := b.ReadNote(ctx, pagePath)
-	if err != nil {
-		return ""
-	}
-	_, body, _ := vault.Frontmatter(note.Body)
-	if _, err := b.WriteNote(ctx, pagePath, doc.ComposePageBody(row, body)); err != nil {
+	// On the version read, so a page body someone saved meanwhile is kept.
+	if _, _, err := backend.RewriteNote(ctx, b, pagePath, func(note vault.NoteContent) (string, bool, error) {
+		_, body, _ := vault.Frontmatter(note.Body)
+		return doc.ComposePageBody(row, body), true, nil
+	}); err != nil {
 		return ""
 	}
 	return pagePath

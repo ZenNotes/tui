@@ -69,6 +69,11 @@ type NoteMeta struct {
 	// Symlink marks a note a server listed from a link rather than a file. A
 	// local listing leaves those out.
 	Symlink bool `json:"symlink,omitempty"`
+	// Sha256 is a server's hex SHA-256 of the note's bytes, from a read or a
+	// write of it (znserver supportsConditionalNoteWrites). It is the version
+	// a later write names as its base, never computed here and never printed:
+	// listings and local vaults leave it empty.
+	Sha256 string `json:"-"`
 }
 
 // NoteContent is a note with its body.

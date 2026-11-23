@@ -75,6 +75,9 @@ func (l *Local) ReadNote(_ context.Context, rel string) (vault.NoteContent, erro
 func (l *Local) WriteNote(_ context.Context, rel, body string) (vault.NoteMeta, error) {
 	return l.vault.WriteNote(rel, body)
 }
+func (l *Local) WriteNoteIfUnchanged(_ context.Context, rel, body, _ string) (vault.NoteMeta, error) {
+	return l.vault.WriteNote(rel, body)
+}
 func (l *Local) CreateNote(_ context.Context, folder vault.NoteFolder, title, subpath string, body *string) (vault.NoteMeta, error) {
 	return l.vault.CreateNote(folder, title, subpath, body)
 }
