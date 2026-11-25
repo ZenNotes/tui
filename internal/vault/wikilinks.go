@@ -259,12 +259,16 @@ func RewriteWikilinksForRename(body string, notes []NoteMeta, oldPath, newTitle 
 		return body, 0
 	}
 	mask := wikiCodeMask(body)
+	fmEnd := 0
+	if loc := frontmatterRe.FindStringIndex(body); loc != nil {
+		fmEnd = loc[1]
+	}
 	var sb strings.Builder
 	last := 0
 	changed := 0
 	for _, m := range matches {
 		start, end := m[0], m[1]
-		if mask[start] {
+		if start < fmEnd || mask[start] {
 			continue
 		}
 		embed := body[m[2]:m[3]]

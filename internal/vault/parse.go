@@ -199,7 +199,7 @@ func ExtractWikilinks(body string) []string {
 	if !strings.Contains(body, "[[") {
 		return []string{}
 	}
-	stripped := StripCodeContent(body)
+	stripped := StripCodeContent(frontmatterRe.ReplaceAllString(body, ""))
 	seen := map[string]bool{}
 	out := []string{}
 	for _, m := range wikilinkRe.FindAllStringSubmatch(stripped, -1) {
