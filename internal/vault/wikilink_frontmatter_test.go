@@ -20,3 +20,22 @@ func TestExtractWikilinksFrontmatterOnly(t *testing.T) {
 		t.Fatalf("ExtractWikilinks = %v, want none", got)
 	}
 }
+
+func TestExtractWikilinksFrontmatterEdgeCases(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"empty block", "---\n---\nSee [[Shown]].\n", []string{"Shown"}},
+		{"no closing fence", "---\n[[A]]\n", []string{"A"}},
+		{"code span after frontmatter", "---\nup: [[Hidden]]\n---\n`[[Code]]` and [[Shown]]\n", []string{"Shown"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ExtractWikilinks(tc.body); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ExtractWikilinks = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

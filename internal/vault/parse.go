@@ -193,8 +193,9 @@ func ExtractTags(body string) []string {
 	return out
 }
 
-// ExtractWikilinks returns unique [[wikilink]] targets outside code, embeds
-// included, exactly as the desktop CLI reports them.
+// ExtractWikilinks returns the unique [[wikilink]] targets of the note body,
+// embeds included. It does not read the frontmatter or code: a [[link]] in a
+// frontmatter value is not a link.
 func ExtractWikilinks(body string) []string {
 	if !strings.Contains(body, "[[") {
 		return []string{}
