@@ -2,8 +2,11 @@ package vault
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // Regexes follow the extractors in the desktop's vault-ops.ts and the server's
@@ -147,16 +150,84 @@ var (
 	fmLeadWsRe   = regexp.MustCompile(`^\s`)
 )
 
-// Unquote strips one layer of matching quotes and surrounding whitespace.
+// Unquote strips one layer of matching quotes and surrounding whitespace. It
+// reads the YAML escapes inside the quotes: `\"`, `\\`, `\n`, `\r`, `\t` and
+// `\uXXXX` (with surrogate pairs) in a double-quoted value, and a doubled
+// single quote in a single-quoted value. An unknown or unfinished escape stays
+// as written. A plain value is unchanged.
 func Unquote(v string) string {
 	t := strings.TrimSpace(v)
 	if len(t) >= 2 {
 		first, last := t[0], t[len(t)-1]
-		if (first == '"' || first == '\'') && first == last {
-			return t[1 : len(t)-1]
+		if first == last {
+			switch first {
+			case '"':
+				return unescapeDoubleQuoted(t[1 : len(t)-1])
+			case '\'':
+				return strings.ReplaceAll(t[1:len(t)-1], "''", "'")
+			}
 		}
 	}
 	return t
+}
+
+func unescapeDoubleQuoted(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] != '\\' || i+1 >= len(s) {
+			b.WriteByte(s[i])
+			continue
+		}
+		switch s[i+1] {
+		case '"', '\\':
+			b.WriteByte(s[i+1])
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case 'r':
+			b.WriteByte('\r')
+		case 'u':
+			r, ok := hex4(s, i+2)
+			if ok && utf16.IsSurrogate(r) {
+				// A high surrogate and the low surrogate after it make one
+				// character, as in JSON. A lone surrogate stays as written.
+				ok = false
+				if i+8 <= len(s) && s[i+6] == '\\' && s[i+7] == 'u' {
+					if lo, ok2 := hex4(s, i+8); ok2 {
+						if pair := utf16.DecodeRune(r, lo); pair != utf8.RuneError {
+							b.WriteRune(pair)
+							i += 11
+							continue
+						}
+					}
+				}
+			}
+			if ok {
+				b.WriteRune(r)
+				i += 5
+				continue
+			}
+			b.WriteString(`\u`)
+		default:
+			b.WriteByte('\\')
+			b.WriteByte(s[i+1])
+		}
+		i++
+	}
+	return b.String()
+}
+
+// hex4 reads the four hex digits at s[i:i+4] as a rune.
+func hex4(s string, i int) (rune, bool) {
+	if i+4 > len(s) {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(s[i:i+4], 16, 32)
+	return rune(n), err == nil
 }
 
 // ExtractTags returns the unique tags of a note: frontmatter `tags` (a bare
