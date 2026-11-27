@@ -76,6 +76,10 @@ func (v *settingsView) refresh(a *App) {
 	}
 	tables := config.ValueTables(a.prefs.Prefs)
 	for _, section := range []string{"vim", "editor", "appearance", "view", "terminal"} {
+		if section == "terminal" {
+			// A list has no scalar row of its own: it is edited as one line.
+			tables[section]["kanban_card_fields"] = strings.Join(a.prefs.KanbanCardFields, ", ")
+		}
 		keys := []string{}
 		for k := range tables[section] {
 			keys = append(keys, k)
@@ -338,7 +342,7 @@ func (v *settingsView) handleKey(a *App, k vim.Key) bool {
 }
 
 var settingChoices = map[string][]string{
-	"which_key_hint_mode": {"timed", "sticky"}, "wrapped_line_motions": {"display", "logical"}, "default_view_mode": {"edit", "split", "preview"}, "line_number_mode": {"off", "absolute", "relative"}, "completed_task_style": {"none", "gray", "strikethrough", "gray-strikethrough"}, "time_format": {"12h", "24h"}, "theme_mode": {"dark", "light", "system"}, "note_sort_order": {"modified-desc", "created-desc", "title-asc", "title-desc"}, "calendar_week_start": {"monday", "sunday"}, "tasks_view_mode": {"list", "kanban", "calendar"}, "preview_style": {"auto", "dark", "light", "ascii", "notty"}, "images": {"auto", "kitty", "off"}, "math": {"typst", "latex"},
+	"which_key_hint_mode": {"timed", "sticky"}, "wrapped_line_motions": {"display", "logical"}, "default_view_mode": {"edit", "split", "preview"}, "line_number_mode": {"off", "absolute", "relative"}, "completed_task_style": {"none", "gray", "strikethrough", "gray-strikethrough"}, "time_format": {"12h", "24h"}, "theme_mode": {"dark", "light", "system"}, "note_sort_order": {"modified-desc", "created-desc", "title-asc", "title-desc"}, "calendar_week_start": {"monday", "sunday"}, "tasks_view_mode": {"list", "kanban", "calendar"}, "preview_style": {"auto", "dark", "light", "ascii", "notty"}, "images": {"auto", "kitty", "off"}, "math": {"typst", "latex"}, "preview_frontmatter": {"raw", "collapsed", "hidden"},
 }
 
 func (v *settingsView) edit(a *App, row settingRow) {
@@ -366,6 +370,9 @@ func (v *settingsView) edit(a *App, row settingRow) {
 				m[row.key] = value
 			})
 		} else {
+			if row.section == "terminal" && row.key == "kanban_card_fields" {
+				value = splitCardFields(fmt.Sprint(value))
+			}
 			err = config.SetValue(row.section, row.key, value)
 		}
 		if err != nil {
@@ -399,6 +406,9 @@ func (v *settingsView) edit(a *App, row settingRow) {
 		return
 	}
 	help := "Saved immediately · Esc cancels"
+	if row.section == "terminal" && row.key == "kanban_card_fields" {
+		help = "Comma-separated frontmatter fields shown on Tasks board cards · " + help
+	}
 	if row.section == "terminal" && row.key == "view_mode_field" && strings.TrimSpace(fmt.Sprint(row.value)) == "" {
 		help = "Frontmatter field that sets the pane mode, for example view-mode · " + help
 	}
@@ -411,6 +421,10 @@ func (v *settingsView) edit(a *App, row settingRow) {
 			}
 			if row.key == "tab_size" && (n < 1 || n > 16) {
 				a.notifyError("Tab size must be 1–16")
+				return
+			}
+			if row.key == "kanban_card_title_lines" && (n < 1 || n > 3) {
+				a.notifyError("A card title takes 1 to 3 lines")
 				return
 			}
 			if row.key == "which_key_hint_timeout_ms" && (n < 400 || n > 3000) {

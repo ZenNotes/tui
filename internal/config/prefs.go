@@ -94,6 +94,18 @@ type Prefs struct {
 	// caps how many run at once. Non-positive values load as the defaults.
 	RenderTimeout     int
 	RenderConcurrency int
+	// KanbanHideEmptyColumns leaves a Tasks board column off the screen while
+	// it holds no card. The column still exists: a card can be moved into it.
+	KanbanHideEmptyColumns bool
+	// KanbanCardTitleLines is how many rows a board card's title may wrap
+	// over, 1 to 3. Anything else loads as 1.
+	KanbanCardTitleLines int
+	// KanbanCardFields names the frontmatter fields a board card lists under
+	// its title, lower-cased, in the order written.
+	KanbanCardFields []string
+	// PreviewFrontmatter is raw, collapsed or hidden: how the preview shows a
+	// note's frontmatter. Anything else loads as raw.
+	PreviewFrontmatter string
 }
 
 // DefaultPrefs are the shipped defaults.
@@ -129,6 +141,9 @@ func DefaultPrefs() Prefs {
 		ViewModeRules:            map[string]string{},
 		RenderTimeout:            10,
 		RenderConcurrency:        2,
+		KanbanCardTitleLines:     1,
+		KanbanCardFields:         []string{},
+		PreviewFrontmatter:       "raw",
 		UnifiedSidebar:           true,
 		NoteSortOrder:            "none",
 		GroupByKind:              true,
@@ -264,6 +279,28 @@ func applyPrefs(p *Prefs, doc map[string]any) {
 	}
 	setInt(terminal, "render_timeout", &p.RenderTimeout)
 	setInt(terminal, "render_concurrency", &p.RenderConcurrency)
+	setBool(terminal, "kanban_hide_empty_columns", &p.KanbanHideEmptyColumns)
+	setInt(terminal, "kanban_card_title_lines", &p.KanbanCardTitleLines)
+	if list, ok := terminal["kanban_card_fields"].([]any); ok {
+		p.KanbanCardFields = []string{}
+		seen := map[string]bool{}
+		for _, e := range list {
+			s, _ := e.(string)
+			if s = strings.ToLower(strings.TrimSpace(s)); s != "" && !seen[s] {
+				seen[s] = true
+				p.KanbanCardFields = append(p.KanbanCardFields, s)
+			}
+		}
+	}
+	setString(terminal, "preview_frontmatter", &p.PreviewFrontmatter)
+	if p.KanbanCardTitleLines < 1 || p.KanbanCardTitleLines > 3 {
+		p.KanbanCardTitleLines = 1
+	}
+	switch p.PreviewFrontmatter = strings.ToLower(strings.TrimSpace(p.PreviewFrontmatter)); p.PreviewFrontmatter {
+	case "collapsed", "hidden":
+	default:
+		p.PreviewFrontmatter = "raw"
+	}
 	if strings.TrimSpace(p.PreviewStyle) == "" {
 		p.PreviewStyle = "auto"
 	}
@@ -404,6 +441,18 @@ math = "typst"
 # Seconds one diagram or math render may take, and how many run at once.
 render_timeout = 10
 render_concurrency = 2
+# The Tasks board. kanban_hide_empty_columns = true leaves a column off the
+# screen while it holds no card (H and L still move a card into it).
+# kanban_card_title_lines = 1 | 2 | 3 lets a card's title wrap instead of
+# being cut. kanban_card_fields lists frontmatter fields a card shows under
+# its title, e.g. ["owner", "sprint"].
+kanban_hide_empty_columns = false
+kanban_card_title_lines = 1
+kanban_card_fields = []
+# preview_frontmatter = raw | collapsed | hidden: how the preview shows a
+# note's frontmatter. collapsed is one row, "▸ 15 fields"; Enter on it or
+# Space z f opens and closes it.
+preview_frontmatter = "raw"
 
 [keymaps]
 # "action.id" = "keys"   (an empty string unbinds an action)

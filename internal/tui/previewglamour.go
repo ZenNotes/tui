@@ -503,7 +503,6 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 	if err != nil {
 		return nil, err
 	}
-	th := a.theme
 	lines := strings.Split(breakLongWords(termsafe.Visible(text)), "\n")
 	out := []previewLine{}
 	for _, b := range splitBlocks(lines, a.prefs.TerminalMath == "latex") {
@@ -514,10 +513,7 @@ func (a *App) renderGlamourLinesFrom(text string, width int, fromPath string) ([
 		}
 		switch b.kind {
 		case "front":
-			for i := b.start + 1; i < b.end-1; i++ {
-				out = append(out, previewLine{text: th.Frontmatter.Render(truncateCells(lines[i], width)), srcLine: i})
-			}
-			out = append(out, previewLine{text: th.Muted.Render(strings.Repeat("╌", min(width, 24))), srcLine: b.end - 1})
+			out = append(out, a.frontmatterRows(lines, b.end-1, width)...)
 		case "blank":
 			out = append(out, previewLine{text: "", srcLine: b.start})
 		default:

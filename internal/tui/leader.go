@@ -47,6 +47,7 @@ func (a *App) leaderTree() *leaderNode {
 			&leaderNode{key: "n", title: "Line numbers", run: func(a *App) { a.runCommandLine("nu") }},
 			&leaderNode{key: "z", title: "Zen mode", run: func(a *App) { a.toggleZen() }},
 			&leaderNode{key: "t", title: "Theme", run: func(a *App) { a.runCommandLine("theme") }},
+			&leaderNode{key: "f", title: "Frontmatter in preview", run: func(a *App) { a.togglePreviewFrontmatter() }},
 		)
 	}
 	if l := add(root, "vim.leaderNoteActions", "Note actions", nil); l != nil {

@@ -600,7 +600,13 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   `g` regroups by status, priority, due date, folder or `field:<key>`.
   `:boardoptions` (also F2 → Board options) sets the folder root, column labels,
   custom statuses and card order. Folder boards keep cross-folder moves
-  disabled. Filters match the desktop's substring search over task text,
+  disabled. Three board settings are zn's own, under `[terminal]` and in
+  the same menu (`B`): `kanban_hide_empty_columns` (`B e`) leaves a column
+  off the screen while it holds no card, and `H`/`L` still move a card into
+  it; `kanban_card_title_lines` (`B l`) lets a title wrap over up to three
+  lines instead of being cut; `kanban_card_fields` (`B c`) lists chosen
+  frontmatter fields on each card, as in `["owner", "sprint"]`. A task
+  note's card is one line, since its title is the note's name. Filters match the desktop's substring search over task text,
   note titles, `!priority`, `#tags` and `@fields`. `:filters` / `:savefilter`
   manage shared named queries. Prefix terminal operators with `where:`,
   for example `where: is:open due:today -meeting`.
@@ -651,6 +657,12 @@ folders continue to use the existing individual folder actions.
 Rendering goes through Glamour, the renderer behind Glow; `preview_style`
 under `[terminal]` picks a style (`auto`, Glamour's built-ins, a JSON style
 sheet of your own, or `zen` for the built-in renderer).
+
+A note's frontmatter shows as written. `preview_frontmatter = "collapsed"`
+under `[terminal]` folds it to one row, `▸ 15 fields`, that Enter opens;
+`"hidden"` leaves it out. `Space z f` or `:frontmatter` opens and closes it
+for the note on screen, and `:frontmatter raw|collapsed|hidden` changes the
+setting.
 
 - **Pictures** paint inline in Kitty and Ghostty through the Kitty graphics
   protocol (`[terminal] images = auto|kitty|off`); other terminals show a
@@ -914,7 +926,7 @@ layout choices do not change these terminal layouts.
 | `[view]` | `tasks_view_mode`, `kanban_group_by`, `kanban_statuses`, `note_sort_order` |
 | `[appearance]` | `theme_family`, `theme_mode`, `theme_id` |
 | `[tweaks]` | `accent = "#ff3b30"`: the desktop's Quick tweaks colors |
-| `[terminal]` | `mouse`, `autosave`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field` and `[terminal.view_mode_rules]` (terminal only) |
+| `[terminal]` | `mouse`, `autosave`, `preview_style`, `images`, `theme`, `math`, `render_timeout`, `render_concurrency`, `view_mode_field`, `kanban_hide_empty_columns`, `kanban_card_title_lines`, `kanban_card_fields`, `preview_frontmatter` and `[terminal.view_mode_rules]` (terminal only) |
 | `[keymaps]` | `"action.id" = "keys"`, or `""` to unbind; `:keymaps` lists the ids |
 | `[kanban_column_titles]` | `review = "In Review"` |
 | `[saved_filters]` | `Important = "!high"` |

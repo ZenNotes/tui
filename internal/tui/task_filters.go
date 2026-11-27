@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"github.com/ZenNotes/tui/internal/config"
 	"github.com/ZenNotes/tui/internal/vault"
 	"sort"
@@ -199,6 +200,29 @@ func (v *tasksView) boardMenu(a *App) {
 					}
 				}
 				if err := config.SetValue("view", "kanban_statuses", values); err != nil {
+					a.notifyError(err.Error())
+					return
+				}
+				_ = a.reloadPreferences()
+				v.refresh(a)
+			})
+		}},
+		{key: "e", label: "Empty columns: " + map[bool]string{true: "hidden", false: "shown"}[a.prefs.KanbanHideEmptyColumns], run: func(a *App) {
+			a.prefs.KanbanHideEmptyColumns = !a.prefs.KanbanHideEmptyColumns
+			v.refresh(a)
+			if a.prefs.KanbanHideEmptyColumns {
+				a.notify("Empty columns hidden. H and L still move a card into one.")
+			} else {
+				a.notify("Empty columns shown")
+			}
+		}},
+		{key: "l", label: fmt.Sprintf("Card title lines: %d", max(1, a.prefs.KanbanCardTitleLines)), run: func(a *App) {
+			a.prefs.KanbanCardTitleLines = max(1, a.prefs.KanbanCardTitleLines)%3 + 1
+			a.notify(fmt.Sprintf("Card titles wrap over up to %d lines", a.prefs.KanbanCardTitleLines))
+		}},
+		{key: "c", label: "Card fields", run: func(a *App) {
+			a.promptFor("Card fields", strings.Join(a.prefs.KanbanCardFields, ", "), "Comma-separated frontmatter fields to show on cards; empty shows none", func(a *App, s string) {
+				if err := config.SetValue("terminal", "kanban_card_fields", splitCardFields(s)); err != nil {
 					a.notifyError(err.Error())
 					return
 				}

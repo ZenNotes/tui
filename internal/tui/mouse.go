@@ -386,7 +386,7 @@ func (a *App) previewClick(t *tab, buf *noteBuffer, y int, m tea.MouseMsg, doubl
 			a.previewToggleTask(t, buf)
 			return
 		}
-		if len(row.links) > 0 {
+		if len(row.links) > 0 || row.front {
 			a.previewFollow(t, buf)
 		}
 	}

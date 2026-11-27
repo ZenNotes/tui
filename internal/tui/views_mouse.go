@@ -25,10 +25,17 @@ func (v *tasksView) click(a *App, p *pane, x, y int, m tea.MouseMsg, double bool
 			start = v.boardStarts[ci]
 		}
 		rel := y - 1 - 2
-		if rel < 0 {
-			return
+		card := -1
+		if ci < len(v.boardCards) {
+			// The blank row under a card is part of it, as it was when every
+			// card was the same height.
+			for i, span := range v.boardCards[ci] {
+				if rel >= span.top && rel <= span.top+span.height {
+					card = start + i
+					break
+				}
+			}
 		}
-		card := start + rel/3
 		if card < 0 || card >= len(v.columns[ci].cards) {
 			return
 		}
@@ -146,7 +153,11 @@ func (v *tasksView) selectionPos(a *App, p *pane) (int, int, bool) {
 		if v.col < len(v.boardStarts) {
 			start = v.boardStarts[v.col]
 		}
-		return a.contentRect(p).x + v.col*(colW+1) + 2, top + 1 + 2 + (v.card-start)*3 + 1, true
+		row := 0
+		if v.col < len(v.boardCards) && v.card-start >= 0 && v.card-start < len(v.boardCards[v.col]) {
+			row = v.boardCards[v.col][v.card-start].top
+		}
+		return a.contentRect(p).x + v.col*(colW+1) + 2, top + 1 + 2 + row + 1, true
 	case "calendar":
 		cx, cy := v.calc().selectionCell(v.day)
 		return a.contentRect(p).x + cx, top + 1 + cy, true

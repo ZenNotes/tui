@@ -86,13 +86,19 @@ type App struct {
 	markedNotes    map[string]bool
 	markedMoveDirs map[string]string
 	boardOrder     map[string][]string
-	buffers        map[string]*noteBuffer
-	registers      vim.RegisterStore
-	noteModes      map[string]paneMode
-	newNotes       map[string]bool
-	panes          *paneNode
-	activePane     *pane
-	focus          focusTarget
+	// cardFields caches the frontmatter behind the Tasks board's cards, for
+	// [terminal] kanban_card_fields. cardFieldsAsked holds the reads in
+	// flight; both belong to the vault cardFieldsEpoch names.
+	cardFields      map[string]cardFieldEntry
+	cardFieldsAsked map[string]int64
+	cardFieldsEpoch *int
+	buffers         map[string]*noteBuffer
+	registers       vim.RegisterStore
+	noteModes       map[string]paneMode
+	newNotes        map[string]bool
+	panes           *paneNode
+	activePane      *pane
+	focus           focusTarget
 
 	sidebar         *sidebarState
 	sidebarOpen     bool
@@ -151,6 +157,9 @@ type App struct {
 	assetPaths          map[string]string
 	previewDepth        int
 	previewPath         string
+	// previewFront is the frontmatter display of the render in progress: one
+	// of the front* names, empty outside a note's own preview.
+	previewFront string
 	// latexNoticeShown is set once the current preview render has shown the
 	// missing-TeX notice, so only a note's first LaTeX block carries it.
 	latexNoticeShown bool
@@ -454,6 +463,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		if !first {
+			// The tasks come in a message of their own, a moment later. Until
+			// then the ones on screen stay: an index with none would empty the
+			// Tasks views for a frame, and a board that hides empty columns
+			// would lose every column and its selection with them.
+			m.idx.tasks, m.idx.tasksAt = a.idx.tasks, a.idx.tasksAt
+		}
 		a.idx = m.idx
 		a.sidebar.rebuild(a)
 		a.refreshViews()
@@ -487,6 +503,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.sidebar.rebuild(a)
 			a.refreshViews()
 		}
+		return a, a.flush()
+	case cardFieldsLoadedMsg:
+		if m.epoch != a.epoch || a.cardFieldsEpoch != a.epoch {
+			return a, nil
+		}
+		for path, entry := range m.entries {
+			a.cardFields[path] = entry
+			if a.cardFieldsAsked[path] == entry.stamp {
+				delete(a.cardFieldsAsked, path)
+			}
+		}
+		a.refreshViews()
 		return a, a.flush()
 	case vaultChangedMsg:
 		if m.epoch != nil && m.epoch != a.epoch {

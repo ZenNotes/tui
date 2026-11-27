@@ -627,6 +627,26 @@ func (a *App) commandTable() []command {
 			a.notify("Preview style: " + name)
 			return nil
 		}},
+		{names: []string{"frontmatter", "fm"}, title: "Frontmatter in preview (raw, collapsed or hidden; no argument opens or closes it)", palette: true, run: func(a *App, _ *noteBuffer, cmd vim.ExCommand) error {
+			mode := strings.ToLower(strings.TrimSpace(cmd.Args))
+			switch mode {
+			case "":
+				a.togglePreviewFrontmatter()
+			case frontRaw, frontCollapsed, frontHidden:
+				a.prefs.PreviewFrontmatter = mode
+				for _, p := range a.panes.leaves() {
+					for _, t := range p.tabs {
+						if t.preview != nil {
+							t.preview.frontFlipped = false
+						}
+					}
+				}
+				a.notify("Preview frontmatter: " + mode)
+			default:
+				return fmt.Errorf("frontmatter is raw, collapsed or hidden")
+			}
+			return nil
+		}},
 		{names: []string{"link", "wikilink"}, title: "Insert a link to a note", palette: true, run: func(a *App, buf *noteBuffer, _ vim.ExCommand) error {
 			if buf == nil {
 				return fmt.Errorf("no note is active")
@@ -763,6 +783,8 @@ func (a *App) completeEx(text string) (string, []string) {
 				}
 			}
 		}
+	case "frontmatter", "fm":
+		cands = []string{frontRaw, frontCollapsed, frontHidden}
 	case "style", "previewstyle":
 		cands = append(append([]string{}, glamourStyleNames...), "zen")
 	case "theme", "themes", "colorscheme", "colo":

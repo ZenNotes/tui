@@ -25,9 +25,16 @@ type tasksView struct {
 	rows []taskRow
 
 	groupBy string
-	columns []kanbanColumn
-	col     int
-	card    int
+	// columns are the board's columns on screen; allColumns adds the empty
+	// ones [terminal] kanban_hide_empty_columns keeps off it, which a card
+	// can still be moved into.
+	columns    []kanbanColumn
+	allColumns []kanbanColumn
+	col        int
+	card       int
+	// wantCol is the column a moved card is headed for. The selection goes
+	// there once the reloaded tasks put it on the board, until a key moves on.
+	wantCol string
 
 	month    time.Time
 	day      time.Time
@@ -35,6 +42,9 @@ type tasksView struct {
 	pageRows int
 
 	boardStarts []int
+	// boardCards holds where each drawn card sits, by column, counted from
+	// the first card on screen.
+	boardCards [][]cardSpan
 }
 
 type taskRow struct {
@@ -124,6 +134,9 @@ func (v *tasksView) refresh(a *App) {
 		v.list.cursor++
 	}
 	v.buildColumns(a)
+	if v.mode == "kanban" {
+		a.ensureCardFields(v.allColumns)
+	}
 	v.calc().rebuild(v.tasks, v.day)
 }
 
@@ -243,6 +256,12 @@ func (v *tasksView) columnTitle(a *App, id, fallback string) string {
 }
 
 func (v *tasksView) buildColumns(a *App) {
+	// The selection follows its column by id: with empty columns hidden, a
+	// column's place in the row changes as cards come and go.
+	selected := ""
+	if v.col < len(v.columns) {
+		selected = v.columns[v.col].id
+	}
 	cols := []kanbanColumn{}
 	place := func(id string, t vault.Task) {
 		for i := range cols {
@@ -470,7 +489,28 @@ func (v *tasksView) buildColumns(a *App) {
 			return okx && rx < ry
 		})
 	}
+	v.allColumns = cols
+	if a.prefs.KanbanHideEmptyColumns {
+		shown := []kanbanColumn{}
+		for _, c := range cols {
+			if len(c.cards) > 0 {
+				shown = append(shown, c)
+			}
+		}
+		cols = shown
+	}
 	v.columns = cols
+	for i, c := range cols {
+		if c.id == selected {
+			v.col = i
+		}
+	}
+	for i, c := range cols {
+		if v.wantCol != "" && c.id == v.wantCol {
+			v.col = i
+			v.wantCol = ""
+		}
+	}
 	if v.col >= len(cols) {
 		v.col = max(0, len(cols)-1)
 	}
@@ -593,11 +633,15 @@ func (v *tasksView) renderList(a *App, w, h int, focused bool) string {
 func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 	th := a.theme
 	if len(v.columns) == 0 {
+		if len(v.allColumns) > 0 {
+			return fitBlock(" "+th.Muted.Render("No cards. Empty columns are hidden (B e shows them)."), w, h)
+		}
 		return fitBlock(" "+th.Muted.Render("No columns"), w, h)
 	}
 	colW := max(12, (w-len(v.columns)+1)/len(v.columns))
 	blocks := []string{}
 	v.boardStarts = make([]int, len(v.columns))
+	v.boardCards = make([][]cardSpan, len(v.columns))
 	for ci, col := range v.columns {
 		lines := []string{}
 		title := fmt.Sprintf(" %s", col.title)
@@ -614,41 +658,51 @@ func (v *tasksView) renderBoard(a *App, w, h int, focused bool) string {
 		} else {
 			lines = append(lines, th.Border.Render(strings.Repeat("─", colW)))
 		}
+		// The selected column scrolls just far enough to show its card whole:
+		// walk up from it while the cards above still fit.
 		cardRows := h - 2
 		start := 0
-		if ci == v.col && v.card*3 >= cardRows {
-			start = v.card - cardRows/3 + 1
+		if ci == v.col && v.card < len(col.cards) {
+			used := 0
+			for i := v.card; i >= 0; i-- {
+				rows := v.cardFace(a, col.cards[i], colW).height()
+				if i < v.card {
+					rows++
+				}
+				if used+rows > cardRows && i < v.card {
+					start = i + 1
+					break
+				}
+				used += rows
+			}
 		}
 		v.boardStarts[ci] = start
 		for i := start; i < len(col.cards) && len(lines) < h; i++ {
 			c := col.cards[i]
 			selected := focused && ci == v.col && i == v.card
-			text := c.Content
-			if c.Kind == "file" {
-				text = c.NoteTitle
-			}
-			first := truncateCells(" "+text, colW)
-			meta := []string{}
-			if c.Due != "" {
-				if vault.IsOverdue(c, time.Now()) {
-					meta = append(meta, th.Overdue.Render(c.Due))
-				} else {
-					meta = append(meta, th.Dim.Render(c.Due))
-				}
-			}
-			if c.Priority != "" {
-				meta = append(meta, lipgloss.NewStyle().Foreground(th.Purple).Render("!"+c.Priority))
-			}
-			if c.Waiting {
-				meta = append(meta, th.Dim.Render("waiting"))
-			}
-			meta = append(meta, th.Muted.Render(truncateCells(c.NoteTitle, max(4, colW-2-lipgloss.Width(strings.Join(meta, " "))))))
-			second := " " + strings.Join(meta, " ")
+			face := v.cardFace(a, c, colW)
+			v.boardCards[ci] = append(v.boardCards[ci], cardSpan{top: len(lines) - 2, height: face.height()})
 			if selected {
 				bar := th.BorderFocus.Render("▍")
-				lines = append(lines, bar+th.SelectedFocus.Render(padRight(strings.TrimPrefix(first, " "), colW-1)), bar+th.Selected.Render(padRight(stripAnsi(strings.Join(meta, " ")), colW-1)))
+				for _, row := range face.title {
+					lines = append(lines, bar+th.SelectedFocus.Render(padRight(row, colW-1)))
+				}
+				if len(face.meta) > 0 {
+					lines = append(lines, bar+th.Selected.Render(padRight(face.metaPlain, colW-1)))
+				}
+				if face.fields != "" {
+					lines = append(lines, bar+th.Selected.Render(padRight(face.fields, colW-1)))
+				}
 			} else {
-				lines = append(lines, padRight(th.Base.Render(first), colW), padRight(second, colW))
+				for _, row := range face.title {
+					lines = append(lines, padRight(th.Base.Render(" "+row), colW))
+				}
+				if len(face.meta) > 0 {
+					lines = append(lines, padRight(" "+strings.Join(face.meta, " "), colW))
+				}
+				if face.fields != "" {
+					lines = append(lines, padRight(" "+th.Muted.Render(face.fields), colW))
+				}
 			}
 			if len(lines) < h {
 				lines = append(lines, strings.Repeat(" ", colW))
@@ -944,6 +998,7 @@ func (v *tasksView) boardKey(a *App, k vim.Key) bool {
 		return false
 	}
 	t := v.selectedTask()
+	v.wantCol = ""
 	switch {
 	case k.IsRune('h') || k.Is("left"):
 		if v.col > 0 {
@@ -964,12 +1019,12 @@ func (v *tasksView) boardKey(a *App, k vim.Key) bool {
 			v.card--
 		}
 	case k.IsRune('H') || (k.Is("left") && k.Shift):
-		if t != nil && v.col > 0 {
-			v.moveCard(a, *t, v.col-1)
+		if t != nil {
+			v.moveCardBy(a, *t, -1)
 		}
 	case k.IsRune('L') || (k.Is("right") && k.Shift):
-		if t != nil && v.col < len(v.columns)-1 {
-			v.moveCard(a, *t, v.col+1)
+		if t != nil {
+			v.moveCardBy(a, *t, 1)
 		}
 	case k.IsRune('g'):
 		opts := v.groupOptions()
@@ -1006,9 +1061,35 @@ func (v *tasksView) boardKey(a *App, k vim.Key) bool {
 	return true
 }
 
-// moveCard rewrites a task so it lands in another column.
+// moveCardBy moves a card one column left or right. It walks every column
+// of the board, the hidden empty ones too: hiding them is about the screen,
+// and the next state in a workflow is often a column nothing is in yet.
+func (v *tasksView) moveCardBy(a *App, t vault.Task, delta int) {
+	if v.col >= len(v.columns) {
+		return
+	}
+	all := v.allColumns
+	if len(all) == 0 {
+		all = v.columns
+	}
+	for i, c := range all {
+		if c.id != v.columns[v.col].id {
+			continue
+		}
+		if next := i + delta; next >= 0 && next < len(all) {
+			v.moveCardTo(a, t, all[next])
+		}
+		return
+	}
+}
+
+// moveCard moves a card to the column at an index of the columns on screen.
 func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
-	col := v.columns[target]
+	v.moveCardTo(a, t, v.columns[target])
+}
+
+// moveCardTo rewrites a task so it lands in another column.
+func (v *tasksView) moveCardTo(a *App, t vault.Task, col kanbanColumn) {
 	switch v.groupBy {
 	case "priority":
 		p := col.id
@@ -1048,7 +1129,12 @@ func (v *tasksView) moveCard(a *App, t vault.Task, target int) {
 		a.setTaskField(t, strings.TrimPrefix(v.groupBy, "field:"), val)
 	}
 
-	v.col = target
+	v.wantCol = col.id
+	for i, c := range v.columns {
+		if c.id == col.id {
+			v.col = i
+		}
+	}
 }
 
 func (v *tasksView) calendarKey(a *App, k vim.Key) bool {

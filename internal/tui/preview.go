@@ -29,7 +29,15 @@ type previewState struct {
 	// followed to an anchor; jumpPending says one is waiting.
 	jumpLine    int
 	jumpPending bool
-	cache       *previewCache
+	// frontFlipped is set once the tab has flipped its frontmatter away from
+	// what the preview_frontmatter setting shows.
+	frontFlipped bool
+	// restoreLine is the source line a flip of the frontmatter keeps under the
+	// cursor, restoreOffset rows below the top of the view.
+	restoreLine    int
+	restoreOffset  int
+	restorePending bool
+	cache          *previewCache
 }
 
 type previewCache struct {
@@ -37,6 +45,7 @@ type previewCache struct {
 	width   int
 	style   string
 	dark    bool
+	front   string
 	lines   []previewLine
 }
 
@@ -49,6 +58,8 @@ type previewLine struct {
 	// taskBack is how many source lines above srcLine the row's task sits, for a
 	// paragraph under a task item.
 	taskBack int
+	// front marks the summary row of the frontmatter: Enter opens and closes it.
+	front bool
 }
 
 // taskLine is the source line of the task a row toggles.
@@ -94,6 +105,14 @@ func (a *App) renderPreviewLines(text string, width int) []previewLine {
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
+		if inFront && !frontDone && i == 0 {
+			if end := frontmatterEnd(lines); end > 0 {
+				out = append(out, a.frontmatterRows(lines, end, width)...)
+				frontDone, inFront = true, false
+				i = end + 1
+				continue
+			}
+		}
 		if inFront && !frontDone {
 			if i > 0 && (line == "---" || line == "...") {
 				frontDone = true
@@ -732,9 +751,14 @@ func (a *App) previewLinesFor(t *tab, buf *noteBuffer, width int) []previewLine 
 	}
 	pv := t.preview
 	style := a.prefs.PreviewStyle
-	if pv.cache == nil || pv.cache.version != buf.ed.Version() || pv.cache.width != width || pv.cache.style != style || pv.cache.dark != a.theme.Dark {
+	front := frontmatterDisplay(a.prefs.PreviewFrontmatter, pv.frontFlipped)
+	if pv.cache == nil || pv.cache.version != buf.ed.Version() || pv.cache.width != width || pv.cache.style != style || pv.cache.dark != a.theme.Dark || pv.cache.front != front {
 		var lines []previewLine
 		a.previewPath = buf.path
+		// Only a note's own preview folds its frontmatter: every other caller
+		// of the renderers leaves previewFront empty and gets the block as is.
+		a.previewFront = front
+		defer func() { a.previewFront = "" }()
 		a.latexNoticeShown = false
 		if strings.EqualFold(style, "zen") {
 			lines = a.renderPreviewLines(buf.ed.Text(), width)
@@ -749,7 +773,7 @@ func (a *App) previewLinesFor(t *tab, buf *noteBuffer, width int) []previewLine 
 				lines = a.renderPreviewLines(buf.ed.Text(), width)
 			}
 		}
-		pv.cache = &previewCache{version: buf.ed.Version(), width: width, style: style, dark: a.theme.Dark, lines: lines}
+		pv.cache = &previewCache{version: buf.ed.Version(), width: width, style: style, dark: a.theme.Dark, front: front, lines: lines}
 	}
 	return pv.cache.lines
 }
@@ -773,6 +797,7 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 	lines := a.previewLinesFor(t, buf, width)
 	pv := t.preview
 	pv.rows = h
+	defer func() { pv.restorePending = false }()
 	if t.mode == modeSplit {
 		// Follow the editor cursor.
 		target := previewRowFor(lines, pv.followLine)
@@ -781,6 +806,10 @@ func (a *App) renderPreview(t *tab, buf *noteBuffer, w, h int, focused bool) str
 			pv.scroll = max(0, target-h/3)
 		}
 	} else {
+		if pv.restorePending {
+			pv.cursor = previewRowFor(lines, pv.restoreLine)
+			pv.scroll = max(0, pv.cursor-pv.restoreOffset)
+		}
 		if pv.jumpPending {
 			pv.jumpPending = false
 			pv.cursor = previewRowFor(lines, pv.jumpLine)
@@ -835,7 +864,11 @@ func (pv *previewState) moveTo(row, n, rows int) {
 
 // previewHint is the help line for reading mode.
 func (a *App) previewHint() string {
-	return a.keysHint([]hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}, {"key:Space z s", "split"}, {"vim.leaderPrefix", "leader"}})
+	pairs := []hintPair{{"key:Esc/i", "back to editor"}, {"nav.moveDown|nav.moveUp", "scroll"}, {"key:Enter", "follow link"}, {"nav.toggleTask", "toggle task"}}
+	if t := a.activeTab(); t != nil && t.preview != nil && frontmatterDisplay(a.prefs.PreviewFrontmatter, t.preview.frontFlipped) != frontRaw {
+		pairs = append(pairs, hintPair{"key:Space z f", "frontmatter"})
+	}
+	return a.keysHint(append(pairs, hintPair{"key:Space z s", "split"}, hintPair{"vim.leaderPrefix", "leader"}))
 }
 
 // previewKey handles reading-mode keys.
@@ -923,6 +956,10 @@ func (a *App) previewFollow(t *tab, buf *noteBuffer) {
 		return
 	}
 	row := pv.cache.lines[pv.cursor]
+	if row.front {
+		a.togglePreviewFrontmatter()
+		return
+	}
 	if len(row.links) == 0 {
 		a.notify("No link on this row")
 		return
