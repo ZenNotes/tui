@@ -127,6 +127,16 @@ type Hooks struct {
 	LineRows func(line int) int
 	// Changed is called after every committed change.
 	Changed func()
+	// CompleteCheckbox permits the host to write more than a plain tick. The
+	// editor calls it before it turns the open or in-progress checkbox on line
+	// (0-based) into `[x]`. It passes the whole text as it stands, and
+	// selected tells if a line of that text is in the visual selection. The
+	// host returns the new whole text and replaced, the number of lines from
+	// line that it rewrote, and the editor applies the change in the same undo
+	// step. The new text must keep the first line of that block at line. When
+	// ok is false the editor writes the plain tick. Typing in a checkbox and
+	// unticking never call it.
+	CompleteCheckbox func(text string, line int, selected func(line int) bool) (next string, replaced int, ok bool)
 }
 
 type snapshot struct {

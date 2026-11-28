@@ -549,7 +549,8 @@ and preview, `Alt+.` for zen) work where the terminal sends Option as Alt
 The editor is a full Vim: counts, registers, marks, macros, dot-repeat,
 undo and redo, text objects, visual, visual line and visual block, search,
 `:s` `:g` `:sort` `:norm` with ranges, `gq`, and heading motions `]]` `[[`.
-Markdown on top: `Ctrl+L` toggles the checkbox on the line, `gd` follows a
+Markdown on top: `Ctrl+L` toggles the checkbox on the line and gives a task
+with `@repeat:` its next occurrence, `gd` follows a
 link, `gx` opens a URL, `gy` copies a link, `zc zo zM zR` fold headings,
 Enter continues lists, Tab indents list items, `[[` opens the note picker
 in insert mode, and fenced code is syntax-highlighted.

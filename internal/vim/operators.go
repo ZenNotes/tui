@@ -735,17 +735,31 @@ var bulletOnlyRe = regexp.MustCompile(`^(\s*(?:>\s*)*(?:[-+*]|\d+[.)])\s+)(.*)$`
 // ToggleCheckboxAtCursor turns the current line into a checkbox and toggles
 // it on repeat: plain text becomes `- [ ] text`, a bullet keeps its marker,
 // `[ ]` flips to `[x]` and back, `[/]` checks off, `[>]` and `[-]` stay.
+//
+// When the host sets Hooks.CompleteCheckbox, the editor asks it before it
+// ticks an open or in-progress checkbox. The host can write more than the
+// tick, such as the next occurrence of a repeating task. A line the host
+// rewrote, with the lines under it that it replaced, is not toggled again.
+// A lone cursor stays on its line, and the line moves only when the host
+// adds lines above it.
 func (e *Editor) ToggleCheckboxAtCursor() {
 	e.beginChange()
-	lines := []int{e.cursor.Line}
-	if e.inVisual() {
+	visual := e.inVisual()
+	first, last := e.cursor.Line, e.cursor.Line
+	if visual {
 		start, end, _, _ := e.VisualRange()
-		lines = nil
-		for l := start.Line; l <= end.Line; l++ {
-			lines = append(lines, l)
-		}
+		first, last = start.Line, end.Line
 	}
-	for _, l := range lines {
+	// added counts the lines the host put in so far. The loop and the
+	// selection test use the text as it stands, so they add it to the old
+	// line numbers.
+	added := 0
+	cursorLine := e.cursor.Line
+	cursorMoved := 0
+	selected := func(l int) bool {
+		return visual && l-added >= first && l-added <= last
+	}
+	for l := first; l <= last+added; l++ {
 		s := e.buf.LineString(l)
 		switch {
 		case checkboxLineRe.MatchString(s):
@@ -756,6 +770,14 @@ func (e *Editor) ToggleCheckboxAtCursor() {
 			case "x", "X":
 				e.buf.ReplaceLine(l, []rune(m[1]+" "+m[3]))
 			default:
+				if span, n, ok := e.completeCheckbox(l, selected); ok {
+					if cursorLine >= l-added+span {
+						cursorMoved += n
+					}
+					l += span + n - 1
+					added += n
+					continue
+				}
 				e.buf.ReplaceLine(l, []rune(m[1]+"x"+m[3]))
 			}
 		case bulletOnlyRe.MatchString(s):
@@ -766,13 +788,36 @@ func (e *Editor) ToggleCheckboxAtCursor() {
 			e.buf.ReplaceLine(l, []rune(string(indent)+"- [ ] "+strings.TrimLeft(s, " \t")))
 		}
 	}
-	if e.inVisual() {
+	if visual {
 		e.exitVisual()
 	}
+	e.cursor.Line += cursorMoved
 	if e.mode == ModeInsert {
 		e.cursor = e.buf.clampInsert(e.cursor)
 	} else {
 		e.cursor = e.buf.clampNormal(e.cursor)
 		e.commitChange()
 	}
+}
+
+// completeCheckbox asks the host to tick the checkbox on line. When the host
+// accepts, the editor swaps the lines the host rewrote into the buffer. span
+// is how many old lines that was, and added is how many lines the buffer
+// gained. ok is false when there is no hook or the host returns ok false. The
+// buffer is then unchanged.
+func (e *Editor) completeCheckbox(line int, selected func(int) bool) (span, added int, ok bool) {
+	if e.hooks.CompleteCheckbox == nil {
+		return 0, 0, false
+	}
+	next, span, ok := e.hooks.CompleteCheckbox(e.buf.Text(), line, selected)
+	if !ok || span < 1 || line+span > e.buf.LineCount() {
+		return 0, 0, false
+	}
+	lines := strings.Split(next, "\n")
+	added = len(lines) - e.buf.LineCount()
+	if line+span+added > len(lines) || span+added < 1 {
+		return 0, 0, false
+	}
+	e.buf.ReplaceLines(line, line+span-1, lines[line:line+span+added])
+	return span, added, true
 }

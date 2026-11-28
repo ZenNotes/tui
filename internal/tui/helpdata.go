@@ -92,7 +92,7 @@ func helpLines(a *App, filter string) []string {
 		"v V Ctrl+V gv o\tCharacter, line and block visual modes; block insert with I and A",
 		"",
 		"## Editor: Markdown",
-		"Ctrl+L\tToggle the checkbox on the line (also in insert mode)",
+		"Ctrl+L\tToggle the checkbox on the line (also in insert mode); a repeating task gets its next occurrence",
 		"gd\tFollow the link under the cursor (wikilink, Markdown link or URL); missing notes are created on confirm",
 		"gx\tOpen the URL under the cursor in the browser",
 		"gy\tCopy the link under the cursor",

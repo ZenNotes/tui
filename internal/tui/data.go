@@ -233,20 +233,46 @@ func (a *App) periodicTemplateID(kind periodic.Kind) string {
 	return a.idx.settings.DailyNotes.TemplateID
 }
 
+// dailyDueOf is the date a daily note gives its tasks. ok is false when n is
+// not a daily note, or when the vault settings do not give its date to tasks.
+func (a *App) dailyDueOf(n vault.NoteMeta) (date string, ok bool) {
+	if a.idx == nil || !a.idx.settings.DailyNotes.Enabled || !a.idx.settings.DailyNotes.TasksDueOnNoteDate {
+		return "", false
+	}
+	if n.Folder != vault.FolderInbox {
+		return "", false
+	}
+	_, sub := a.folderOfPath(n.Path)
+	d, ok := periodic.DateOf(periodic.Daily, sub, n.Title, a.idx.settings, a.primaryAtRoot())
+	if !ok {
+		return "", false
+	}
+	return d.Format("2006-01-02"), true
+}
+
+// dailyDueOfPath is dailyDueOf for the note at path, or "" for any other.
+func (a *App) dailyDueOfPath(path string) string {
+	if a.idx == nil {
+		return ""
+	}
+	n, ok := a.idx.byPath[path]
+	if !ok {
+		return ""
+	}
+	date, _ := a.dailyDueOf(n)
+	return date
+}
+
 // dailyDueByPath maps daily notes to their dates so undated tasks inside
 // them land on the calendar for that day.
 func (a *App) dailyDueByPath() map[string]string {
 	out := map[string]string{}
-	if a.idx == nil || !a.idx.settings.DailyNotes.Enabled || !a.idx.settings.DailyNotes.TasksDueOnNoteDate {
+	if a.idx == nil {
 		return out
 	}
 	for _, n := range a.idx.notes {
-		if n.Folder != vault.FolderInbox {
-			continue
-		}
-		_, sub := a.folderOfPath(n.Path)
-		if date, ok := periodic.DateOf(periodic.Daily, sub, n.Title, a.idx.settings, a.primaryAtRoot()); ok {
-			out[n.Path] = date.Format("2006-01-02")
+		if date, ok := a.dailyDueOf(n); ok {
+			out[n.Path] = date
 		}
 	}
 	return out
