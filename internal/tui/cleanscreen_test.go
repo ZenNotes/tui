@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -218,5 +219,57 @@ func TestMessagesCannotSetColours(t *testing.T) {
 	a.notifyError("could not save a\x1b[8mb")
 	if strings.Contains(a.View(), "\x1b[8m") {
 		t.Fatal("an error sent the colour")
+	}
+}
+
+// A note's title, file name and frontmatter values show a colour escape as
+// text in the status line, the editor, both reading view styles, the note
+// picker and the connections panel.
+func TestTitleAndFrontmatterShowControlRunes(t *testing.T) {
+	const colour = "\x1b[31m"
+	root := newSessionParityVault(t)
+	plain := "Plain.md"
+	if runtime.GOOS != "windows" { // Windows refuses an escape in a file name.
+		plain = "Red" + colour + "Name.md"
+	}
+	notes := map[string]string{
+		plain:      "---\nowner: Bob" + colour + "x\n---\n\n# Plain\n\n[[Other]]\n",
+		"Other.md": "# Other\n\n[[" + strings.TrimSuffix(plain, ".md") + "]]\n",
+	}
+	for name, body := range notes {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := newSessionParityApp(t, root)
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	a.openNote(plain, true)
+	for i := range a.idx.notes {
+		a.idx.notes[i].Title = "Red" + colour + "Title"
+	}
+
+	check := func(view, want string) {
+		t.Helper()
+		frame := a.View()
+		if strings.Contains(frame, colour) {
+			t.Errorf("%s sends the note's colour:\n%s", view, stripAnsi(frame))
+		}
+		if !strings.Contains(stripAnsi(frame), want) {
+			t.Errorf("%s does not show %q:\n%s", view, want, stripAnsi(frame))
+		}
+	}
+	const title, value = "Red\u241b[31mTitle", "Bob\u241b[31mx"
+	if plain != "Plain.md" {
+		check("status line", "Red\u241b[31mName")
+	}
+	check("editor", value)
+	for _, style := range []string{"auto", "zen"} {
+		a.prefs.PreviewStyle = style
+		a.setPaneMode(modePreview)
+		check(style+" reading view", value)
+	}
+	for _, line := range []string{"notes", "connections"} {
+		a.runCommandLine(line)
+		check(":"+line, title)
 	}
 }
