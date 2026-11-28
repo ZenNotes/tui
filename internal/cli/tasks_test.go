@@ -77,3 +77,69 @@ func TestTaskTogglePrintsWhereARecurringTaskWent(t *testing.T) {
 		t.Fatalf("%q", data)
 	}
 }
+
+// A vault of checkbox tasks and task notes lists the same JSON bytes as zn
+// v0.18.1, with and without --all.
+func TestTaskListJSONMatchesReleasedForDefaultVault(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("testdata", "default-tasks"))); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		golden string
+		flags  []string
+	}{
+		{"default-tasks.json", nil},
+		{"default-tasks-all.json", []string{"--all"}},
+	} {
+		want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := append([]string{"task", "list", "--json", "--vault", root}, tc.flags...)
+		out := captureOutput(t, func() {
+			if code := Main(args); code != 0 {
+				t.Errorf("zn %v exited %d", args, code)
+			}
+		})
+		if out != string(want) {
+			t.Errorf("zn %v differs from testdata/%s:\n%s", args, tc.golden, out)
+		}
+	}
+}
+
+// This vault holds only the `@repeat:` values of released zn: daily, weekly,
+// weekdays, `mon/thu` and `after-3d`. It also holds a date in `@remind:`. It
+// lists the same text and JSON as zn v0.18.1. `zn task list`, `zn task list
+// --json` and `zn task list --json --all` over testdata/released-repeat made
+// the golden files.
+func TestTaskListMatchesReleasedForUpstreamRepeat(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	if err := os.CopyFS(root, os.DirFS(filepath.Join("testdata", "released-repeat"))); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		golden string
+		flags  []string
+	}{
+		{"released-repeat.txt", nil},
+		{"released-repeat.json", []string{"--json"}},
+		{"released-repeat-all.json", []string{"--json", "--all"}},
+	} {
+		want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := append([]string{"task", "list", "--vault", root}, tc.flags...)
+		out := captureOutput(t, func() {
+			if code := Main(args); code != 0 {
+				t.Errorf("zn %v exited %d", args, code)
+			}
+		})
+		if out != string(want) {
+			t.Errorf("zn %v differs from testdata/%s:\n%s", args, tc.golden, out)
+		}
+	}
+}

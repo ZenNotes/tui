@@ -4,3 +4,5 @@
 internal/remote/testdata/** text eol=lf
 internal/vault/testdata/** text eol=lf
 internal/mcp/testdata/** text eol=lf
+internal/cli/testdata/** text eol=lf
+internal/tui/testdata/** text eol=lf
