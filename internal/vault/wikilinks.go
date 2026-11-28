@@ -249,22 +249,27 @@ func markInlineCode(mask []bool, line string) {
 	}
 }
 
-// RewriteWikilinksForRename rewrites every `[[target]]` / `![[target]]` in
-// body whose target resolves to the note at oldPath, pointing it at newTitle.
-// Aliases, anchors and embeds are preserved; code is skipped. notes must
-// reflect the vault BEFORE the rename.
+// RewriteWikilinksForRename rewrites each `[[target]]` / `![[target]]` in
+// the note body whose target resolves to the note at oldPath, and points it
+// at newTitle. It keeps aliases, anchors and embeds. It skips code and the
+// frontmatter, because a [[link]] in the frontmatter is not a link. notes
+// must show the vault BEFORE the rename.
 func RewriteWikilinksForRename(body string, notes []NoteMeta, oldPath, newTitle string) (string, int) {
 	matches := wikilinkRewriteRe.FindAllStringSubmatchIndex(body, -1)
 	if len(matches) == 0 {
 		return body, 0
 	}
 	mask := wikiCodeMask(body)
+	fmEnd := 0
+	if loc := frontmatterRe.FindStringIndex(body); loc != nil {
+		fmEnd = loc[1]
+	}
 	var sb strings.Builder
 	last := 0
 	changed := 0
 	for _, m := range matches {
 		start, end := m[0], m[1]
-		if mask[start] {
+		if start < fmEnd || mask[start] {
 			continue
 		}
 		embed := body[m[2]:m[3]]
