@@ -593,7 +593,7 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   note at the line, `p d w c /` set priority, due date, waiting, cancelled
   and in progress, `f` filters, `m` opens the menu. The list and the default
   board use Today / Upcoming / No due date / In progress / Waiting / Done
-  (moving a card to No due date clears its due date). `O` or `:order
+  (moving a card to No due date clears its due date and planned day). `O` or `:order
   priority|note` orders the list inside each group by priority or by the
   notes' line order (`tasks_list_order`, shared with the desktop's Order
   menu; `J`/`K` reorder in note order). `H`/`L` move a card;
@@ -620,9 +620,16 @@ reloads it afterwards. In Vim mode, `Ctrl+Z` suspends to the shell.
   column. `Enter` and `Tab` move focus
   between the day grid, the selected day's items and the No-date strip. On
   a focused item or strip task, `T` moves it to today and `@` opens a
-  due-date menu, as in the desktop calendar. Unlike the
-  desktop calendar, the terminal calendar also places a task on its
-  scheduled date (marked) as well as its due date.
+  due-date menu, as in the desktop calendar.
+  As on the desktop, every Tasks layout and Home put a task on one day:
+  its planned day (`@scheduled:YYYY-MM-DD` on the line, `scheduled:` in a
+  task note's frontmatter) when it has one, its due date otherwise. Once the
+  due date arrives the task sits on it, and a planned day that passed puts
+  an open task under today without making it overdue; overdue reads the due
+  date only. The calendar marks an entry its plan placed with `»`, list rows
+  show `plan <day>` before the due date and cards `»<day>` after it, and the
+  menu's Plan for… sets or clears it. On the board's date columns a planned
+  card moves its plan.
 - **Tags**: `Tab` multi-selects, `a` toggles any/all, `r`/`x` rename or
   remove a tag everywhere.
 - **Databases**: every `.base` folder and every loose `.csv` file, with

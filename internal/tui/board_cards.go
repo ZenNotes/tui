@@ -55,12 +55,18 @@ func (v *tasksView) cardFace(a *App, c vault.Task, colW int) cardFace {
 		face.meta = append(face.meta, style.Render(s))
 		plain = append(plain, s)
 	}
-	if c.Due != "" {
+	// The deadline first, then the planned day behind the calendar's plan
+	// mark, so a narrow card cut short still shows the date it is late by.
+	// The date a planned day took over from a daily note is not the card's.
+	if deadline := vault.TaskDeadline(c); deadline != "" {
 		if vault.IsOverdue(c, time.Now()) {
-			add(th.Overdue, c.Due)
+			add(th.Overdue, deadline)
 		} else {
-			add(th.Dim, c.Due)
+			add(th.Dim, deadline)
 		}
+	}
+	if plan := vault.PlannedDay(c); plan != "" && !c.Checked && !c.Cancelled {
+		add(th.Dim, calScheduledMark+plan)
 	}
 	if c.Priority != "" {
 		add(lipgloss.NewStyle().Foreground(th.Purple), "!"+c.Priority)

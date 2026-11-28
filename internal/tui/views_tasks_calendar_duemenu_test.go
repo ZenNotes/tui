@@ -106,13 +106,15 @@ func TestDueMenuRelativeChoicesSetDue(t *testing.T) {
 	for _, c := range []struct{ word, due string }{
 		{"today", "2026-10-29"}, {"tomorrow", "2026-10-30"}, {"next week", "2026-11-05"},
 	} {
-		a, _, root, m := calDueMenu(t, map[string]string{"plan.md": calPlanNote}, true)
+		// Planned for its due day, so it sits on the day calDueMenu selects.
+		note := "---\ntags: [task]\ndue: 2026-11-18\nscheduled: 2026-11-18\n---\n# Plan the move\n"
+		a, _, root, m := calDueMenu(t, map[string]string{"plan.md": note}, true)
 		calPick(t, a, m, c.word)
 		body := calReadFile(t, root, "plan.md")
 		if !strings.Contains(body, "due: "+c.due) && !strings.Contains(body, "due:"+c.due) {
 			t.Errorf("%s: due is not %s:\n%s", c.word, c.due, body)
 		}
-		if !strings.Contains(body, "scheduled: 2026-11-16") {
+		if !strings.Contains(body, "scheduled: 2026-11-18") {
 			t.Errorf("%s: scheduled changed:\n%s", c.word, body)
 		}
 	}

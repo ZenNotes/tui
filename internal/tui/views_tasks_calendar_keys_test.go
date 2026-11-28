@@ -261,7 +261,10 @@ func TestItemPanelEditKeysChangeDue(t *testing.T) {
 	}
 }
 
+// > on a planned task counts from its due date, not from the planned day it
+// sits on (nudgedDueDate on the desktop).
 func TestItemPanelShiftOnScheduledEntryMovesDue(t *testing.T) {
+	calFixToday(t, calDate(2026, time.October, 29))
 	a, tv, root := calVaultApp(t, map[string]string{"plan.md": calPlanNote})
 	tv.selectDay(a, calDate(2026, time.November, 16))
 	calPress(a, tv, vim.KeyEnter)

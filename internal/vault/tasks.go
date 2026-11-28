@@ -1077,9 +1077,12 @@ func ComposeTaskFile(in ComposeTaskFileInput) string {
 }
 
 // GroupTasks buckets tasks for the list view. Waiting overrides everything
-// but Done. Tasks without a due date have their own group, as in the desktop
-// app since ZenNotes 2.76 (#990): they used to land in Today. A daily-note task
-// is dated by InferDailyTaskDueDates before it gets here, so it stays in Today.
+// but Done. A task is grouped by the day it sits on (TaskDay): its planned day
+// when it has one, its deadline otherwise, and today for a planned day it
+// missed. Only a deadline that passed counts as overdue. Tasks without a day
+// have their own group, as in the desktop app since ZenNotes 2.76 (#990): they
+// used to land in Today. A daily-note task is dated by InferDailyTaskDueDates
+// before it gets here, so it stays in Today.
 func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 	todayISO := TodayISO(today)
 	g := TaskGroups{}
@@ -1087,25 +1090,42 @@ func GroupTasks(tasks []Task, today time.Time) TaskGroups {
 		switch {
 		case task.Cancelled:
 			g.Cancelled = append(g.Cancelled, task)
+			continue
 		case task.Forwarded:
 			g.Forwarded = append(g.Forwarded, task)
+			continue
 		case task.Checked:
 			g.Done = append(g.Done, task)
+			continue
 		case task.Waiting:
 			g.Waiting = append(g.Waiting, task)
-		case task.Due == "":
+			continue
+		}
+		day := TaskDay(task, todayISO)
+		switch {
+		case day == "":
 			g.Undated = append(g.Undated, task)
-		case task.Due < todayISO:
+		case day < todayISO:
+			// Only a deadline puts a task on a day before today: a missed
+			// planned day sits on today itself.
 			g.Today = append(g.Today, task)
 			g.OverdueCount++
-		case task.Due == todayISO:
+		case day == todayISO:
 			g.Today = append(g.Today, task)
 		default:
 			g.Upcoming = append(g.Upcoming, task)
 		}
 	}
+	// Live work sorts by the day it sits on; waiting and forwarded tasks keep
+	// their due date, as on the desktop.
+	sortDay := func(t Task) string {
+		if t.Cancelled || t.Forwarded || t.Checked || t.Waiting {
+			return t.Due
+		}
+		return TaskDay(t, todayISO)
+	}
 	byDueThenPath := func(a, b Task) bool {
-		ad, bd := a.Due, b.Due
+		ad, bd := sortDay(a), sortDay(b)
 		if ad == "" {
 			ad = "9999-99-99"
 		}
@@ -1211,12 +1231,14 @@ func IsTaskOpen(t Task) bool {
 	return !t.Checked && !t.Cancelled
 }
 
-// IsOverdue is true for an open, non-waiting task whose due date has passed.
+// IsOverdue is true for an open, non-waiting task whose deadline has passed.
+// It reads the deadline only: a planned day that passed is not lateness.
 func IsOverdue(t Task, today time.Time) bool {
-	if t.Checked || t.Waiting || t.Due == "" {
+	deadline := TaskDeadline(t)
+	if t.Checked || t.Waiting || deadline == "" {
 		return false
 	}
-	return t.Due < TodayISO(today)
+	return deadline < TodayISO(today)
 }
 
 // InferDailyTaskDueDates gives undated tasks living in a daily note an
@@ -1239,19 +1261,21 @@ func InferDailyTaskDueDates(tasks []Task, dueByPath map[string]string) []Task {
 	return out
 }
 
-// BucketTasksByDueDate groups open tasks by due date; undated ones land under
-// "unscheduled". An undated forwarded record is a record of a move, not
-// unscheduled work, and is skipped.
-func BucketTasksByDueDate(tasks []Task) map[string][]Task {
+// BucketTasksByDay groups open tasks by the day they sit on (TaskDay): a
+// planned day first, the deadline otherwise, today for a planned day that was
+// missed. Tasks without a day land under "unscheduled". An undated forwarded
+// record is a record of a move, not unscheduled work, and is skipped.
+func BucketTasksByDay(tasks []Task, todayISO string) map[string][]Task {
 	out := map[string][]Task{}
 	for _, task := range tasks {
 		if !IsTaskOpen(task) {
 			continue
 		}
-		if task.Forwarded && task.Due == "" {
+		day := TaskDay(task, todayISO)
+		if task.Forwarded && day == "" {
 			continue
 		}
-		key := task.Due
+		key := day
 		if key == "" {
 			key = "unscheduled"
 		}

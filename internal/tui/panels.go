@@ -276,7 +276,7 @@ func (p *calendarPanel) refresh(a *App) {
 			p.hasDaily[d.Format("2006-01-02")] = n.Path
 		}
 	}
-	p.tasks = vault.BucketTasksByDueDate(a.displayTasks())
+	p.tasks = vault.BucketTasksByDay(a.displayTasks(), vault.TodayISO(time.Now()))
 }
 
 func (p *calendarPanel) render(a *App, w, h int) string {

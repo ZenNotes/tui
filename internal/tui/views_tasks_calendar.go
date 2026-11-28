@@ -39,8 +39,8 @@ var calMin = map[calSub][2]int{
 	calDay:   {30, 7},
 }
 
-// calScheduledMark prefixes an entry placed by its scheduled date. It must
-// stay one cell wide.
+// calScheduledMark prefixes an entry its planned day placed, rather than its
+// deadline. It must stay one cell wide.
 const calScheduledMark = "»"
 
 // calRect is a region of the calendar body, in body cells.
@@ -95,7 +95,7 @@ func newTaskCalendar() *taskCalendar { return &taskCalendar{} }
 // rebuild places the (already filtered) tasks and keeps the cursors inside
 // the new lists.
 func (c *taskCalendar) rebuild(tasks []vault.Task, day time.Time) {
-	c.byDay, c.undated = bucketCalendarEntries(tasks)
+	c.byDay, c.undated = bucketCalendarEntries(tasks, vault.TodayISO(calendarNow()))
 	entries := c.dayEntries(day)
 	if c.cursor >= len(entries) {
 		c.cursor = max(0, len(entries)-1)

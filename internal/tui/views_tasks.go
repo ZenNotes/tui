@@ -182,17 +182,19 @@ func taskMatchesTerm(t vault.Task, term string) bool {
 		case "note", "in":
 			match = strings.Contains(strings.ToLower(t.NoteTitle), val)
 		case "due":
+			// The deadline, which a planned day in a daily note replaces.
+			due := vault.TaskDeadline(t)
 			switch val {
 			case "today":
-				match = t.Due == vault.TodayISO(time.Now())
+				match = due == vault.TodayISO(time.Now())
 			case "overdue":
 				match = vault.IsOverdue(t, time.Now())
 			case "none":
-				match = t.Due == ""
+				match = due == ""
 			case "any":
-				match = t.Due != ""
+				match = due != ""
 			default:
-				match = strings.HasPrefix(t.Due, val)
+				match = strings.HasPrefix(due, val)
 			}
 		case "priority", "prio", "p":
 			match = t.Priority == val || (val == "none" && t.Priority == "")
@@ -294,16 +296,19 @@ func (v *tasksView) buildColumns(a *App) {
 			if t.Checked || t.Cancelled || t.Forwarded {
 				continue
 			}
+			// By the day the task sits on: only a deadline is ever before
+			// today, so Overdue still holds late work alone.
+			day := vault.TaskDay(t, todayISO)
 			switch {
-			case t.Due == "":
+			case day == "":
 				place("none", t)
-			case t.Due < todayISO:
+			case day < todayISO:
 				place("overdue", t)
-			case t.Due == todayISO:
+			case day == todayISO:
 				place("today", t)
-			case t.Due == tomorrowISO:
+			case day == tomorrowISO:
 				place("tomorrow", t)
-			case t.Due <= weekISO:
+			case day <= weekISO:
 				place("week", t)
 			default:
 				place("later", t)
@@ -326,10 +331,15 @@ func (v *tasksView) buildColumns(a *App) {
 				id = "waiting"
 			case t.InProgress:
 				id = "in-progress"
-			case t.Due == "":
-				id = "undated"
-			case t.Due > today:
-				id = "upcoming"
+			default:
+				// The list's Today, Upcoming and No due date, by the day the
+				// task sits on.
+				switch day := vault.TaskDay(t, today); {
+				case day == "":
+					id = "undated"
+				case day > today:
+					id = "upcoming"
+				}
 			}
 			place(id, t)
 		}
@@ -571,8 +581,14 @@ func (v *tasksView) taskLine(a *App, t vault.Task, w int, selected bool) string 
 		}
 	}
 	meta := []string{}
-	if t.Due != "" {
-		due := "due " + t.Due
+	// A planned day reads first, the deadline after it: the two dates on the
+	// row are the desktop's plan mark and due chip. The date a planned day
+	// took over from a daily note is not the task's own, so it is not shown.
+	if plan := vault.PlannedDay(t); plan != "" && !t.Checked && !t.Cancelled {
+		meta = append(meta, th.Dim.Render("plan "+plan))
+	}
+	if deadline := vault.TaskDeadline(t); deadline != "" {
+		due := "due " + deadline
 		if vault.IsOverdue(t, time.Now()) {
 			meta = append(meta, th.Overdue.Render(due))
 		} else {
@@ -981,10 +997,18 @@ func (v *tasksView) taskEditKey(a *App, k vim.Key, t *vault.Task) bool {
 		a.taskTextPrompt(*t)
 	case k.IsRune('s'):
 		a.taskFieldPrompt(*t)
-	case k.IsRune('>'):
-		a.shiftTaskDue(*t, 1)
-	case k.IsRune('<'):
-		a.shiftTaskDue(*t, -1)
+	case k.IsRune('>'), k.IsRune('<'):
+		// Without a deadline the calendar counts from the selected day, as
+		// the desktop's does; the list and board from today.
+		base := time.Now()
+		if v.mode == "calendar" {
+			base = v.day
+		}
+		days := 1
+		if k.IsRune('<') {
+			days = -1
+		}
+		a.shiftTaskDue(*t, base, days)
 	case k.IsRune('y'):
 		a.copyText(t.RawText)
 	default:
@@ -1101,13 +1125,13 @@ func (v *tasksView) moveCardTo(a *App, t vault.Task, col kanbanColumn) {
 		today := time.Now()
 		switch col.id {
 		case "today":
-			a.setTaskDue(t, vault.TodayISO(today))
+			a.moveTaskToDay(t, vault.TodayISO(today), today)
 		case "tomorrow":
-			a.setTaskDue(t, vault.TodayISO(today.AddDate(0, 0, 1)))
+			a.moveTaskToDay(t, vault.TodayISO(today.AddDate(0, 0, 1)), today)
 		case "week":
-			a.setTaskDue(t, vault.TodayISO(today.AddDate(0, 0, 7)))
+			a.moveTaskToDay(t, vault.TodayISO(today.AddDate(0, 0, 7)), today)
 		case "none":
-			a.setTaskDue(t, "")
+			a.moveTaskToDay(t, "", today)
 		default:
 			a.notify("Set an explicit date with d to move a task there")
 			return
@@ -1361,14 +1385,73 @@ func (a *App) setTaskDue(t vault.Task, due string) {
 	})
 }
 
-func (a *App) shiftTaskDue(t vault.Task, days int) {
-	base := time.Now()
-	if t.Due != "" {
-		if d, err := time.ParseInLocation("2006-01-02", t.Due, time.Local); err == nil {
-			base = d
-		}
+// shiftTaskDue is `<` and `>`: days from the task's deadline, or from base
+// when it has none. A planned task sits on its plan, so the plan is never what
+// the count starts from.
+func (a *App) shiftTaskDue(t vault.Task, base time.Time, days int) {
+	a.setTaskDue(t, vault.NudgedDueDate(t, vault.TodayISO(base), days))
+}
+
+// moveTaskToDay puts t on day, or with "" on no day, the way the board's date
+// columns move a card. A task without a planned day moves by its due date, as
+// it always did. A planned task sits where its plan puts it, so the plan moves
+// and the deadline stays, unless the deadline has arrived: then it holds the
+// task on itself and moves too.
+func (a *App) moveTaskToDay(t vault.Task, day string, now time.Time) {
+	planned := vault.PlannedDay(t)
+	if planned == "" {
+		a.setTaskDue(t, day)
+		return
 	}
-	a.setTaskDue(t, vault.TodayISO(base.AddDate(0, 0, days)))
+	todayISO := vault.TodayISO(now)
+	a.editTaskLine(t, func(body string) string {
+		set := func(key, value string) {
+			if t.Kind == "file" {
+				body = vault.SetTaskFileField(body, key, value)
+			} else if key == "due" {
+				body = vault.SetTaskDue(body, t.TaskIndex, value)
+			} else {
+				body = vault.SetTaskField(body, t.TaskIndex, key, value)
+			}
+		}
+		if day == "" {
+			set("due", "")
+			set(vault.PlannedDayField, "")
+			return body
+		}
+		// The due date first, so the line reads its two dates in the order
+		// the rest of zn writes them.
+		if deadline := vault.TaskDeadline(t); deadline != "" && deadline <= todayISO && deadline != day {
+			set("due", day)
+		}
+		set(vault.PlannedDayField, day)
+		return body
+	})
+}
+
+// setTaskPlannedDay plans t for day, or with "" takes its plan off. The plan
+// is `@scheduled:` on a checkbox task and frontmatter `scheduled:` on a task
+// note; the deadline is not touched.
+func (a *App) setTaskPlannedDay(t vault.Task, day string) {
+	if !vault.CanPlanTask(t) {
+		a.notify("A done, cancelled or forwarded task has no day left to plan")
+		return
+	}
+	if vault.PlannedDay(t) == day {
+		return
+	}
+	a.setTaskField(t, vault.PlannedDayField, day)
+}
+
+func (a *App) taskPlanPrompt(t vault.Task) {
+	a.promptFor("Plan for", vault.PlannedDay(t), "the day to work on it: YYYY-MM-DD, today, tomorrow, +3, mon..sun, or empty to clear", func(a *App, text string) {
+		day, err := parseDueInput(strings.TrimSpace(text), time.Now())
+		if err != nil {
+			a.notifyError(err.Error())
+			return
+		}
+		a.setTaskPlannedDay(t, day)
+	})
 }
 
 func (a *App) setTaskWaiting(t vault.Task, waiting bool) {
@@ -1441,6 +1524,17 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 				body = vault.SetTaskDue(body, t.TaskIndex, v)
 			}
 		}
+		plan := func(v string) {
+			if t.Kind == "file" {
+				body = vault.SetTaskFileField(body, vault.PlannedDayField, v)
+			} else {
+				body = vault.SetTaskField(body, t.TaskIndex, vault.PlannedDayField, v)
+			}
+		}
+		// A task with a planned day sits where its plan puts it, so the date
+		// columns move the plan and leave the deadline the date it has. A task
+		// without one is moved by its due date, as it always was.
+		planned := vault.PlannedDay(t)
 		now := time.Now()
 		switch status {
 		case "done":
@@ -1457,19 +1551,38 @@ func (a *App) setTaskStatusColumn(t vault.Task, status string) {
 			waiting(false)
 			progress(false)
 			due("")
+			// No day at all means no planned day either.
+			if planned != "" {
+				plan("")
+			}
 		case "today", "upcoming":
 			checked(false)
 			waiting(false)
 			progress(false)
-			date := vault.TodayISO(now)
-			if status == "upcoming" {
-				if t.Due > date {
-					date = t.Due
+			today := vault.TodayISO(now)
+			tomorrow := vault.TodayISO(now.AddDate(0, 0, 1))
+			switch {
+			case status == "today" && planned != "":
+				plan(today)
+			case status == "today":
+				due(today)
+			case planned == "":
+				if t.Due > today {
+					due(t.Due)
 				} else {
-					date = vault.TodayISO(now.AddDate(0, 0, 1))
+					due(tomorrow)
+				}
+			default:
+				// Either date can hold a planned task in Today: a deadline that
+				// arrived, or a plan for today (or one it missed). Each moves
+				// only if it is the one in the way.
+				if deadline := vault.TaskDeadline(t); deadline != "" && deadline <= today {
+					due(tomorrow)
+				}
+				if planned <= today {
+					plan(tomorrow)
 				}
 			}
-			due(date)
 		}
 		return body
 	})
@@ -1577,6 +1690,7 @@ func (a *App) taskMenu(t vault.Task) {
 		{sep: true},
 		{key: "p", label: "Priority", run: func(a *App) { a.taskPriorityMenu(t) }},
 		{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},
+		{label: "Plan for…", run: func(a *App) { a.taskPlanPrompt(t) }},
 		{key: "e", label: "Edit text", run: func(a *App) { a.taskTextPrompt(t) }},
 		{key: "s", label: "Set field", run: func(a *App) { a.taskFieldPrompt(t) }},
 		{key: "f", label: "Forward to today's daily note", run: func(a *App) { a.forwardTask(t) }},

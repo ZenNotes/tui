@@ -261,6 +261,8 @@ func TestMonthBoxOverflowShowsMoreCount(t *testing.T) {
 }
 
 func TestMonthItemPanelListsSelectedDay(t *testing.T) {
+	// Before the planned day, so the plan still holds the task on it.
+	calFixToday(t, calDate(2026, time.November, 10))
 	var tasks []vault.Task
 	for i := 0; i < 6; i++ {
 		tasks = append(tasks, vault.Task{ID: fmt.Sprintf("n#%d", i), SourcePath: "n.md", Content: fmt.Sprintf("panel entry number %d in full", i), Due: "2026-11-18"})
@@ -286,12 +288,17 @@ func TestMonthItemPanelListsSelectedDay(t *testing.T) {
 	}
 }
 
+// A planned task sits on its planned day alone (ZenNotes/zennotes#1119),
+// marked, beside a task that sits there by its due date.
 func TestScheduledEntryCarriesMarker(t *testing.T) {
+	calFixToday(t, calDate(2026, time.November, 10))
 	const text = "twin task with a long tail"
+	const plain = "due task with a long tail"
 	tasks := []vault.Task{
 		{ID: "n#0", SourcePath: "n.md", Kind: "file", Content: text, Due: "2026-11-18", Scheduled: "2026-11-16"},
+		{ID: "n#1", SourcePath: "n.md", Content: plain, Due: "2026-11-16"},
 	}
-	around := func(a *App, tv *tasksView, day time.Time) string {
+	around := func(a *App, tv *tasksView, day time.Time, text string) string {
 		t.Helper()
 		tv.selectDay(a, day)
 		lines := calScreen(a, tv, 120, 40)
@@ -309,10 +316,17 @@ func TestScheduledEntryCarriesMarker(t *testing.T) {
 		return ""
 	}
 	a, tv := calTestApp(t, tasks)
-	due := around(a, tv, calDate(2026, time.November, 18))
-	sched := around(a, tv, calDate(2026, time.November, 16))
-	if due == sched {
-		t.Errorf("scheduled entry looks the same as the due entry: %q", due)
+	due := around(a, tv, calDate(2026, time.November, 16), plain)
+	sched := around(a, tv, calDate(2026, time.November, 16), text)
+	if !strings.Contains(sched, calScheduledMark) {
+		t.Errorf("planned entry = %q, want the %s mark before it", sched, calScheduledMark)
+	}
+	if strings.Contains(due, calScheduledMark) {
+		t.Errorf("due entry = %q, want no mark", due)
+	}
+	tv.selectDay(a, calDate(2026, time.November, 18))
+	if got := calScreenText(calScreen(a, tv, 120, 40)); strings.Contains(got, text) {
+		t.Errorf("the planned task also shows on its due day:\n%s", got)
 	}
 }
 
@@ -500,6 +514,7 @@ func TestMonthRendersInVeryLargeBody(t *testing.T) {
 }
 
 func TestCalendarRenderLeavesNotesUnchanged(t *testing.T) {
+	calFixToday(t, calDate(2026, time.November, 10))
 	a, root := newFeatureTestApp(t)
 	body := []byte("---\ntags: [task]\nscheduled: 2026-11-16\n---\n# Plan the move\n")
 	path := filepath.Join(root, "plan.md")

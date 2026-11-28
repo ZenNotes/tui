@@ -150,8 +150,9 @@ type Task struct {
 	DueInferred bool `json:"dueInferred,omitempty"`
 }
 
-// TaskGroups is the Tasks list's bucketing: Today (due today and overdue),
-// Upcoming, Undated (no due date), Waiting, Done, Forwarded, Cancelled.
+// TaskGroups is the Tasks list's bucketing by the day a task sits on
+// (TaskDay): Today (today, overdue and missed plans), Upcoming, Undated (no
+// day), Waiting, Done, Forwarded, Cancelled.
 type TaskGroups struct {
 	Today        []Task
 	Upcoming     []Task

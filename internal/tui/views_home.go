@@ -98,7 +98,7 @@ func (v *homeView) refresh(a *App) {
 		}
 		if vault.IsOverdue(t, now) {
 			v.stats.overdue++
-		} else if t.Due == todayISO && vault.IsTaskOpen(t) {
+		} else if vault.TaskDeadline(t) == todayISO && vault.IsTaskOpen(t) {
 			v.stats.dueToday++
 		}
 	}
@@ -502,10 +502,17 @@ func (v *homeView) taskRow(a *App, t vault.Task, w int, selected bool) string {
 		glyph = "◩"
 	}
 	meta := ""
-	if vault.IsOverdue(t, time.Now()) {
-		meta = th.Overdue.Render("overdue " + t.Due)
-	} else if t.Due != "" {
-		meta = th.Dim.Render(t.Due)
+	now := time.Now()
+	deadline := vault.TaskDeadline(t)
+	switch {
+	case vault.IsOverdue(t, now):
+		meta = th.Overdue.Render("overdue " + deadline)
+	case vault.DeadlineApartFromDay(t, vault.TodayISO(now)) != "":
+		// Home lists today's work, so a plan for today goes without saying,
+		// and a deadline on another day says what it is.
+		meta = th.Dim.Render("due " + deadline)
+	case deadline != "":
+		meta = th.Dim.Render(deadline)
 	}
 	if t.Priority != "" {
 		meta += " " + lipgloss.NewStyle().Foreground(th.Purple).Render("!"+t.Priority)
@@ -540,7 +547,7 @@ func (v *homeView) noteRow(a *App, n vault.NoteMeta, w int, selected bool) strin
 func (v *homeView) weekLines(a *App, w int, selected bool) []string {
 	th := a.theme
 	cell := max(4, min(6, w/7))
-	byDay := vault.BucketTasksByDueDate(a.displayTasks())
+	byDay := vault.BucketTasksByDay(a.displayTasks(), vault.TodayISO(time.Now()))
 	daily := a.dailyNotesByDate()
 	names, nums, counts := "", "", ""
 	today := time.Now()
