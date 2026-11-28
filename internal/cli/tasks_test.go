@@ -8,6 +8,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ZenNotes/tui/internal/vault"
 )
 
 // A `[-]` cancelled task is abandoned, so `zn task list` leaves it out by
@@ -75,5 +78,61 @@ func TestTaskTogglePrintsWhereARecurringTaskWent(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "- [x] water due:2026-01-01") || !strings.Contains(string(data), "- [ ] water @repeat:daily due:") {
 		t.Fatalf("%q", data)
+	}
+}
+
+// The CLI counts a recurring task from today, as the app's MCP does, even in a
+// daily note: only the terminal app counts from the date of the note. The note
+// is three days old, so a weekly step from its date differs from one from today
+// on every day.
+func TestTaskToggleCountsARecurringTaskFromTodayInADailyNote(t *testing.T) {
+	isolatedCLI(t)
+	root := t.TempDir()
+	// Read once before the command runs; a run that crosses midnight counts
+	// from the next day.
+	start := time.Now()
+	noteDate := vault.TodayISO(start.AddDate(0, 0, -3))
+	rel := "Daily Notes/" + noteDate + ".md"
+	const body = "- [ ] water @repeat:7d\n"
+	files := map[string]string{
+		".zennotes/vault.json": `{"primaryNotesLocation":"root","dailyNotes":{"enabled":true}}`,
+		rel:                    body,
+	}
+	for name, text := range files {
+		abs := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	captureOutput(t, func() {
+		if code := Main([]string{"task", "toggle", rel + "#0", "--vault", root}); code != 0 {
+			t.Fatalf("exit %d", code)
+		}
+	})
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	roll := func(day time.Time, fallback string) string {
+		done, ok := vault.CompleteRecurringTaskAtIndex(body, 0, vault.DialectCLI, vault.RecurringOptions{Today: vault.TodayISO(day), FallbackDue: fallback})
+		if !ok {
+			t.Fatal("the task does not repeat")
+		}
+		return done.Body
+	}
+	counted := false
+	for _, day := range []time.Time{start, start.AddDate(0, 0, 1)} {
+		if string(data) == roll(day, "") {
+			counted = true
+		}
+		if string(data) == roll(day, noteDate) {
+			t.Fatalf("note counts from the note date %s: %q", noteDate, data)
+		}
+	}
+	if !counted {
+		t.Fatalf("note = %q, want a roll from today", data)
 	}
 }

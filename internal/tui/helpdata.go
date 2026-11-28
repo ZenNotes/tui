@@ -197,7 +197,7 @@ func helpLines(a *App, filter string) []string {
 		"J K\tMove the task up or down inside its note (list in note order)",
 		"O / :order\tList order: note order or priority (high first in each group); shared with the desktop's Order menu via tasks_list_order",
 		"n f F A\tNew task in the daily note, filter, clear the filter, include archived",
-		"m\tTask menu (includes forward to today's daily note)",
+		"m\tTask menu (includes forward to today's daily note, and Skip this time for a task with @repeat:)",
 		"Board: h l j k\tMove between columns and cards; H L move the card; g cycles the grouping",
 		"Board: B e\tHide or show the columns with no cards ([terminal] kanban_hide_empty_columns); H L still move a card into a hidden column, which then appears",
 		"Board: B l / B c\tLet card titles wrap over 1, 2 or 3 lines (kanban_card_title_lines); choose frontmatter fields to list on each card, such as owner, sprint (kanban_card_fields). A task note's card is one line: its name is not repeated",

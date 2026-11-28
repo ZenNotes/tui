@@ -1318,6 +1318,9 @@ func (a *App) openTaskSource(t vault.Task) {
 }
 
 func (a *App) toggleTask(t vault.Task) {
+	if a.rollRecurringTask(t, false) {
+		return
+	}
 	err := a.mutateNote(t.SourcePath, func(body string) (string, bool) {
 		if t.Kind == "file" {
 			return vault.ToggleFileTaskInBody(body, t.Checked, time.Now()), true
@@ -1408,6 +1411,9 @@ func (a *App) setTaskField(t vault.Task, key, value string) {
 
 // setTaskStatusColumn changes scheduling/checkbox state independently of custom fields.
 func (a *App) setTaskStatusColumn(t vault.Task, status string) {
+	if status == "done" && a.rollRecurringTask(t, false) {
+		return
+	}
 	a.editTaskLine(t, func(body string) string {
 		checked := func(v bool) {
 			if t.Kind == "file" {
@@ -1568,20 +1574,80 @@ func (a *App) taskFieldPrompt(t vault.Task) {
 }
 
 func (a *App) taskMenu(t vault.Task) {
-	a.showMenu(truncateCells(t.Content, 40), []menuItem{
+	items := []menuItem{
 		{key: "o", label: "Open note", run: func(a *App) { a.openTaskSource(t) }},
 		{key: "x", label: "Toggle done", run: func(a *App) { a.toggleTask(t) }},
 		{key: "/", label: "Toggle in progress", run: func(a *App) { a.setTaskInProgress(t, !t.InProgress) }},
 		{key: "w", label: "Toggle waiting", run: func(a *App) { a.setTaskWaiting(t, !t.Waiting) }},
 		{key: "c", label: "Toggle cancelled", run: func(a *App) { a.setTaskCancelled(t, !t.Cancelled) }},
-		{sep: true},
-		{key: "p", label: "Priority", run: func(a *App) { a.taskPriorityMenu(t) }},
-		{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},
-		{key: "e", label: "Edit text", run: func(a *App) { a.taskTextPrompt(t) }},
-		{key: "s", label: "Set field", run: func(a *App) { a.taskFieldPrompt(t) }},
-		{key: "f", label: "Forward to today's daily note", run: func(a *App) { a.forwardTask(t) }},
-		{key: "y", label: "Copy line", run: func(a *App) { a.copyText(t.RawText) }},
+	}
+	if canRollTask(t) && vault.HasValidRepeatRule(t.RawText) && !t.Cancelled && !t.Forwarded {
+		// The keys j, k and q move or close the menu, so the item cannot use k.
+		items = append(items, menuItem{key: "n", label: "Skip this time", run: func(a *App) { a.rollRecurringTask(t, true) }})
+	}
+	a.showMenu(truncateCells(t.Content, 40), append(items,
+		menuItem{sep: true},
+		menuItem{key: "p", label: "Priority", run: func(a *App) { a.taskPriorityMenu(t) }},
+		menuItem{key: "d", label: "Due date", run: func(a *App) { a.taskDuePrompt(t) }},
+		menuItem{key: "e", label: "Edit text", run: func(a *App) { a.taskTextPrompt(t) }},
+		menuItem{key: "s", label: "Set field", run: func(a *App) { a.taskFieldPrompt(t) }},
+		menuItem{key: "f", label: "Forward to today's daily note", run: func(a *App) { a.forwardTask(t) }},
+		menuItem{key: "y", label: "Copy line", run: func(a *App) { a.copyText(t.RawText) }},
+	))
+}
+
+// canRollTask says whether a check-off writes the next occurrence of the task:
+// an open inline task with `@repeat:`.
+func canRollTask(t vault.Task) bool {
+	return t.Kind != "file" && !t.Checked && strings.Contains(strings.ToLower(t.RawText), "@repeat:")
+}
+
+// rollRecurringTask checks off, or with skip skips, an open repeating task:
+// the next occurrence goes above it. It counts from the date of the daily note
+// that holds the task, as the app does, and not from today. It returns false
+// when the task does not repeat, and the caller toggles it as usual.
+func (a *App) rollRecurringTask(t vault.Task, skip bool) bool {
+	if !canRollTask(t) {
+		return false
+	}
+	opts := vault.RecurringOptions{Today: vault.TodayISO(calendarNow()), FallbackDue: a.recurrenceBase(t), Skip: skip}
+	var done vault.RecurringCompletion
+	rolled := false
+	err := a.mutateNote(t.SourcePath, func(body string) (string, bool) {
+		done, rolled = vault.CompleteRecurringTaskAtIndex(body, t.TaskIndex, vault.DialectApp, opts)
+		return done.Body, rolled
 	})
+	if err != nil {
+		a.notifyError(err.Error())
+		return true
+	}
+	if !rolled {
+		return false
+	}
+	if buf := a.buffers[t.SourcePath]; buf != nil {
+		// The lines went in above the task, so a cursor on or below it moves down.
+		if cur := buf.ed.Cursor(); cur.Line >= t.LineNumber {
+			cur.Line += done.InsertedLines
+			buf.ed.SetCursor(cur)
+		}
+	}
+	notice := "Next: " + done.NextDue
+	if skip {
+		notice = "Skipped. " + notice
+	}
+	a.notify(notice)
+	a.afterTaskChange()
+	return true
+}
+
+// recurrenceBase is the date a repeating task counts from when it has no
+// `due:` of its own: the due the Tasks surfaces inferred, else the date of its
+// daily note.
+func (a *App) recurrenceBase(t vault.Task) string {
+	if t.DueInferred {
+		return t.Due
+	}
+	return a.dailyDueOfPath(t.SourcePath)
 }
 
 // forwardTask moves an open task (with its subtasks) to today's daily note,
