@@ -1076,6 +1076,9 @@ configured. Remote URLs are displayed without credentials, query, or fragment.
 `doctor` checks supported configuration values, installation information,
 configured editor, credential permissions, workspace access, and managed server
 health. A failed check produces a nonzero exit code.
+For a local vault, `doctor` shows a `WARN` line for a task `@repeat:` rule or `due:`
+date that no app reads, and for a `^id` on more than one line. A warning does not
+change the exit code.
 
 | Symptom | What to check |
 | --- | --- |
