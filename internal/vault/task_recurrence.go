@@ -19,6 +19,10 @@ import (
 //	- [ ] Water the plants @repeat:weekly due:2026-11-08
 //	- [x] Water the plants due:2026-11-01
 //
+// A planned day (`@scheduled:`, ZenNotes/zennotes#1119) belongs to the
+// occurrence it was made for: neither line keeps it and neither do their
+// subtasks, or next week's work would arrive already planned for a day last
+// week.
 // A task's subtree repeats with it, every checkbox reset to open, and the record
 // cancels the subtasks it left open. Dates are whole days on UTC calendar fields,
 // so a daylight-saving change can never shift one.
@@ -51,6 +55,7 @@ var (
 	repeatRuleTokenRe = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@repeat:[\p{L}\d][\p{L}\d/_-]*`)
 	repeatRemindRe    = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@remind:[\p{L}\d][\p{L}\d/_-]*`)
 	repeatStatusRe    = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@status:[\p{L}\d][\p{L}\d/_-]*`)
+	repeatScheduledRe = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@scheduled:[\p{L}\d][\p{L}\d/_-]*`)
 	repeatWaitingRe   = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])@waiting\b`)
 	repeatDueRe       = regexp.MustCompile(`(?i)(^|[\s\p{Z}\x{FEFF}])due:[\s\p{Z}\x{FEFF}]*([^\s\p{Z}\x{FEFF}]+)`)
 	tidyRunRe         = regexp.MustCompile(`[ \t]{2,}`)
@@ -293,8 +298,8 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 	nextDue := nextRepeatDate(rule, base, opts.Today)
 
 	// The occurrence keeps the text, priority, tags and every other field, in
-	// their order, with `due:` replaced where it stood. `@waiting` and the board's
-	// `@status:` belong to one occurrence and do not carry.
+	// their order, with `due:` replaced where it stood. `@waiting`, the board's
+	// `@status:` and a planned day belong to one occurrence and do not carry.
 	// A `^id` block marker has to end its line, so a `due:` the roll adds goes
 	// in before it.
 	ownMarker := trailingBlockIDFrom(rest)
@@ -307,7 +312,8 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 		nextRest = tidyEndRe.ReplaceAllString(rest, "") + " due:" + nextDue
 	}
 	nextRest = repeatWaitingRe.ReplaceAllString(nextRest, "${1}")
-	nextRest = repeatTidy(repeatStatusRe.ReplaceAllString(nextRest, "${1}"))
+	nextRest = repeatStatusRe.ReplaceAllString(nextRest, "${1}")
+	nextRest = repeatTidy(repeatScheduledRe.ReplaceAllString(nextRest, "${1}"))
 	next := []string{m[1] + " ]" + nextRest}
 
 	// Block ids (`^id`) stay with the open occurrence and leave the record
@@ -326,14 +332,17 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 	recordChildren := []recordLine{}
 	insertedTasks := 1
 	for i := at + 1; i < end; i++ {
-		child := lineRe.FindStringSubmatch(bare[i])
+		// A subtask's own planned day goes with the occurrence it was made for,
+		// on the copy and in the record. Lines without one copy verbatim,
+		// spacing included.
+		text := repeatUnplanned(bare[i], lineRe)
+		child := lineRe.FindStringSubmatch(text)
 		if child == nil {
-			next = append(next, bare[i])
+			next = append(next, text)
 		} else {
 			insertedTasks++
 			next = append(next, child[1]+" "+child[3])
 		}
-		text := bare[i]
 		if from := trailingBlockIDFrom(text); from >= 0 {
 			// A marker alone on its line names the block above it; the record
 			// has no use for the line once the id is gone.
@@ -353,7 +362,8 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 		recordSource = withoutBlockID(rest, ownMarker)
 	}
 	recordRest := repeatRuleTokenRe.ReplaceAllString(recordSource, "${1}")
-	recordRest = repeatTidy(repeatRemindRe.ReplaceAllString(recordRest, "${1}"))
+	recordRest = repeatRemindRe.ReplaceAllString(recordRest, "${1}")
+	recordRest = repeatTidy(repeatScheduledRe.ReplaceAllString(recordRest, "${1}"))
 	mark := "x"
 	if opts.Skip {
 		mark = "-"
@@ -381,6 +391,20 @@ func CompleteRecurringTaskOnLine(markdown string, at int, dialect TaskDialect, o
 		InsertedLines: len(next),
 		InsertedTasks: insertedTasks,
 	}, true
+}
+
+// repeatUnplanned is a task line without its `@scheduled:` field, indentation
+// untouched. Any other line, and a task without one, comes back as it was.
+func repeatUnplanned(line string, lineRe *regexp.Regexp) string {
+	m := lineRe.FindStringSubmatch(line)
+	if m == nil {
+		return line
+	}
+	rest := repeatScheduledRe.ReplaceAllString(m[3], "${1}")
+	if rest == m[3] {
+		return line
+	}
+	return m[1] + m[2] + repeatTidy(rest)
 }
 
 // trailingBlockIDFrom is where the `^id` marker ending text starts (its caret),
