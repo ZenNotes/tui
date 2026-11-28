@@ -558,6 +558,22 @@ func tidyTail(tail string) string {
 	return trailingWsRe.ReplaceAllString(multiSpaceRe.ReplaceAllString(tail, " "), "")
 }
 
+// appendTaskToken is tail with token added at its end. A `^id` block marker
+// names its line only while it ends it (ZenNotes/zennotes#601), so a line that
+// carries one gets the token just before it: after it, `[[Note^id]]` stops
+// resolving and the marker shows up in the task's text. Every writer that grows
+// a task line goes through here, as on the desktop (appendTaskToken in
+// packages/shared-domain/src/tasklists.ts). The marker grammar is blockIDRe, so
+// a caret that is not an id, as in `2^3`, is text like any other.
+func appendTaskToken(tail, token string) string {
+	trimmed := trailingWsRe.ReplaceAllString(tail, "")
+	from := trailingBlockIDFrom(trimmed)
+	if from < 0 {
+		return trimmed + " " + token
+	}
+	return trailingWsRe.ReplaceAllString(trimmed[:from], "") + " " + token + " " + trimmed[from:]
+}
+
 // SetTaskWaiting adds or removes the `@waiting` marker.
 func SetTaskWaiting(markdown string, taskIndex int, waiting bool) string {
 	out, _ := editTaskAtIndex(markdown, taskIndex, func(m []string) (string, bool) {
@@ -568,7 +584,7 @@ func SetTaskWaiting(markdown string, taskIndex int, waiting bool) string {
 		has := waitingTokenRe.MatchString(tail)
 		next := tail
 		if waiting && !has {
-			next = trailingWsRe.ReplaceAllString(tail, "") + " @waiting"
+			next = appendTaskToken(tail, "@waiting")
 		} else if !waiting && has {
 			next = tidyTail(waitingTokenRe.ReplaceAllString(tail, "$1"))
 		}
@@ -587,7 +603,7 @@ func SetTaskPriority(markdown string, taskIndex int, priority string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(priorityTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if priority != "" {
-			next += " !" + priority
+			next = appendTaskToken(cleaned, "!"+priority)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
@@ -601,10 +617,12 @@ func SetTaskDue(markdown string, taskIndex int, due string) string {
 		if !ok {
 			return "", false
 		}
+		// The old token goes first, so a line an older zn wrote with the date
+		// after its `^id` heals on the next write.
 		cleaned := multiSpaceRe.ReplaceAllString(dueTokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if due != "" {
-			next += " due:" + due
+			next = appendTaskToken(cleaned, "due:"+due)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
@@ -625,7 +643,7 @@ func SetTaskField(markdown string, taskIndex int, key, value string) string {
 		cleaned := multiSpaceRe.ReplaceAllString(tokenRe.ReplaceAllString(tail, "$1"), " ")
 		next := trailingWsRe.ReplaceAllString(cleaned, "")
 		if value != "" {
-			next += " @" + key + ":" + value
+			next = appendTaskToken(cleaned, "@"+key+":"+value)
 		}
 		return m[1] + m[2] + "]" + next, true
 	})
@@ -700,7 +718,7 @@ func ForwardTaskSubtree(markdown string, taskIndex int, linkToken string) (body 
 	tail := trailingWsRe.ReplaceAllString(m[3][1:], "")
 	nextTail := tail
 	if linkToken != "" && !strings.Contains(tail, linkToken) {
-		nextTail = tail + " " + linkToken
+		nextTail = appendTaskToken(tail, linkToken)
 	}
 	nextParent := m[1] + ">]" + nextTail
 	if nextParent == parentLine {
